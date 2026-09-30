@@ -1,0 +1,30 @@
+FAIL arrival_then_completion_resumes_arrow
+  /home/someone/.local/bin/lua5.1: stdin:37: objective completed after arrival: arrow remains absent
+FAIL turnin_arrival_does_not_loop
+  /home/someone/.local/bin/lua5.1: stdin:32: standing at unturned-in quest creates 5 replacement waypoints
+FAIL manual_waypoint_survives_auto
+  /home/someone/.local/bin/lua5.1: stdin:31: auto-next replaced the active manual waypoint
+FAIL reopening_loot_does_not_duplicate_items
+  /home/someone/.local/bin/lua5.1: stdin:32: one corpse with two cloth became 4 cloth / 1 corpse
+FAIL loot_is_attributed_per_slot_source
+  /home/someone/.local/bin/lua5.1: stdin:32: second creature's tusk was assigned to the first creature
+FAIL batched_progress_not_assigned_to_unrelated_last_kill
+  /home/someone/.local/bin/lua5.1: stdin:35: both quest objectives were assigned to the last kill (7002)
+FAIL manual_apicheck_persists_successful_probes
+  /home/someone/.local/bin/lua5.1: stdin:29: manual apicheck stores counts/failures but drops successful probe results
+FAIL record_off_preserves_planner_updates
+  /home/someone/.local/bin/lua5.1: stdin:35: record off leaves the completed quest's objective active
+FAIL failed_party_send_is_not_reported_success
+  /home/someone/.local/bin/lua5.1: stdin:32: throttled send was reported as sent
+FAIL party_import_refreshes_visible_plan
+  /home/someone/.local/bin/lua5.1: stdin:31: received quest state never refreshed the planner
+FAIL creature_sighting_not_stored_as_exact_player_position
+  /home/someone/.local/bin/lua5.1: stdin:30: targeting a distant mob stores player coordinates as its unqualified location
+FAIL selftest_preserves_party_state
+  /home/someone/.local/bin/lua5.1: stdin:29: selftest erased the real imported party state
+FAIL selftest_preserves_active_waypoint
+  /home/someone/.local/bin/lua5.1: stdin:30: selftest cleared the explicit active waypoint and selected the nearest instead
+FAIL deployment_gate_rejects_malformed_xml
+  BAD XML printed, mock reports ALL CHECKS PASSED, check.sh exits 0
+14 failed / 14 preflight regressions
+review reproduction exit: 1

@@ -1,0 +1,26 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build addon zip (folder at the top level, ready for Interface\AddOns)
+        run: |
+          python3 - <<'PY'
+          import zipfile, os
+          with zipfile.ZipFile("ForeverPath.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for root, _, files in os.walk("ForeverPath"):
+                  for f in files:
+                      p = os.path.join(root, f)
+                      z.write(p, p)
+          print("ok", os.path.getsize("ForeverPath.zip"))
+          PY
+      - name: Publish release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ForeverPath.zip

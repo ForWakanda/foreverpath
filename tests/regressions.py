@@ -1,0 +1,489 @@
+#!/usr/bin/env python3
+"""Preflight regressions run by tools/check.sh. No game/client writes."""
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+LUA = os.environ.get("LUA", str(Path.home() / ".local/bin/lua5.1"))
+BOOT = r'''
+package.path = "./tests/?.lua;" .. package.path
+local M = require("wowmock")
+local FP = {}
+for line in io.lines("ForeverPath/ForeverPath.toc") do
+    line = line:gsub("\r", "")
+    if line:match("%.lua$") then
+        assert(loadfile("ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath", FP)
+    end
+end
+M.FireEvent("ADDON_LOADED", "ForeverPath")
+M.FireEvent("PLAYER_LOGIN")
+M.RunTimers(10)
+M.RunTimers(2)
+FP.Pos:Refresh(true)
+local function addQuest(id, complete)
+    local q = {questID=id, title="Quest " .. id, waypoint={1413, 0.60, 0.60},
+        objectives={{text="Mob slain: 0/1", type="monster", numFulfilled=0, numRequired=1, finished=false}}}
+    M.AddQuest(q)
+    M.complete[id] = complete
+    FP.Recorder.RescanLog("review")
+    return q
+end
+local function active() return FP.Waypoints:GetActive() end
+local function cmd(s) SlashCmdList.FOREVERPATH(s) end
+local function snapshot(value)
+    if type(value) ~= "table" then return type(value) .. ":" .. tostring(value) end
+    local parts={}
+    for k,v in pairs(value) do parts[#parts+1]=snapshot(k).."="..snapshot(v) end
+    table.sort(parts)
+    return "{"..table.concat(parts,";").."}"
+end
+'''
+
+CASES = {
+    "arrival_then_completion_resumes_arrow": r'''
+local q = addQuest(9001)
+FP.Planner:Auto("review")
+M.px, M.py = 0.60, 0.60
+M.Tick(1)
+assert(not active(), "arrival setup failed")
+q.objectives[1].finished = true
+q.objectives[1].numFulfilled = 1
+M.complete[9001] = true
+M.FireEvent("QUEST_LOG_UPDATE")
+M.RunTimers(1); M.RunTimers(2)
+assert(active() and active().source.kind == "turnin", "objective completed after arrival: arrow remains absent")
+''',
+    "turnin_arrival_does_not_loop": r'''
+addQuest(9001, true)
+FP.Planner:Auto("review")
+M.px, M.py = 0.60, 0.60
+local before = FP.cdb.nextId
+for i=1,5 do M.Tick(1); M.RunTimers(1.1) end
+assert(FP.cdb.nextId == before, "standing at unturned-in quest creates " .. (FP.cdb.nextId-before) .. " replacement waypoints")
+''',
+    "manual_waypoint_survives_auto": r'''
+addQuest(9001)
+cmd("way 47.2 61.8 Manual")
+local id = active().id
+FP.Planner:Auto("accept")
+assert(active().id == id, "auto-next replaced the active manual waypoint")
+''',
+    "reopening_loot_does_not_duplicate_items": r'''
+M.lootSource = "Creature-0-1-1-1-7001-00000001"
+M.lootSlots = {{name="Cloth", qty=2, itemID=4306}}
+M.FireEvent("LOOT_OPENED")
+M.FireEvent("LOOT_OPENED")
+local c = FP.data.creatures[7001]
+assert(c.loot[4306] == 2, "one corpse with two cloth became " .. c.loot[4306] .. " cloth / " .. c.looted .. " corpse")
+''',
+    "loot_is_attributed_per_slot_source": r'''
+local a = "Creature-0-1-1-1-7001-00000001"
+local b = "Creature-0-1-1-1-7002-00000002"
+M.lootSlots = {{name="Cloth", qty=2, itemID=4306}, {name="Tusk", qty=1, itemID=5001}}
+GetLootSourceInfo = function(slot) return slot == 1 and a or b, M.lootSlots[slot].qty end
+M.FireEvent("LOOT_OPENED")
+assert(FP.data.creatures[7002] and FP.data.creatures[7002].loot[5001] == 1,
+    "second creature's tusk was assigned to the first creature")
+''',
+    "batched_progress_not_assigned_to_unrelated_last_kill": r'''
+local a, b = addQuest(9001), addQuest(9002)
+FP.Recorder:OnUnitDied("Creature-0-1-1-1-7001-00000001")
+a.objectives[1].numFulfilled = 1
+M.FireEvent("QUEST_LOG_UPDATE")
+FP.Recorder:OnUnitDied("Creature-0-1-1-1-7002-00000002")
+b.objectives[1].numFulfilled = 1
+M.FireEvent("QUEST_LOG_UPDATE")
+M.RunTimers(1)
+assert(not (FP.data.quests[9001].obj[1].mobs or {})[7002], "both quest objectives were assigned to the last kill (7002)")
+''',
+    "manual_apicheck_persists_successful_probes": r'''
+cmd("apicheck")
+local r = FP.db.apicheck[tostring(FP.clientBuild) .. "-manual"]
+assert(r.rows and r.rows["probe:playerPos"], "manual apicheck stores counts/failures but drops successful probe results")
+''',
+    "record_off_preserves_planner_updates": r'''
+local q = addQuest(9001)
+FP.Planner:Auto("review")
+M.RunTimers(2) -- drain the pre-existing scan callbacks before disabling recording
+cmd("record off")
+q.objectives[1].finished = true
+M.complete[9001] = true
+M.FireEvent("QUEST_LOG_UPDATE")
+M.RunTimers(1); M.RunTimers(2)
+assert(active() and active().source.kind == "turnin", "record off leaves the completed quest's objective active")
+''',
+    "failed_party_send_is_not_reported_success": r'''
+IsInGroup = function() return true end
+-- Build 70124 Enum.SendAddonMessageResult.AddonMessageThrottle == 3.
+C_ChatInfo.SendAddonMessage = function() return 3 end
+cmd("partysync")
+local chat = M.Chat()
+assert(not chat[#chat]:find("sent your quest state", 1, true), "throttled send was reported as sent")
+''',
+    "party_import_refreshes_visible_plan": r'''
+addQuest(9001)
+FP.Planner:Build()
+assert(not FP.Planner.steps[1].shared)
+IsInGroup = function() return true end
+M.SetUnit("party1", {name="Friend", realm="Realm"})
+M.FireEvent("CHAT_MSG_ADDON", "FPATH", "FP1;Friend;MAGE;20;9001", "PARTY", "Friend-Realm")
+assert(FP.Planner.steps[1].shared, "received quest state never refreshed the planner")
+''',
+    "creature_sighting_not_stored_as_exact_player_position": r'''
+M.SetUnit("target", {guid="Creature-0-1-1-1-7001-00000001", name="Distant mob", level=20, reaction=2})
+M.FireEvent("PLAYER_TARGET_CHANGED")
+local p = FP.data.creatures[7001].pos[1]
+assert(not p or p.observer or p.uncertainty, "targeting a distant mob stores player coordinates as its unqualified location")
+''',
+    "selftest_preserves_party_state": r'''
+FP.Party:Import("FP1;Friend;HUNTER;20;9001", "paste")
+FP.SelfTest:Run(true)
+assert(FP.cdb.party.name == "Friend", "selftest erased the real imported party state")
+''',
+    "selftest_preserves_active_waypoint": r'''
+local a = FP.Waypoints:Add(1413, 0.46, 0.56, "Near")
+local b = FP.Waypoints:Add(1413, 0.80, 0.80, "Chosen")
+FP.SelfTest:Run(true)
+assert(active().id == b.id, "selftest cleared the explicit active waypoint and selected the nearest instead")
+''',
+}
+
+CASES.update({
+    "loot_all_source_pairs_and_quantities": r'''
+M.lootSlots = {{name="Cloth", qty=15, itemID=4306}}
+GetLootSourceInfo = function()
+    return "Creature-0-1-1-1-7001-1",1,"Creature-0-1-1-1-7002-2",2,
+        "Creature-0-1-1-1-7003-3",3,"Creature-0-1-1-1-7004-4",4,"GameObject-0-1-1-1-7005-5",5
+end
+M.FireEvent("LOOT_OPENED")
+for i=1,4 do assert(FP.data.creatures[7000+i].loot[4306] == i) end
+assert(FP.data.objects[7005].loot[4306] == 5)
+''',
+    "partial_loot_and_duplicate_slots": r'''
+M.lootSource = "Creature-0-1-1-1-7001-1"
+M.lootSlots = {{name="Cloth",qty=2,itemID=4306},{name="Cloth",qty=3,itemID=4306}}
+M.FireEvent("LOOT_OPENED")
+M.lootSlots = {{name="Cloth",qty=3,itemID=4306}}
+M.FireEvent("LOOT_OPENED"); M.FireEvent("LOOT_OPENED")
+assert(FP.data.creatures[7001].loot[4306] == 5 and FP.data.creatures[7001].looted == 1)
+''',
+    "unknown_loot_source_keeps_target_uncertain": r'''
+GetLootSourceInfo = nil
+M.SetUnit("target", {guid="Creature-0-1-1-1-7001-1",dead=true})
+M.lootSlots = {{name="Cloth",qty=2,itemID=4306}}
+M.FireEvent("LOOT_OPENED")
+assert(not FP.data.creatures[7001])
+assert(FP.data.lootObservations[1].items[4306] == 2)
+assert(FP.data.lootObservations[1].attribution == "unknown")
+''',
+    "malformed_source_total_is_not_allocated": r'''
+M.lootSlots = {{name="Cloth",qty=2,itemID=4306}}
+GetLootSourceInfo = function() return "Creature-0-1-1-1-7001-1",3 end
+M.FireEvent("LOOT_OPENED")
+assert(not FP.data.creatures[7001] and FP.data.lootObservations[1].items[4306] == 2)
+''',
+    "loot_dedup_survives_full_addon_reload": r'''
+M.lootSource = "Creature-0-1-1-1-7001-1"
+M.lootSlots = {{name="Cloth",qty=2,itemID=4306}}
+M.FireEvent("LOOT_OPENED")
+M.frames, M.timers, M.tickers = {}, {}, {}
+local nextFP = {}
+for line in io.lines("ForeverPath/ForeverPath.toc") do
+    line = line:gsub("\r", "")
+    if line:match("%.lua$") then assert(loadfile("ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath", nextFP) end
+end
+M.FireEvent("ADDON_LOADED", "ForeverPath"); M.FireEvent("PLAYER_LOGIN")
+M.FireEvent("LOOT_OPENED")
+assert(nextFP.data.creatures[7001].loot[4306] == 2 and nextFP.data.creatures[7001].looted == 1)
+assert(#nextFP.db.errors == 0)
+''',
+    "item_objective_temporal_candidate_not_confirmed": r'''
+local q = addQuest(9001)
+q.objectives[1].type = "item"
+M.lootSource = "Creature-0-1-1-1-7001-1"
+M.lootSlots = {{name="Unrelated item",qty=2,itemID=4306}}
+M.FireEvent("LOOT_OPENED")
+q.objectives[1].numFulfilled = 1
+M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(1)
+local ev = FP.data.progress[#FP.data.progress]
+assert(ev.attribution == "unconfirmed" and not ev.src and ev.lootItems[4306] == 2)
+assert(not FP.data.quests[9001].obj[1].src)
+''',
+    "record_off_stops_delayed_and_profession_dataset_writes": r'''
+M.SetUnit("npc", {guid="Creature-0-1-1-1-7001-1", name="Trainer"})
+M.FireEvent("TRAINER_SHOW")
+cmd("record off")
+local before = snapshot(FP.data)
+M.FireEvent("TRADE_SKILL_SHOW")
+M.FireEvent("PLAYER_LEVEL_UP",21)
+M.FireEvent("PLAYER_DEAD")
+M.FireEvent("QUEST_ACCEPTED",9999)
+M.RunTimers(3)
+assert(snapshot(FP.data) == before, "record off mutated dataset")
+assert(FP.Prof.open and #FP.Prof.open.recipes > 0, "profession UI should still work without recording")
+''',
+    "record_off_at_login_does_not_collect_dataset": r'''
+M.frames, M.timers, M.tickers = {}, {}, {}
+ForeverPathDB = {settings={record=false}}
+ForeverPathCharDB = nil
+local nextFP = {}
+for line in io.lines("ForeverPath/ForeverPath.toc") do
+    line=line:gsub("\r", "")
+    if line:match("%.lua$") then assert(loadfile("ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath",nextFP) end
+end
+M.AddQuest({questID=9001,title="Quest",objectives={}})
+M.FireEvent("ADDON_LOADED", "ForeverPath"); M.FireEvent("PLAYER_LOGIN")
+M.RunTimers(10); M.RunTimers(3)
+assert(next(nextFP.data.chars) == nil and next(nextFP.data.quests) == nil)
+assert(nextFP.db.apicheck["70124"], "diagnostic probes should remain enabled")
+''',
+    "record_toggle_does_not_infer_progress_while_disabled": r'''
+local q=addQuest(9001)
+cmd("record off")
+q.objectives[1].numFulfilled=1
+cmd("record on")
+M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(1)
+assert(#FP.data.progress == 0)
+''',
+    "arrived_objective_waits_and_explicit_next_skips": r'''
+addQuest(9001); local b=addQuest(9002); b.waypoint={1413,0.8,0.8}
+FP.Planner:Auto("test"); M.px,M.py=0.6,0.6; M.Tick(1)
+assert(not active() and FP.Planner.waiting.questID == 9001)
+M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(1); M.RunTimers(200)
+assert(not active(), "unchanged objective must not reactivate after timeout")
+cmd("next")
+assert(active() and active().source.questID == 9002)
+''',
+    "arrived_turnin_advances_when_turned_in": r'''
+addQuest(9001,true); local b=addQuest(9002); b.waypoint={1413,0.8,0.8}
+FP.Planner:Auto("test"); M.px,M.py=0.6,0.6; M.Tick(1)
+assert(FP.Planner.waiting.kind == "turnin")
+M.FireEvent("QUEST_TURNED_IN",9001,1200,0); M.RemoveQuest(9001)
+M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(2); M.RunTimers(2)
+assert(active() and active().source.questID == 9002)
+''',
+    "manual_waypoint_before_login_replan_is_preserved": r'''
+addQuest(9001)
+cmd("way 47.2 61.8 Manual")
+local id=active().id
+M.FireEvent("QUEST_ACCEPTED",9001); M.RunTimers(2)
+assert(active().id == id)
+''',
+    "persistent_waypoint_arrival_printed_once_until_departure": r'''
+cmd("way here Home")
+local count=#M.Chat()
+M.Tick(1); M.RunTimers(10); M.Tick(3)
+local arrivals=0
+for i=count+1,#M.Chat() do if M.Chat()[i]:find("Arrived:",1,true) then arrivals=arrivals+1 end end
+assert(arrivals == 1)
+''',
+    "party_send_success_error_lockdown": r'''
+IsInGroup=function() return true end
+C_ChatInfo.SendAddonMessage=function() return 0 end
+assert(FP.Party:Send() == true)
+for code=1,12 do C_ChatInfo.SendAddonMessage=function() return code end; assert(FP.Party:Send() == false) end
+C_ChatInfo.InChatMessagingLockdown=function() return true end
+assert(FP.Party:Send() == false)
+''',
+    "party_large_snapshot_chunks_and_reassembles": r'''
+IsInGroup=function() return true end
+M.SetUnit("party1",{name="Friend",realm="Realm"})
+for id=100001,100040 do addQuest(id,true) end
+local messages={}
+C_ChatInfo.SendAddonMessage=function(_,msg) assert(#msg<=255); messages[#messages+1]=msg; return 0 end
+assert(FP.Party:Send())
+assert(#messages>1)
+for i=#messages,1,-1 do M.FireEvent("CHAT_MSG_ADDON","FPATH",messages[i],"PARTY","Friend-Realm") end
+assert(FP.Util.Count(FP.cdb.party.quests)==40 and FP.cdb.party.complete[100040])
+''',
+    "party_live_state_cleared_but_paste_seed_retained": r'''
+IsInGroup=function() return true end
+M.SetUnit("party1",{name="Friend",realm="Realm"})
+M.FireEvent("CHAT_MSG_ADDON","FPATH","FP1;Friend;MAGE;20;9001","PARTY","Friend-Realm")
+assert(FP.cdb.party.name=="Friend")
+IsInGroup=function() return false end
+M.FireEvent("GROUP_ROSTER_UPDATE")
+assert(not FP.cdb.party.name)
+FP.Party:Import("FP1;Seed;MAGE;20;9001","paste")
+M.FireEvent("GROUP_ROSTER_UPDATE")
+assert(FP.cdb.party.name=="Seed")
+''',
+    "party_ignores_outsiders_and_refreshes_on_completion_removal": r'''
+IsInGroup=function() return true end
+M.SetUnit("party1",{name="Friend",realm="Realm"})
+M.FireEvent("CHAT_MSG_ADDON","FPATH","FP1;Stranger;MAGE;20;9001","WHISPER","Stranger-Realm")
+assert(not FP.cdb.party.name)
+local sent={}
+C_ChatInfo.SendAddonMessage=function(_,msg) sent[#sent+1]=msg; return 0 end
+addQuest(9001); M.RunTimers(6)
+local n=#sent
+M.complete[9001]=true; M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(1); M.RunTimers(6)
+assert(#sent>n and sent[#sent]:find("9001c",1,true))
+M.RemoveQuest(9001); M.FireEvent("QUEST_REMOVED",9001); M.RunTimers(6)
+assert(not sent[#sent]:find("9001",1,true))
+''',
+    "manual_probe_history_and_exception_are_preserved": r'''
+local best=FP.API.GetBestMap
+FP.API.GetBestMap=function() error("test map probe failure") end
+cmd("apicheck")
+local r=FP.db.apicheck["70124-manual"]
+assert(r.rows["probe:bestMap"].status=="error")
+assert(r.rows["probe:facing"].ok and r.rows["probe:facing"].note)
+FP.API.GetBestMap=best
+cmd("apicheck")
+assert(FP.db.apicheck["70124-manual"].rows["probe:bestMap"].ok)
+assert(#FP.db.apicheckHistory>=2)
+''',
+    "selftest_preserves_all_character_data": r'''
+FP.Party:Import("FP1;Friend;MAGE;20;9001","paste")
+cmd("way 60 60 Test")
+local before=snapshot(FP.cdb)
+local ok=FP.SelfTest:Run(true)
+assert(ok and snapshot(FP.cdb)==before)
+''',
+    "world_conversion_retries_transient_failure": r'''
+local real=C_Map.GetWorldPosFromMapPos
+C_Map.GetWorldPosFromMapPos=function() return nil end
+local point={mapID=1413,x=0.6,y=0.6}
+assert(not FP.Pos:DistanceTo(point))
+C_Map.GetWorldPosFromMapPos=real
+assert(FP.Pos:DistanceTo(point))
+''',
+    "map_pin_right_click_is_owned_and_removes_waypoint": r'''
+cmd("way 60 60 Test")
+FP.Pins.provider:RefreshAllData()
+local pin=WorldMapFrame._pins[1]
+assert(not pin:ShouldMouseButtonBePassthrough("RightButton") and #pin._passthrough==0)
+pin:OnClick("RightButton")
+assert(not active())
+''',
+    "waypoint_percent_validation_and_low_map_id": r'''
+cmd("way 1 2 Near edge")
+assert(active().x==0.01 and active().y==0.02)
+cmd("way 12 45 60 Low map")
+assert(active().mapID==12 and active().x==0.45 and active().y==0.6)
+local n=#FP.Waypoints.list
+cmd("way -10 50"); cmd("way 101 50"); cmd("way 1e309 2"); cmd("way 12 40 200")
+assert(#FP.Waypoints.list==n)
+assert(not FP.Waypoints:Add(12,0/0,0.5))
+''',
+    "craftable_yellow_not_hidden_by_unavailable_orange": r'''
+FP.Prof.open={recipes={}}
+for i=1,13 do FP.Prof.open.recipes[i]={id=i,name="Unavailable",diff=0,rec={reag={[1000+i]=1}}} end
+FP.Prof.open.recipes[14]={id=14,name="Available",diff=1,rec={reag={[2000]=2}}}
+C_Item.GetItemCount=function(id,bank) assert(not bank); return id==2000 and 4 or 0 end
+local list=FP.Prof:BestCrafts(12)
+assert(list[1].id==14 and list[1].craftable==2)
+''',
+    "profession_scan_isolates_character_learned_state": r'''
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(3)
+assert(FP.data.recipes[197].r[3839].learned==nil)
+C_TradeSkillUI.GetRecipeInfo=function(id) return {recipeID=id,name="Unlearned",learned=false} end
+FP.Prof:ScanRecipes()
+assert(#FP.Prof.open.recipes==0)
+''',
+    "profession_queue_honors_close_and_record_toggle": r'''
+local ids={}; for i=1,45 do ids[i]=10000+i end
+C_TradeSkillUI.GetFilteredRecipeIDs=function() return ids end
+FP.Prof:ScanRecipes()
+assert(FP.Util.Count(FP.data.recipes[197].r)==20)
+M.FireEvent("TRADE_SKILL_CLOSE")
+M.RunTimers(1)
+assert(FP.Util.Count(FP.data.recipes[197].r)==20)
+FP.Prof:ScanRecipes()
+cmd("record off")
+local before=snapshot(FP.data)
+M.RunTimers(2)
+assert(snapshot(FP.data)==before)
+''',
+    "v1_migration_preserves_but_separates_biased_evidence": r'''
+M.frames,M.timers,M.tickers={},{},{}
+ForeverPathDB={version=1,data={creatures={[7001]={loot={[4306]=4},looted=1,pos={{m=1413,x=.5,y=.5}}}},
+    quests={[9001]={obj={{mobs={[7001]=2}}},items={[4306]={[7001]=1}}}}}}
+ForeverPathCharDB=nil
+local nextFP={}
+for line in io.lines("ForeverPath/ForeverPath.toc") do
+    if line:match("%.lua$") then assert(loadfile("ForeverPath/"..line:gsub("\\","/")))("ForeverPath",nextFP) end
+end
+M.FireEvent("ADDON_LOADED","ForeverPath")
+local c=nextFP.data.creatures[7001]
+assert(c.legacyLootV1[4306]==4 and next(c.loot)==nil and c.looted==0 and c.pos[1].observer)
+local q=nextFP.data.quests[9001]
+assert(q.obj[1].legacyMobCandidatesV1[7001]==2 and not q.obj[1].mobs and q.legacyItemsV1)
+''',
+})
+
+CASES.update({
+    "unsupported_loot_source_remains_observed_unknown": r'''
+M.lootSlots={{name="Box loot",qty=2,itemID=4306}}
+GetLootSourceInfo=function() return "Item-0-1-1-1-7001-1",2 end
+M.FireEvent("LOOT_OPENED")
+assert(FP.data.lootObservations[1].items[4306]==2 and next(FP.data.creatures)==nil)
+''',
+    "v1_paste_seed_survives_upgrade_and_login": r'''
+M.frames,M.timers,M.tickers={},{},{}
+ForeverPathDB={version=1}
+ForeverPathCharDB={party={name="Friend",from="paste",quests={[9001]=true},complete={}}}
+local nextFP={}
+for line in io.lines("ForeverPath/ForeverPath.toc") do
+    if line:match("%.lua$") then assert(loadfile("ForeverPath/"..line:gsub("\\","/")))("ForeverPath",nextFP) end
+end
+M.FireEvent("ADDON_LOADED","ForeverPath"); M.FireEvent("PLAYER_LOGIN")
+assert(nextFP.cdb.party.name=="Friend" and nextFP.cdb.party.mode=="paste")
+''',
+})
+
+failed = 0
+for name, body in CASES.items():
+    result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + result.stderr.splitlines()[0])
+
+# Corrupt an actual XML file in an ephemeral copy; never change the real checkout.
+with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
+    for name in ("ForeverPath", "tests", "tools"):
+        shutil.copytree(name, Path(tmp) / name)
+    (Path(tmp) / "ForeverPath/Nav/MapPins.xml").write_text("<Ui><broken></Ui>\n")
+    result = subprocess.run(["bash", "tools/check.sh"], cwd=tmp, text=True, capture_output=True)
+    assert "BAD XML" in result.stdout, "XML corruption was not exercised"
+    if result.returncode == 0:
+        failed += 1
+        print("FAIL deployment_gate_rejects_malformed_xml")
+        print("  BAD XML printed, mock reports ALL CHECKS PASSED, check.sh exits 0")
+    else:
+        print("PASS deployment_gate_rejects_malformed_xml")
+
+# Missing TOC entries, compiler failure, and bypass attempts must also reject.
+for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
+    with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
+        for name in ("ForeverPath", "tests", "tools"):
+            shutil.copytree(name, Path(tmp) / name)
+        env = os.environ.copy()
+        command = ["bash", "tools/check.sh"]
+        if scenario == "missing_toc_file":
+            with (Path(tmp) / "ForeverPath/ForeverPath.toc").open("a") as toc:
+                toc.write("Missing.xml\n")
+        elif scenario == "compiler_failure":
+            env["LUAC"] = "/bin/false"
+        else:
+            addons = Path(tmp) / "AddOns"
+            addons.mkdir()
+            sentinel = addons / "ForeverPath"
+            sentinel.mkdir()
+            (sentinel / "keep.txt").write_text("unchanged")
+            env["WOW_ADDONS"] = str(addons)
+            command = ["bash", "tools/deploy.sh", "--no-check"]
+        result = subprocess.run(command, cwd=tmp, env=env, text=True, capture_output=True)
+        passed = result.returncode != 0
+        if scenario == "deploy_bypass":
+            passed = passed and (sentinel / "keep.txt").read_text() == "unchanged"
+        print(("PASS " if passed else "FAIL ") + scenario)
+        if not passed:
+            failed += 1
+
+print(f"{failed} failed / {len(CASES) + 4} preflight regressions")
+raise SystemExit(1 if failed else 0)

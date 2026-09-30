@@ -1,0 +1,35 @@
+## Interface: 16001
+## Title: ForeverPath
+## Notes: Quest GPS, route planner and Forever data recorder. Free, open source, no automation: it shows you where to go, you play.
+## Author: Michael + Claude
+## Version: 0.2.0
+## SavedVariables: ForeverPathDB
+## SavedVariablesPerCharacter: ForeverPathCharDB
+## IconTexture: Interface\Icons\INV_Misc_Map_01
+## AddonCompartmentFunc: ForeverPath_OnAddonCompartmentClick
+## X-License: MIT
+## X-Category: Quests & Leveling
+
+Core\Namespace.lua
+Core\Util.lua
+Core\Config.lua
+API\Adapter.lua
+Nav\Position.lua
+Nav\Waypoints.lua
+Nav\Arrow.lua
+Nav\MapPins.lua
+Nav\MapPins.xml
+Data\Recorder.lua
+Prof\Tracker.lua
+Route\Planner.lua
+Party\Sync.lua
+Modules\HunterAudioFeedback.lua
+Modules\ApiProbe.lua
+PvP\PvPCore.lua
+PvP\CastTimers.lua
+PvP\Roster.lua
+PvP\Battleground.lua
+PvP\Coordination.lua
+UI\Panel.lua
+UI\Commands.lua
+Core\SelfTest.lua
