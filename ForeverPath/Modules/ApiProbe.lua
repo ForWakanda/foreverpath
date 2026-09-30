@@ -132,13 +132,12 @@ end
 
 function P:OnEnable()
 	local db = FP.db.probe
-	-- which combat-log style events can even be registered on this build
-	local f = CreateFrame("Frame")
-	for _, ev in ipairs({ "COMBAT_LOG_EVENT_UNFILTERED", "COMBAT_LOG_EVENT", "COMBAT_LOG_MESSAGE", "COMBAT_LOG_EVENT_INTERNAL_UNFILTERED", "UNIT_DIED", "PARTY_KILL", "UNIT_AURA", "ENCOUNTER_TIMELINE_EVENT_ADDED" }) do
-		local ok, err = pcall(f.RegisterEvent, f, ev)
-		db.registration[ev] = ok and "ok" or ("error: " .. U.Truncate(tostring(err), 80))
-		if ok then pcall(f.UnregisterEvent, f, ev) end
-	end
+	-- Do NOT probe combat-log event registration: on build 70124 registering
+	-- COMBAT_LOG_EVENT(_UNFILTERED)/COMBAT_LOG_MESSAGE/ENCOUNTER_TIMELINE_EVENT_ADDED
+	-- succeeds in Lua (no error for pcall to catch) but the client raises the
+	-- "blocked from an action only available to the Blizzard UI" popup.
+	-- Observed 2026-09-30 in game; the answer is already known from the docs.
+	db.registration = { note = "combat-log events are Blizzard-only on Forever; not probed (blocked-action popup observed 2026-09-30)" }
 	-- state transitions
 	local E = FP.RegisterEvent
 	E(FP, "PLAYER_REGEN_DISABLED", function() P:Sample("combat-start"); FP.After(2, function() P:Sample("combat+2s") end) end)

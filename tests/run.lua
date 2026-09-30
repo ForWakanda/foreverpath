@@ -267,7 +267,7 @@ M.FireEvent("PLAYER_REGEN_DISABLED"); M.RunTimers(3)
 check((FP.db.probe.repeats or 0) >= 1, "identical state deduped as a repeat")
 M.inCombat = false
 M.FireEvent("PLAYER_REGEN_ENABLED")
-check(FP.db.probe.registration.UNIT_AURA == "ok", "registration probe recorded")
+check(FP.db.probe.registration.note ~= nil, "registration note recorded")
 cmd("probe"); cmd("probe now"); cmd("probe dump"); cmd("probe off"); cmd("probe on")
 M.SetUnit("target", nil)
 errorsEmpty("probe")
