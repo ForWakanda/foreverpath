@@ -336,6 +336,20 @@ cmd("apicheck")
 assert(FP.db.apicheck["70124-manual"].rows["probe:bestMap"].ok)
 assert(#FP.db.apicheckHistory>=2)
 ''',
+    "hearth_cooldown_reads_70170_c_spell_table_shape": r'''
+local cont, item = C_Container.GetItemCooldown, C_Item and C_Item.GetItemCooldown
+C_Container.GetItemCooldown = nil
+if C_Item then C_Item.GetItemCooldown = nil end
+local saved = C_Spell.GetItemCooldown
+C_Spell.GetItemCooldown = function(id) assert(id == 6948); return { startTime = GetTime() - 100, duration = 1800, isEnabled = true, modRate = 1 } end
+local remaining = FP.API.GetHearthCooldown()
+assert(remaining > 1690 and remaining <= 1700, "C_Spell.GetItemCooldown table shape not read: " .. tostring(remaining))
+C_Spell.GetItemCooldown = function() return nil end
+assert(FP.API.GetHearthCooldown() == 0, "MayReturnNothing must read as no cooldown")
+C_Spell.GetItemCooldown = saved
+C_Container.GetItemCooldown = cont
+if C_Item then C_Item.GetItemCooldown = item end
+''',
     "selftest_preserves_all_character_data": r'''
 FP.Party:Import("FP1;Friend;MAGE;20;9001","paste")
 cmd("way 60 60 Test")

@@ -2,7 +2,8 @@
 -- The ONLY file that talks to the WoW API. Everything is feature-detected so a
 -- renamed or removed function on the next build degrades one feature instead
 -- of breaking the addon. Verified against Blizzard's Forever UI source
--- (build 1.60.1.70124, interface 16001, Mainline 12.1.5 API family).
+-- (build 1.60.1.70170, interface 16001, Mainline 12.1.5 API family;
+-- re-verified against the 70124 -> 70170 source diff on 2026-10-01).
 local ADDON, FP = ...
 local U = FP.Util
 local safe = FP.safe
@@ -456,6 +457,11 @@ function API.GetHearthCooldown()
 	elseif has(C_Item, "GetItemCooldown") then
 		local ok, s, d = pcall(C_Item.GetItemCooldown, HEARTHSTONE)
 		if ok then start, duration = safe(s), safe(d) end
+	elseif has(C_Spell, "GetItemCooldown") then
+		-- Added in build 70170: returns a SpellCooldownInfo table (startTime,
+		-- duration, isEnabled, modRate) or nothing when the item is unknown.
+		local ok, info = pcall(C_Spell.GetItemCooldown, HEARTHSTONE)
+		if ok and type(info) == "table" then start, duration = safe(info.startTime), safe(info.duration) end
 	end
 	if not start or not duration or duration == 0 then return 0 end
 	local remaining = (start + duration) - GetTime()
@@ -738,7 +744,8 @@ function API.Check()
 		"GetNumTrainerServices", "GetTrainerServiceInfo", "GetTrainerServiceSkillReq", "GetTrainerServiceCost",
 		"NumTaxiNodes", "TaxiNodeName", "TaxiNodePosition", "TaxiNodeCost", "GetTaxiMapID", "GetBindLocation",
 		"GetProfessions", "GetProfessionInfo", "UnitXP", "UnitXPMax", "GetXPExhaustion", "GetServerTime", "CreateVector2D",
-		"GetNumAvailableQuests", "GetAvailableQuestInfo", "GetNumActiveQuests", "GetActiveQuestID", "issecretvalue", "PlaySoundFile" }) do g(n) end
+		"GetNumAvailableQuests", "GetAvailableQuestInfo", "GetNumActiveQuests", "GetActiveQuestID", "issecretvalue", "PlaySoundFile",
+		"UnitUsesAmmo" }) do g(n) end -- UnitUsesAmmo: new in 70170
 	for _, pair in ipairs({
 		{ "C_Map", "GetBestMapForUnit" }, { "C_Map", "GetPlayerMapPosition" }, { "C_Map", "GetWorldPosFromMapPos" }, { "C_Map", "GetMapInfo" },
 		{ "C_Map", "GetMapWorldSize" }, { "C_Map", "CanSetUserWaypointOnMap" }, { "C_Map", "SetUserWaypoint" },
@@ -747,7 +754,7 @@ function API.Check()
 		{ "C_QuestLog", "GetNextWaypoint" }, { "C_QuestLog", "GetDistanceSqToQuest" }, { "C_QuestLog", "GetAllCompletedQuestIDs" },
 		{ "C_QuestLog", "GetLogIndexForQuestID" }, { "C_QuestLog", "GetTitleForQuestID" },
 		{ "C_GossipInfo", "GetAvailableQuests" }, { "C_GossipInfo", "GetActiveQuests" }, { "C_GossipInfo", "GetOptions" },
-		{ "C_Item", "GetItemInfo" }, { "C_Item", "GetItemCount" }, { "C_Container", "GetItemCooldown" },
+		{ "C_Item", "GetItemInfo" }, { "C_Item", "GetItemCount" }, { "C_Container", "GetItemCooldown" }, { "C_Spell", "GetItemCooldown" },
 		{ "C_MerchantFrame", "GetItemInfo" }, { "C_TaxiMap", "GetAllTaxiNodes" }, { "C_Minimap", "GetViewRadius" },
 		{ "C_TradeSkillUI", "GetChildProfessionInfo" }, { "C_TradeSkillUI", "GetAllRecipeIDs" }, { "C_TradeSkillUI", "GetFilteredRecipeIDs" },
 		{ "C_TradeSkillUI", "GetRecipeInfo" }, { "C_TradeSkillUI", "GetRecipeSchematic" }, { "C_SkillInfo", "GetSkillLineInfo" },
@@ -784,6 +791,11 @@ function API.Check()
 	probe("minimapRadius", function() return true, tostring(API.GetMinimapViewRadius()) .. " yd (adapter, may use fallback)" end)
 	probe("userWaypointOK", function() local allowed = API.CanSetUserWaypoint(mapID); return allowed, allowed and "allowed on current map" or "not allowed on current map" end)
 	probe("questLog", function() log = API.GetQuestLog(); return true, #log .. " quests" end)
+	probe("questLogCap", function()
+		-- 70170 moved MAX_QUESTS onto this constant (40 in the source); the planner never hardcodes it.
+		local cap = Constants and Constants.QuestLogConsts and Constants.QuestLogConsts.MAXIMUM_NUM_QUESTS_LOG_CAN_ACCEPT
+		return cap ~= nil, cap and ("log holds " .. tostring(cap) .. " quests") or "constant missing"
+	end)
 	probe("questsOnMap", function()
 		local pois = API.GetQuestsOnMap(mapID)
 		return #pois > 0, #pois .. " POIs on this map; zero alone does not prove unsupported API"

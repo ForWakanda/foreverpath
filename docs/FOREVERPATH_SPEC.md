@@ -27,7 +27,7 @@ Blizzard's rules (UI Add-On Development Policy + the Midnight "addon disarmament
 
 ForeverPath therefore: reads quest log, map, POI, loot, vendor, trainer, taxi, profession and non-combat unit data; guards every unit read with `issecretvalue`; never registers the combat log; never calls protected functions (`C_SuperTrack.SetSuperTrackedUserWaypoint` is protected for addons on Forever — we draw our own arrow); never sends inputs. Recording is observation of what the client already shows you.
 
-## 2. Verified client facts (build 70124)
+## 2. Verified client facts (build 70124; re-checked unchanged on 70170, see §9)
 
 | Fact | Value |
 |---|---|
@@ -122,3 +122,22 @@ Verdict from Blizzard's secret predicates (`SecretPredicatesDocumentation.lua`, 
 | Frost Mage HUD | Blizzard Cooldown Manager ships on Forever | — |
 
 Unverified until the first battleground: atlas/texture → base-state mapping (recorded raw in `data.bg`), flag texture → faction, whether `C_Map.GetPlayerMapPosition` works inside Forever BGs (expected nil), whether BG maps count as addon-restricted maps.
+
+## 9. Build 70170 (2026-10-01 beta patch) — source-diff verification
+
+Client updated 2026-10-01 to 1.60.1.70170 (`.build.info`); version string unchanged so the interface number stays **16001** and v0.2.1 loads as-is. Blizzard's UI source for 70170 (`Gethe/wow-ui-source` `forever` commit `9a789c0`) diffed against 70124 (`966519c`): 119 files, API documentation changes only additive.
+
+| Change in 70170 | Effect on ForeverPath |
+|---|---|
+| Every function, namespace and event the addon references is still present (scripted check of 142 API names + registered events against `Blizzard_APIDocumentationGenerated`) | none |
+| `C_TradeSkillUI.GetAllRecipeIDs/GetFilteredRecipeIDs` undocumented in both builds, still used by `Blizzard_Professions.lua`; in-game apicheck 9/30 = ok | none; feature-detected |
+| New `C_Spell.GetItemCooldown(itemID)` → `SpellCooldownInfo` table, may return nothing | third fallback in `API.GetHearthCooldown` (table shape handled); apicheck row |
+| New event `PLAYER_PVP_FLAG_CHANGED(isPvpFlagged)` | probe samples on it (`pvp-flag=true/false`) so the world-PvP restriction timeline is recorded |
+| New `UnitUsesAmmo(unit)` | apicheck presence row only |
+| `MAX_QUESTS`/`MAX_QUESTLOG_QUESTS` now read `Constants.QuestLogConsts.MAXIMUM_NUM_QUESTS_LOG_CAN_ACCEPT` (= 40 in source) | planner never hardcoded 25; `probe:questLogCap` records the live value |
+| `PlayerLocation` name field now non-nilable, `MayReturnNothing` | unused |
+| Quest frame fades detail text in when the CVar `instantQuestText` is "0" and disables Accept until shown; new Interface setting | recorder reads quest data from `QUEST_DETAIL`/API, not the frame — unaffected |
+| Shard-transfer popup (`SHARD_TRANSFER_IMMINENT`) removed from the UI; patch notes "adjustments to world instances" | unused |
+| Nameplate font/health-text layout, PvP indicator icons, stable/gamepad/cooldown-manager UI, Camelot `ProjectConstants` (`WOW_PROJECT_CAMELOT = 18`) | unused |
+
+Patch-note items without an API footprint: level cap 30, Razorfen Downs/Uldaman/Excavation Site: Wetlands open, dungeon quests −50 % bonus XP (dataset `rewardXP` values will differ from 70124 captures for dungeon quests), Honor cap 25 000 and PvP gear costs +50 %, pet Aggressive Mode back. **Not yet run in game on 70170**: the next `/fp apicheck` (key `70170`) and `tools/pull-data.sh` are the verification; expect `probe:questLogCap` = 40.

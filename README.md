@@ -1,6 +1,6 @@
 # ForeverPath
 
-Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (beta build 1.60.1.70124, interface 16001; launch 2026-11-04).
+Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (beta build 1.60.1.70170, interface 16001; launch 2026-11-04).
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 

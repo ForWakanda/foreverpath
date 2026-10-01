@@ -148,6 +148,7 @@ function P:OnEnable()
 	E(FP, "PLAYER_TARGET_CHANGED", function() FP.Throttle("probe-target", 1, function() P:Sample("target") end) end)
 	E(FP, "ZONE_CHANGED_NEW_AREA", function() FP.After(1, function() P:Sample("zone") end) end)
 	E(FP, "PVP_MATCH_STATE_CHANGED", function() FP.After(1, function() P:Sample("pvp-match") end) end)
+	E(FP, "PLAYER_PVP_FLAG_CHANGED", function(_, flagged) FP.After(1, function() P:Sample("pvp-flag=" .. tostring(flagged)) end) end) -- new event in 70170
 	E(FP, "PLAYER_ENTERING_WORLD", function() FP.After(5, function() P:Sample("enter-world") end) end)
 	E(FP, "DUEL_REQUESTED", function() P:Sample("duel-requested") end)
 	E(FP, "DUEL_FINISHED", function() P:Sample("duel-finished") end)
