@@ -130,19 +130,9 @@ local function cmdApiCheck()
 end
 
 local function cmdProf()
+	FP.Prof:Snapshot()
 	p("professions: " .. FP.Prof:Summary())
-	local list, open = FP.Prof:BestCrafts(12)
-	if not list then p(FP.GREY .. "open a profession window once so I can read its recipes, then /fp prof again|r"); return end
-	p(string.format("%s %d/%d — skill-up crafts you can make now:", tostring(open.name), open.skill or 0, open.max or 0))
-	local shown = 0
-	for _, e in ipairs(list) do
-		local col = FP.Prof.DIFF_COLORS[e.diff] or ""
-		local craft = e.craftable
-		if craft == nil then p("  " .. col .. e.name .. "|r " .. FP.GREY .. "(reagents not scanned yet)|r")
-		elseif craft > 0 then p(string.format("  %s%s|r ×%d", col, e.name, craft)); shown = shown + 1
-		else p(string.format("  %s%s|r ×0 " .. FP.GREY .. "need %s|r", col, e.name, FP.Prof:MissingFor(e.rec, 1))) end
-	end
-	if shown == 0 then p(FP.GREY .. "nothing craftable from your bags right now.|r") end
+	for _, line in ipairs(FP.Prof:Guidance(12)) do p(line) end
 end
 
 local function cmdGoto(arg)

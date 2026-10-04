@@ -628,9 +628,20 @@ function API.GetProfessions()
 end
 
 function API.GetOpenTradeSkill()
-	if not has(C_TradeSkillUI, "GetChildProfessionInfo") then return nil end
-	local ok, info = pcall(C_TradeSkillUI.GetChildProfessionInfo)
-	if ok and type(info) == "table" and info.professionID and info.professionID ~= 0 then return info end
+	-- A linked/guild/NPC recipe view is not evidence of this character's recipes.
+	for _, name in ipairs({ "IsTradeSkillLinked", "IsTradeSkillGuild", "IsNPCCrafting" }) do
+		if has(C_TradeSkillUI, name) then
+			local ok, foreign = pcall(C_TradeSkillUI[name])
+			if not ok or safe(foreign) then return nil end
+		end
+	end
+	-- Forever has base professions, unlike retail expansion skill lines.
+	for _, name in ipairs({ "GetChildProfessionInfo", "GetBaseProfessionInfo" }) do
+		if has(C_TradeSkillUI, name) then
+			local ok, info = pcall(C_TradeSkillUI[name])
+			if ok and type(info) == "table" and type(info.professionID) == "number" and info.professionID > 0 then return info, name end
+		end
+	end
 	return nil
 end
 
@@ -657,11 +668,16 @@ end
 function API.GetRecipeReagents(recipeID)
 	if not has(C_TradeSkillUI, "GetRecipeSchematic") then return nil end
 	local ok, s = pcall(C_TradeSkillUI.GetRecipeSchematic, recipeID, false)
-	if not ok or type(s) ~= "table" then return nil end
+	if not ok or type(s) ~= "table" or type(s.reagentSlotSchematics) ~= "table" then return nil end
 	local out = { reagents = {}, outputItemID = s.outputItemID, qtyMin = s.quantityMin, qtyMax = s.quantityMax }
-	for _, slot in ipairs(s.reagentSlotSchematics or {}) do
-		if slot.reagents and slot.reagents[1] and slot.reagents[1].itemID and (slot.required ~= false) then
-			out.reagents[slot.reagents[1].itemID] = (out.reagents[slot.reagents[1].itemID] or 0) + (slot.quantityRequired or 1)
+	for _, slot in ipairs(s.reagentSlotSchematics) do
+		if slot.required ~= false then
+			-- Unknown/currency/alternative-choice slots need a richer cost model.
+			-- Do not silently omit them and report a recipe as affordable.
+			if not slot.reagents or #slot.reagents ~= 1 or not slot.reagents[1].itemID
+				or not FP.Util.Finite(slot.quantityRequired) or slot.quantityRequired <= 0 then return nil end
+			local id = slot.reagents[1].itemID
+			out.reagents[id] = (out.reagents[id] or 0) + slot.quantityRequired
 		end
 	end
 	return out
@@ -756,7 +772,7 @@ function API.Check()
 		{ "C_GossipInfo", "GetAvailableQuests" }, { "C_GossipInfo", "GetActiveQuests" }, { "C_GossipInfo", "GetOptions" },
 		{ "C_Item", "GetItemInfo" }, { "C_Item", "GetItemCount" }, { "C_Container", "GetItemCooldown" }, { "C_Spell", "GetItemCooldown" },
 		{ "C_MerchantFrame", "GetItemInfo" }, { "C_TaxiMap", "GetAllTaxiNodes" }, { "C_Minimap", "GetViewRadius" },
-		{ "C_TradeSkillUI", "GetChildProfessionInfo" }, { "C_TradeSkillUI", "GetAllRecipeIDs" }, { "C_TradeSkillUI", "GetFilteredRecipeIDs" },
+		{ "C_TradeSkillUI", "GetBaseProfessionInfo" }, { "C_TradeSkillUI", "GetChildProfessionInfo" }, { "C_TradeSkillUI", "GetAllRecipeIDs" }, { "C_TradeSkillUI", "GetFilteredRecipeIDs" },
 		{ "C_TradeSkillUI", "GetRecipeInfo" }, { "C_TradeSkillUI", "GetRecipeSchematic" }, { "C_SkillInfo", "GetSkillLineInfo" },
 		{ "C_ChatInfo", "SendAddonMessage" }, { "C_Spell", "GetSpellName" }, { "C_Timer", "After" }, { "C_Timer", "NewTicker" }, { "C_Texture", "GetAtlasInfo" },
 	}) do c(_G[pair[1]], pair[1], pair[2]) end
@@ -821,6 +837,10 @@ function API.Check()
 		local profs, parts = API.GetProfessions(), {}
 		for _, p in ipairs(profs) do parts[#parts + 1] = tostring(p.name) .. " " .. tostring(p.rank) .. "/" .. tostring(p.maxRank) end
 		return #profs > 0, #profs > 0 and table.concat(parts, ", ") or "no professions available in this context"
+	end)
+	probe("openProfession", function()
+		local info, source = API.GetOpenTradeSkill()
+		return info ~= nil, info and (tostring(info.professionName) .. " via " .. tostring(source) .. "; " .. #API.GetTradeSkillRecipeIDs() .. " recipe IDs") or "open your own profession window to verify recipe access"
 	end)
 	probe("hearth", function() return API.HasHearthstone(), "bind: " .. tostring(API.GetBindLocation()) end)
 	probe("secretUnitName", function() return true, FP.issecret(UnitName("player")) and "player name is secret" or "player name readable" end)

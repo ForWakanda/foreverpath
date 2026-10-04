@@ -47,6 +47,7 @@ function Frame:SetAtlas(name) self._atlas = name end
 function Frame:SetText(t) self._text = t end
 function Frame:SetFormattedText(f, ...) self._text = string.format(f, ...) end
 function Frame:GetText() return self._text end
+function Frame:GetStringHeight() local _, n = (self._text or ""):gsub("\n", ""); return (n + 1) * 12 end
 function Frame:SetRotation(r) self._rotation = r end
 function Frame:SetVertexColor(r, g, b) self._color = { r, g, b } end
 function Frame:SetAlpha(a) self._alpha = a end

@@ -5,7 +5,7 @@ local U, API = FP.Util, FP.API
 local Panel = FP:NewModule("Panel")
 
 local ROW_HEIGHT = 16
-local WIDTH = 300
+local WIDTH = 360
 
 local function savePosition(frame)
 	local s = FP.settings.panel
@@ -114,6 +114,7 @@ function Panel:OnEnable()
 	FP:On("PLAN_UPDATED", function() self:Refresh() end)
 	FP:On("WAYPOINTS_CHANGED", function() self:Refresh() end)
 	FP:On("PROFESSIONS_CHANGED", function() self:Refresh() end)
+	FP:On("RECIPES_SCANNED", function() self:Refresh() end)
 	FP:On("POSITION", function() FP.Throttle("panel-pos", 2, function() if Panel.frame:IsShown() then Panel:Refresh(true) end end) end)
 	FP:On("QUESTLOG_SCANNED", function() FP.Throttle("panel-plan", 1, function() if Panel.frame:IsShown() then FP.Planner:Build() end end) end)
 	if FP.settings.panel.shown then self:Toggle(true) end
@@ -170,6 +171,6 @@ function Panel:Refresh(positionOnly)
 	local cd = API.GetHearthCooldown()
 	local bind = FP.cdb.bind and FP.cdb.bind.area or API.GetBindLocation()
 	local hearth = bind and ("Hearth: " .. tostring(bind) .. (cd > 0 and (" (" .. U.FormatTime(cd) .. ")") or " (ready)")) or ""
-	self.footer:SetText(FP.Prof:Summary() .. (hearth ~= "" and ("\n" .. hearth) or ""))
-	self.frame:SetHeight(40 + n * ROW_HEIGHT + 36)
+	self.footer:SetText(FP.Prof:Summary() .. "\n" .. table.concat(FP.Prof:Guidance(3), "\n") .. (hearth ~= "" and ("\n" .. hearth) or ""))
+	self.frame:SetHeight(40 + n * ROW_HEIGHT + self.footer:GetStringHeight() + 20)
 end

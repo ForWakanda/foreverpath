@@ -14,12 +14,22 @@ local generation = 0
 
 function T:OnEnable()
 	self:Snapshot()
-	FP:RegisterEvent("TRADE_SKILL_CLOSE", function() generation = generation + 1; queue = {} end)
+	local function refresh()
+		FP.Throttle("prof-scan", 0.5, function() T:ScanRecipes() end)
+	end
+	local function skillChanged()
+		FP.Throttle("prof-snap", 1, function() T:Snapshot(); if not T.windowClosed then T:ScanRecipes() end end)
+	end
+	FP:RegisterEvent("TRADE_SKILL_CLOSE", function() generation = generation + 1; queue = {}; self.windowClosed = true end)
 	FP:On("RECORDING_CHANGED", function() generation = generation + 1; queue = {}; self:Snapshot(); self:ScanRecipes() end)
-	FP:RegisterEvent("SKILL_LINES_CHANGED", function() FP.Throttle("prof-snap", 2, function() T:Snapshot() end) end)
-	FP:RegisterEvent("CHAT_MSG_SKILL", function() FP.Throttle("prof-snap", 2, function() T:Snapshot() end) end)
-	FP:RegisterEvent("TRADE_SKILL_SHOW", function() FP.Throttle("prof-scan", 1.5, function() T:ScanRecipes() end) end)
-	FP:RegisterEvent("TRADE_SKILL_LIST_UPDATE", function() FP.Throttle("prof-scan", 1.5, function() T:ScanRecipes() end) end)
+	FP:RegisterEvent("SKILL_LINES_CHANGED", skillChanged)
+	FP:RegisterEvent("CHAT_MSG_SKILL", skillChanged)
+	FP:RegisterEvent("TRADE_SKILL_SHOW", function() self.windowClosed = false; refresh() end)
+	FP:RegisterEvent("TRADE_SKILL_DATA_SOURCE_CHANGING", function() generation = generation + 1; queue = {}; self.open = nil end)
+	for _, event in ipairs({ "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_NAME_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED" }) do
+		FP:RegisterEvent(event, refresh)
+	end
+	FP:RegisterEvent("BAG_UPDATE_DELAYED", function() FP:Fire("PROFESSIONS_CHANGED") end)
 end
 
 function T:Snapshot()
@@ -33,6 +43,11 @@ function T:Snapshot()
 		end
 	end
 	self.list = profs
+	if self.open then
+		for _, p in ipairs(profs) do
+			if (p.skillLine == self.open.id or p.name == self.open.name) and p.rank ~= self.open.skill then self.open.stale = true end
+		end
+	end
 	if changed then FP:Fire("PROFESSIONS_CHANGED", profs) end
 	return profs
 end
@@ -100,21 +115,29 @@ local function pumpQueue()
 	if not ok then queueRunning = false; FP:ReportError("prof-queue", err) end
 end
 
-function T:ScanRecipes()
-	local info = API.GetOpenTradeSkill()
-	if not info then return end
+function T:ScanRecipes(attempt)
+	if self.windowClosed then return end
 	generation = generation + 1
 	queue = {}
+	local scanGeneration = generation
+	local function retry()
+		if (attempt or 0) >= 3 then return end
+		FP.After(1, function()
+			if generation == scanGeneration and not T.windowClosed then T:ScanRecipes((attempt or 0) + 1) end
+		end)
+	end
+	local info = API.GetOpenTradeSkill()
+	if not info then self.open = nil; retry(); FP:Fire("RECIPES_SCANNED"); return end
 	self.open = { id = info.professionID, name = info.professionName, skill = info.skillLevel, max = info.maxSkillLevel, recipes = {} }
 	for _, id in ipairs(API.GetTradeSkillRecipeIDs()) do
 		local ri = API.GetRecipeInfo(id)
 		if ri and ri.recipeID and ri.learned then
-			local r = { n = ri.name, ups = ri.numSkillUps, cat = ri.categoryID, icon = ri.icon, cur = ri.relativeDifficulty }
+			local r = { n = ri.name, ups = ri.numSkillUps, cat = ri.categoryID, icon = ri.icon, cur = ri.relativeDifficulty, disabled = ri.disabled, canSkillUp = ri.canSkillUp }
 			self.open.recipes[#self.open.recipes + 1] = { id = id, rec = r, diff = ri.relativeDifficulty, name = ri.name }
 			queue[#queue + 1] = { id = id, rec = r, info = info, epoch = FP.recordEpoch, generation = generation }
 		end
 	end
-	if #queue > 0 then pumpQueue() else FP:Fire("RECIPES_SCANNED") end
+	if #queue > 0 then pumpQueue() else retry(); FP:Fire("RECIPES_SCANNED") end
 end
 
 -- Craftable count from bags for a recipe record with reagents.
@@ -135,8 +158,9 @@ function T:BestCrafts(limit)
 	local open = self.open
 	if not open then return nil end
 	local list = {}
+	if open.stale or (open.max and open.max > 0 and open.skill and open.skill >= open.max) then return list, open end
 	for _, e in ipairs(open.recipes) do
-		if e.diff ~= nil and e.diff <= 2 then
+		if e.diff ~= nil and e.diff >= 0 and e.diff <= 2 and not e.rec.disabled and e.rec.canSkillUp ~= false then
 			local craftable = self:Craftable(e.rec)
 			list[#list + 1] = { name = e.name, diff = e.diff, craftable = craftable, rec = e.rec, id = e.id }
 		end
@@ -145,7 +169,8 @@ function T:BestCrafts(limit)
 		local ac, bc = (a.craftable or 0) > 0, (b.craftable or 0) > 0
 		if ac ~= bc then return ac end
 		if a.diff ~= b.diff then return a.diff < b.diff end
-		return (a.craftable or 0) > (b.craftable or 0)
+		if (a.craftable or 0) ~= (b.craftable or 0) then return (a.craftable or 0) > (b.craftable or 0) end
+		return tostring(a.name) < tostring(b.name)
 	end)
 	local out = {}
 	for i = 1, math.min(limit or 12, #list) do out[i] = list[i] end
@@ -163,5 +188,26 @@ function T:MissingFor(r, crafts)
 			parts[#parts + 1] = string.format("%d× %s", want - have, name)
 		end
 	end
+	table.sort(parts)
 	return table.concat(parts, ", ")
+end
+
+-- Visible guidance for the most recently opened profession; quantities mean
+-- crafts supported by bag materials, not guaranteed skill points or profit.
+function T:Guidance(limit)
+	local list, open = self:BestCrafts(limit or 3)
+	if not list then return { "Open Tailoring or Enchanting (or another profession) for craft suggestions." } end
+	if open.stale then return { tostring(open.name) .. ": skill changed; reopen the profession to refresh." } end
+	if open.max and open.max > 0 and open.skill and open.skill >= open.max then
+		return { tostring(open.name) .. ": at the current skill cap. Check your trainer before crafting for skill." }
+	end
+	if #open.recipes == 0 then return { tostring(open.name) .. ": recipes not loaded; keep your profession window open." } end
+	if #list == 0 then return { tostring(open.name) .. ": no usable skill-up recipes found. Check your trainer." } end
+	local lines = { tostring(open.name) .. " — skill-up suggestions (bag materials):" }
+	for _, e in ipairs(list) do
+		local color = DIFF_COLORS[e.diff] or ""
+		lines[#lines + 1] = color .. U.Truncate(e.name, 35) .. "|r" .. (e.craftable and (" ×" .. e.craftable .. " crafts") or " — materials unknown")
+		if e.craftable == 0 then lines[#lines + 1] = "Need: " .. self:MissingFor(e.rec, 1) end
+	end
+	return lines
 end

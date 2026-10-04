@@ -495,6 +495,50 @@ assert(active().id==id, "tiny distance difference changes target")
 ''',
 })
 
+CASES.update({
+    "forever_base_profession_records_recipes_and_shows_panel_help": r'''
+C_TradeSkillUI.GetChildProfessionInfo=function() return {professionID=0} end
+C_TradeSkillUI.GetBaseProfessionInfo=function() return {professionID=197,professionName="Tailoring",skillLevel=108,maxSkillLevel=150} end
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(3)
+assert(FP.data.recipes[197] and FP.data.recipes[197].r[3839], "Forever base profession never scanned")
+assert(FP.Panel.footer:GetText():find("Recipe 3839",1,true), "profession recommendations hidden behind slash command")
+''',
+    "profession_delayed_loading_retries_and_close_cancels": r'''
+local orig=C_TradeSkillUI.GetChildProfessionInfo
+C_TradeSkillUI.GetChildProfessionInfo=function() return nil end
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(2)
+C_TradeSkillUI.GetChildProfessionInfo=orig
+M.RunTimers(2)
+assert(FP.Prof.open and #FP.Prof.open.recipes==2, "asynchronous profession data never retried")
+M.FireEvent("TRADE_SKILL_CLOSE")
+FP.Prof.open=nil
+M.FireEvent("TRADE_SKILL_SHOW"); M.FireEvent("TRADE_SKILL_CLOSE"); M.RunTimers(5)
+assert(not FP.Prof.open, "queued scan ran after window closed")
+''',
+    "profession_linked_view_is_not_character_recipe_evidence": r'''
+C_TradeSkillUI.IsTradeSkillLinked=function() return true end
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(3)
+assert(not FP.Prof.open and next(FP.data.recipes)==nil, "linked player recipes treated as ours")
+''',
+    "profession_rank_cap_and_unknown_reagents_have_honest_guidance": r'''
+C_TradeSkillUI.GetChildProfessionInfo=function() return {professionID=197,professionName="Tailoring",skillLevel=150,maxSkillLevel=150} end
+GetProfessionInfo=function() return "Tailoring",1,150,150,0,0,197 end
+FP.Prof:ScanRecipes(); cmd("prof")
+assert(M.Chat()[#M.Chat()]:find("cap",1,true), "capped profession still recommends skill-up crafts")
+C_TradeSkillUI.GetRecipeSchematic=function() return {reagentSlotSchematics={{required=true,quantityRequired=1,reagents={}}}} end
+assert(FP.API.GetRecipeReagents(3839)==nil, "missing reagent treated as empty known recipe")
+''',
+    "profession_helper_updates_for_bags_and_disabled_recipes": r'''
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(3)
+C_Item.GetItemCount=function() return 0 end
+M.FireEvent("BAG_UPDATE_DELAYED"); M.RunTimers(2)
+assert(FP.Panel.footer:GetText():find("Need",1,true), "bag changes did not refresh material needs")
+C_TradeSkillUI.GetRecipeInfo=function(id) return {recipeID=id,name="Disabled",learned=true,relativeDifficulty=0,disabled=true} end
+FP.Prof:ScanRecipes(); local list=FP.Prof:BestCrafts(12)
+assert(#list==0, "disabled recipes recommended")
+''',
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
