@@ -1,27 +1,27 @@
 # ForeverPath
 
-Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (beta build 1.60.1.70170, interface 16001; launch 2026-11-04).
+Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (beta build 1.60.1.70205, interface 16001; launch 2026-11-04).
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.2.0)
+## What it does (v0.3.0)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
 - **Map pins**: your waypoints on the world map (click = activate, right-click = remove) and a pin on the minimap edge.
-- **Auto-next**: arriving at an objective or turn-in waits for that quest action; completing it resumes the arrow. `/fp next` skips the arrived step. Manual waypoints remain yours. `/fp auto off` to drive manually, `/fp next` to skip.
+- **Auto-next**: automatically rechecks the route every three seconds, including with the panel hidden. Arriving waits while you work nearby; completing the step or moving more than about 100 yards away resumes navigation. Nearby alternatives need a meaningful improvement before the arrow switches. Clicking a quest row keeps that selection until completion/arrival; manual waypoints remain yours. `/fp next` skips the arrived step, `/fp auto off` disables automatic selection, and `/fp auto on` resumes after clearing the route. Quest navigation pauses in battlegrounds.
 - **Recorder**: while you play it writes a Forever dataset into SavedVariables — quest givers/enders with positions, offer/turn-in XP per level, objective progress with candidate mob/loot associations, approximate observer sightings, source-attributed observed loot including quest items, vendors, trainers (with skill requirements), flight nodes and edge costs, inn binds, deaths, zone level ranges, XP samples, profession recipes with reagents and difficulty per skill level.
-- **Professions**: `/fp prof` lists orange/yellow/green skill-up recipes you can craft from your bags right now (open the profession window once first).
+- **Professions**: open your profession window and the next-steps panel shows three skill-up suggestions, bag-material craft counts and missing materials. `/fp prof` gives the longer list. Handles Forever base professions, delayed recipe loading, bag changes and skill-cap reminders. These are material/skill suggestions, not market-price or guaranteed skill-point estimates. Reopen the profession after changing skill to refresh old suggestions.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
 
-## PvP module (v0.2.0)
+## PvP module
 
 Built around what Forever's secret-value rules leave readable (Blizzard's own predicate docs, see `docs/FOREVERPATH_SPEC.md` §8): your own casts, enemy *player* identity, battleground objective data, and what a party member chooses to broadcast. Nothing here reads enemy casts or auras, because on Forever it cannot.
 
-- **Timers** (`PvP/CastTimers.lua`): every control/interrupt/root you cast starts a bar with the target's name, a duration parsed from the spell's tooltip, and a diminishing-returns estimate per target (full → ½ → ¼ → immune, 15 s reset). Estimates only: resists and early breaks are invisible to addons.
+- **Timers** (`PvP/CastTimers.lua`): every control/interrupt/root you cast starts a bar with the target's name, a duration parsed from the spell's tooltip, and a diminishing-returns estimate per target (full → ½ → ¼ → immune, 15 s reset). Every timer is explicitly labeled `est.`: resists, successful interrupts and early breaks are unconfirmed. Cast-target identity is captured when the spell is sent; switching targets afterwards cannot change the DR attribution. Frost Nova is an area-cast estimate, without an invented single target or DR chain. Tooltip durations and the existing DR model are not verified PvP-duration measurements.
 - **Enemies seen** (`PvP/Roster.lua`): class, race, level, last seen, what you used on them; in a battleground the scoreboard adds the enemy team composition.
-- **Battleground** (`PvP/Battleground.lua`): base states with capture timers, flag carriers described relative to the nearest objective, `/fp pvp track` puts a waypoint on the flag. Records raw objective/flag data so the first real match teaches it the exact icon meanings.
-- **Coordination** (`PvP/Coordination.lua`): your CC timers are sent to party members running ForeverPath and shown on their HUD with a "window" flag before expiry. Blizzard locks addon messages inside battlegrounds and arenas; this works in world PvP and duels.
+- **Battleground** (`PvP/Battleground.lua`): base states with capture timers, flag carriers described relative to the nearest objective, `/fp pvp track` follows a single visible flag. With two flags, select `/fp pvp track 1` or `2`; `/fp pvp track off` stops. Faction is unverified: numbers identify API positions, not ally/enemy identity, and should be checked against the map. Map position may be unavailable in instances. Records raw objective/flag data so a real match can establish the exact icon meanings.
+- **Coordination** (`PvP/Coordination.lua`): your CC timers are sent to party members running ForeverPath and shown on their HUD with a "window" flag before expiry. Blizzard locks addon messages inside battlegrounds and arenas; this works in world PvP and duels. Incoming timers must come from a current party member and have a valid, bounded duration.
 - `/fp pvp` toggles the HUD; `/fp pvp status`, `track`, `spells`, `lock`, `reset`, `scale n`, `on|off`.
 
 ## Install (WoW Forever beta)
@@ -72,3 +72,7 @@ The v2 SavedVariables migration preserves older biased loot totals and objective
 ## License
 
 MIT; see [LICENSE](LICENSE). Free, unobfuscated, no ads or donation prompts.
+
+## v0.3.0 verification
+
+Checked against the Forever 70205 UI source; 18 self-tests, mock play-through and 62 regression checks pass. A copy of existing account/character SavedVariables also initializes cleanly in the mock. **The new behavior still needs in-game verification.** After installing, `/reload`, walk between quest areas, then open each profession. `/fp apicheck` with a profession open records which profession lookup worked. See [the review](docs/reviews/2026-10-04/REVIEW.md) for findings and the first battleground check.

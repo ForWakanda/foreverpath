@@ -141,3 +141,18 @@ Client updated 2026-10-01 to 1.60.1.70170 (`.build.info`); version string unchan
 | Nameplate font/health-text layout, PvP indicator icons, stable/gamepad/cooldown-manager UI, Camelot `ProjectConstants` (`WOW_PROJECT_CAMELOT = 18`) | unused |
 
 Patch-note items without an API footprint: level cap 30, Razorfen Downs/Uldaman/Excavation Site: Wetlands open, dungeon quests −50 % bonus XP (dataset `rewardXP` values will differ from 70124 captures for dungeon quests), Honor cap 25 000 and PvP gear costs +50 %, pet Aggressive Mode back. **Not yet run in game on 70170**: the next `/fp apicheck` (key `70170`) and `tools/pull-data.sh` are the verification; expect `probe:questLogCap` = 40.
+
+
+## 10. 2026-10-04 usability review (Codex, v0.3.0)
+
+Source basis: Forever **1.60.1.70205**, Blizzard UI mirror `e3ecc27b64d30fdc735a3f6579b866858f9f9df1`.
+Fresh pre-change SavedVariables: zero stored errors, 139 recorded quests, 447 progress observations, zero recipe professions, no recorded battleground maps. Build 70205 probes: 90 ok, three inconclusive (quest waypoint, quest distance, unloaded reward XP). These describe v0.2.2 play, not v0.3.0 runtime verification.
+
+- Profession correction to section 2: `Blizzard_ProfessionsTemplates/Camelot/Blizzard_Professions.lua` uses `GetBaseProfessionInfo`; shared `Professions.GetProfessionInfo` also falls back when child `professionID == 0`. The adapter previously rejected that context. It now checks child then base, rejects linked/guild/NPC contexts and exposes `probe:openProfession`. This is a source-supported failure mechanism plus a failing mock reproduction; a new in-game recipe scan remains required.
+- Trade skill scans retry transient empty data at most three times, stop after close/context changes, and refresh on name/source/list/skill events. The panel shows three learned skill-up suggestions and missing bag materials; rank-cap and stale-skill states have explicit guidance. Unsupported required reagent slots stay unknown. Live advice remains available with recording off.
+- Route refresh runs every three seconds independently of panel visibility. It refreshes same-step coordinates/progress; resumes from idle or departure beyond max(100 yd, 3 × arrival radius); retains an automatic target unless a competitor improves the score by more than 75 yd. Existing turn-in/shared-quest score bonuses remain. Explicit row selections stay pinned until invalid/arrived; clear pauses until next/go/auto-on. Battlegrounds suspend quest waypoints.
+- Mage timers use the cast-send target's readable identity, never the selected target at cast completion. Frost Nova does not claim a single victim or DR category. All bars say `est.`. The legacy DR factors/reset and tooltip-derived durations remain hypotheses, not verified landed-effect/PvP-duration readings.
+- Party timer receives now require current PARTY membership and bounded valid payloads. BG flag tracking does not label an arbitrary first flag as the enemy carrier; users can choose a numbered map slot when multiple flags appear. Slot/faction stability is unverified. BG and PvP-roster collection now respect recording off.
+- No game inputs, targeting, casting, turn-ins, combat-log registration or secret-value bypass introduced. New map/spell/identity reads pass through the adapter.
+
+Validation: 62 regressions + 18 self-tests + mock play-through; existing SavedVariables mock-load smoke passes. Actual frame sizing, automatic navigation feel, profession scans and battleground behavior still require the client. See `docs/reviews/2026-10-04/REVIEW.md`.
