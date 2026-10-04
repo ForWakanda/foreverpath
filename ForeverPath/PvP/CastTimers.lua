@@ -13,7 +13,7 @@ local CT = FP:NewModule("CastTimers")
 CT.SPELLS = {
 	-- Mage
 	["Polymorph"]          = { kind = "cc",      dr = "polymorph",  base = 20 },
-	["Frost Nova"]         = { kind = "root",    dr = "root",       base = 8 },
+	["Frost Nova"]         = { kind = "root",    area = true,       base = 8 },
 	["Counterspell"]       = { kind = "lockout", base = 10 },
 	["Ice Block"]          = { kind = "buff",    base = 10 },
 	["Blink"]              = { kind = "note",    base = 0 },
@@ -71,9 +71,7 @@ end
 -- "…forcing it to wander around for up to 20 sec." -> 20 ; "…cannot be cast for 10 sec." -> 10
 function CT:ParseDuration(spellID)
 	if self.parsed[spellID] ~= nil then return self.parsed[spellID] or nil end
-	if not (C_Spell and type(C_Spell.GetSpellDescription) == "function") then self.parsed[spellID] = false; return nil end
-	local ok, desc = pcall(C_Spell.GetSpellDescription, spellID)
-	desc = ok and FP.safe(desc) or nil
+	local desc = API.GetSpellDescription(spellID)
 	if type(desc) ~= "string" or desc == "" then return nil end   -- not loaded yet; try again next cast
 	local secs = desc:match("for up to (%d+%.?%d*) sec") or desc:match("for (%d+%.?%d*) sec") or desc:match("lasting (%d+%.?%d*) sec") or desc:match("(%d+%.?%d*) sec")
 	secs = tonumber(secs)
@@ -115,7 +113,9 @@ function CT:OnSent(unit, target, castGUID, spellID)
 	if unit ~= "player" then return end
 	castGUID, spellID = FP.safe(castGUID), FP.safe(spellID)
 	if not castGUID or not spellID then return end
-	sent[castGUID] = { spellID = spellID, target = FP.safe(target), t = GetTime() }
+	target = FP.safe(target)
+	if target == "" then target = nil end
+	sent[castGUID] = { spellID = spellID, target = target, isPlayer = API.CastTargetIsPlayer(target), t = GetTime() }
 	-- keep the map tiny
 	local n = 0
 	for g, s in pairs(sent) do n = n + 1; if GetTime() - s.t > 30 then sent[g] = nil end end
@@ -132,26 +132,21 @@ function CT:OnSucceeded(unit, castGUID, spellID)
 	local s = castGUID and sent[castGUID] or nil
 	if castGUID then sent[castGUID] = nil end
 	local target = s and s.target or nil
-	if not target and def.kind ~= "buff" and def.kind ~= "trap" then
-		local ok, tn = pcall(UnitName, "target")
-		target = ok and FP.safe(tn) or nil
-	end
+	-- AoE casts do not identify who was hit. Missing SENT evidence must not
+	-- be replaced with whichever unit happens to be selected now.
+	if def.area or def.kind == "buff" or def.kind == "trap" then target = nil end
 	if def.kind == "note" then
 		FP:Debug("CastTimers: noted", name, target)
 		return
 	end
 	local base = self:ParseDuration(spellID) or def.base
 	local duration, drText, factor = base, nil, 1
-	if def.dr and target and self:TargetIsPlayer() then
+	if def.dr and target and s and s.isPlayer then
 		duration, drText, factor = self:DRApply(target, def.dr, base)
 	end
-	local icon
-	if C_Spell and type(C_Spell.GetSpellTexture) == "function" then
-		local okI, tex = pcall(C_Spell.GetSpellTexture, spellID)
-		if okI then icon = FP.safe(tex) end
-	end
+	local icon = API.GetSpellTexture(spellID)
 	if factor == 0 then
-		FP:Print(FP.RED .. "IMMUNE:|r " .. tostring(target) .. " should be immune to " .. name .. " (DR estimate)")
+		FP:Print(FP.GOLD .. "DR estimate:|r " .. tostring(target) .. " may be immune to " .. name .. "; hits and breaks are unconfirmed")
 		FP.Roster:Note(target, name, "immune")
 		FP:Fire("PVP_CHANGED")
 		return
@@ -159,11 +154,6 @@ function CT:OnSucceeded(unit, castGUID, spellID)
 	local entry = self:Start({ spell = name, spellID = spellID, icon = icon, target = target, owner = "me", duration = duration, kind = def.kind, drText = drText, castGUID = castGUID })
 	FP.Roster:Note(target, name, drText)
 	return entry
-end
-
-function CT:TargetIsPlayer()
-	local ok, v = pcall(UnitIsPlayer, "target")
-	return ok and FP.safe(v) and true or false
 end
 
 function CT:Prune()
@@ -189,7 +179,7 @@ function CT:Lines()
 			local dr = e.drText and (FP.GREY .. "  " .. e.drText .. "|r") or ""
 			local window = (e.owner ~= "me" and remaining <= 1.5 and remaining > 0) and (FP.GOLD .. "  window|r") or ""
 			lines[#lines + 1] = {
-				text = string.format("%s%s%s %s%s%s", who, e.spell, target, remaining > 0 and string.format("%.1fs", remaining) or "ended", dr, window),
+				text = string.format("%s%s%s %s%s%s", who, e.spell, target, remaining > 0 and string.format("est. %.1fs", remaining) or "estimate ended", dr, window),
 				icon = e.icon, frac = math.max(0, remaining / math.max(0.1, e.duration)), color = KIND_COLORS[e.owner == "me" and e.kind or "partner"],
 			}
 		end
@@ -223,5 +213,5 @@ function CT:OnEnable()
 		elseif event == "UNIT_SPELLCAST_SUCCEEDED" then ok, err = pcall(CT.OnSucceeded, CT, unit, a, b) end
 		if ok == false then FP:ReportError("cast-timers", err) end
 	end)
-	FP.PvP:RegisterSection("Timers", 10, function() return CT:Lines() end)
+	FP.PvP:RegisterSection("Cast estimates (hits / breaks unknown)", 10, function() return CT:Lines() end)
 end

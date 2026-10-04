@@ -37,10 +37,12 @@ function R:Observe(unit)
 	if type(level) == "number" and level > 0 then e.level = level end
 	e.last, e.seen = now, e.seen + 1
 	-- persistent dataset
-	local d = FP.data.pvp.players
-	local p = d[name]
-	if not p then p = { first = now, seen = 0 }; d[name] = p end
-	p.class, p.race, p.level, p.last, p.seen = e.class, e.race, e.level, now, p.seen + 1
+	if FP.settings.record then
+		local d = FP.data.pvp.players
+		local p = d[name]
+		if not p then p = { first = now, seen = 0 }; d[name] = p end
+		p.class, p.race, p.level, p.last, p.seen = e.class, e.race, e.level, now, p.seen + 1
+	end
 	FP:Fire("PVP_CHANGED")
 	return e
 end
@@ -57,7 +59,7 @@ function R:OnTargetDied()
 	local name = FP.safe(UnitName("target"))
 	if type(name) ~= "string" then return end
 	local p = FP.data.pvp.players[name]
-	if p then p.diedTargeted = (p.diedTargeted or 0) + 1 end
+	if p and FP.settings.record then p.diedTargeted = (p.diedTargeted or 0) + 1 end
 	local e = self.session[name]
 	if e then e.note, e.noteT = "died", U.Now() end
 	FP:Fire("PVP_CHANGED")

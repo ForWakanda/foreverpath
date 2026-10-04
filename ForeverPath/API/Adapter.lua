@@ -107,6 +107,92 @@ function API.UnitInfo(unit)
 	return info
 end
 
+-- Identity is captured at cast-send time; a later selected target may differ.
+function API.CastTargetIsPlayer(target)
+	if type(target) ~= "string" or target == "" or not hasg("UnitName") or not hasg("UnitIsPlayer") then return nil end
+	for _, unit in ipairs({ "target", "focus", "mouseover" }) do
+		local ok, name, realm = pcall(UnitName, unit)
+		name, realm = safe(name), safe(realm)
+		if ok and type(name) == "string" then
+			local full = realm and realm ~= "" and (name .. "-" .. realm:gsub("%s+", "")) or nil
+			if target == name or target == full then
+				local good, player = pcall(UnitIsPlayer, unit)
+				if good then return safe(player) end
+			end
+		end
+	end
+	return nil
+end
+
+function API.InBattleground()
+	if not has(C_PvP, "IsBattleground") then return false end
+	local ok, value = pcall(C_PvP.IsBattleground)
+	return ok and safe(value) or false
+end
+
+function API.MatchState()
+	if not has(C_PvP, "GetActiveMatchState") then return nil end
+	local ok, value = pcall(C_PvP.GetActiveMatchState)
+	return ok and safe(value) or nil
+end
+
+function API.IsChatLocked()
+	if not has(C_ChatInfo, "InChatMessagingLockdown") then return false end
+	local ok, value = pcall(C_ChatInfo.InChatMessagingLockdown)
+	return not ok or safe(value) ~= false
+end
+
+function API.GetSpellDescription(spellID)
+	if not has(C_Spell, "GetSpellDescription") then return nil end
+	local ok, value = pcall(C_Spell.GetSpellDescription, spellID)
+	return ok and safe(value) or nil
+end
+
+function API.GetSpellTexture(spellID)
+	if not has(C_Spell, "GetSpellTexture") then return nil end
+	local ok, value = pcall(C_Spell.GetSpellTexture, spellID)
+	return ok and safe(value) or nil
+end
+
+-- Only readable map data is returned. Unknown/secret coordinates stay absent.
+function API.GetBattlegroundObjectives(mapID)
+	local out = {}
+	if not has(C_AreaPoiInfo, "GetAreaPOIForMap") or not has(C_AreaPoiInfo, "GetAreaPOIInfo") then return out end
+	local ok, ids = pcall(C_AreaPoiInfo.GetAreaPOIForMap, mapID)
+	if not ok or type(ids) ~= "table" then return out end
+	for _, id in ipairs(ids) do
+		local good, info = pcall(C_AreaPoiInfo.GetAreaPOIInfo, mapID, id)
+		if good and type(info) == "table" then
+			local x, y
+			if info.position and info.position.GetXY then x, y = info.position:GetXY(); x, y = safe(x), safe(y) end
+			local secs
+			if has(C_AreaPoiInfo, "IsAreaPOITimed") and has(C_AreaPoiInfo, "GetAreaPOISecondsLeft") then
+				local okt, timed = pcall(C_AreaPoiInfo.IsAreaPOITimed, id)
+				if okt and safe(timed) then
+					local oks, value = pcall(C_AreaPoiInfo.GetAreaPOISecondsLeft, id)
+					secs = oks and safe(value) or nil
+				end
+			end
+			out[#out + 1] = { id = id, name = safe(info.name), desc = safe(info.description), atlas = safe(info.atlasName), tex = safe(info.textureIndex), x = x, y = y, secs = secs }
+		end
+	end
+	return out
+end
+
+function API.GetBattlegroundFlags(mapID)
+	local out = {}
+	if not hasg("GetNumBattlefieldFlagPositions") or not has(C_PvP, "GetBattlefieldFlagPosition") then return out end
+	local okn, n = pcall(GetNumBattlefieldFlagPositions)
+	n = okn and safe(n) or nil
+	if not U.Finite(n) then return out end
+	for i = 1, math.min(10, n) do
+		local ok, x, y, tex = pcall(C_PvP.GetBattlefieldFlagPosition, i, mapID)
+		x, y, tex = safe(x), safe(y), safe(tex)
+		if ok and U.ValidMapPoint(mapID, x, y) then out[#out + 1] = { index = i, x = x, y = y, tex = tex } end
+	end
+	return out
+end
+
 -------------------------------------------------------------------------------
 -- Map & position
 -------------------------------------------------------------------------------

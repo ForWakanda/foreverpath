@@ -9,7 +9,6 @@ local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local BG = FP:NewModule("Battleground")
 
-local function has(tbl, fn) return type(tbl) == "table" and type(tbl[fn]) == "function" end
 local ticker
 
 BG.active = false
@@ -44,6 +43,7 @@ end
 
 function BG:Record()
 	local key = tostring(self.mapID or "unknown")
+	if not FP.settings.record then return { pois = {}, flags = {} } end
 	local rec = FP.data.bg[key]
 	if not rec then rec = { pois = {}, flags = {} }; FP.data.bg[key] = rec end
 	rec.name = rec.name or (API.GetZoneText())
@@ -54,46 +54,21 @@ function BG:Scan()
 	if not self.active or not self.mapID then self.pois, self.flags = {}, {}; return end
 	local rec = self:Record()
 	-- objectives
-	local pois = {}
-	if has(C_AreaPoiInfo, "GetAreaPOIForMap") and has(C_AreaPoiInfo, "GetAreaPOIInfo") then
-		local ok, ids = pcall(C_AreaPoiInfo.GetAreaPOIForMap, self.mapID)
-		if ok and type(ids) == "table" then
-			for _, id in ipairs(ids) do
-				local ok2, info = pcall(C_AreaPoiInfo.GetAreaPOIInfo, self.mapID, id)
-				if ok2 and type(info) == "table" then
-					local x, y
-					if info.position and info.position.GetXY then x, y = info.position:GetXY() end
-					local secs
-					if has(C_AreaPoiInfo, "IsAreaPOITimed") and has(C_AreaPoiInfo, "GetAreaPOISecondsLeft") then
-						local okt, timed = pcall(C_AreaPoiInfo.IsAreaPOITimed, id)
-						if okt and timed then local oks, s = pcall(C_AreaPoiInfo.GetAreaPOISecondsLeft, id); if oks then secs = FP.safe(s) end end
-					end
-					local poi = { id = id, name = FP.safe(info.name), desc = FP.safe(info.description), atlas = FP.safe(info.atlasName), tex = FP.safe(info.textureIndex), x = x, y = y, secs = secs }
-					poi.state = stateFromInfo(poi)
-					pois[#pois + 1] = poi
-					-- dataset: remember every distinct (atlas, texture, description) seen per POI
-					local r = rec.pois[id] or { n = poi.name, x = x and U.Coord(x), y = y and U.Coord(y), seen = {} }
-					rec.pois[id] = r
-					local sig = tostring(poi.atlas) .. "|" .. tostring(poi.tex) .. "|" .. tostring(poi.desc)
-					r.seen[sig] = (r.seen[sig] or 0) + 1
-				end
-			end
-		end
+	local pois = API.GetBattlegroundObjectives(self.mapID)
+	for _, poi in ipairs(pois) do
+		poi.state = stateFromInfo(poi)
+		local r = rec.pois[poi.id] or { n = poi.name, x = poi.x and U.Coord(poi.x), y = poi.y and U.Coord(poi.y), seen = {} }
+		rec.pois[poi.id] = r
+		local sig = tostring(poi.atlas) .. "|" .. tostring(poi.tex) .. "|" .. tostring(poi.desc)
+		r.seen[sig] = (r.seen[sig] or 0) + 1
 	end
 	table.sort(pois, function(a, b) return tostring(a.name) < tostring(b.name) end)
 	self.pois = pois
 	-- flags
-	local flags = {}
-	if type(GetNumBattlefieldFlagPositions) == "function" and has(C_PvP, "GetBattlefieldFlagPosition") then
-		local okn, n = pcall(GetNumBattlefieldFlagPositions)
-		for i = 1, (okn and n or 0) do
-			local ok, x, y, tex = pcall(C_PvP.GetBattlefieldFlagPosition, i, self.mapID)
-			x, y, tex = ok and FP.safe(x), ok and FP.safe(y), ok and FP.safe(tex)
-			if x and y then
-				flags[#flags + 1] = { index = i, x = x, y = y, tex = tex, near = self:Landmark(x, y) }
-				rec.flags[tostring(tex)] = (rec.flags[tostring(tex)] or 0) + 1
-			end
-		end
+	local flags = API.GetBattlegroundFlags(self.mapID)
+	for _, flag in ipairs(flags) do
+		flag.near = self:Landmark(flag.x, flag.y)
+		rec.flags[tostring(flag.tex)] = (rec.flags[tostring(flag.tex)] or 0) + 1
 	end
 	self.flags = flags
 	self:UpdateFlagWaypoint()
@@ -116,7 +91,10 @@ end
 
 function BG:UpdateFlagWaypoint()
 	if not FP.settings.pvp.trackFlag or not self.active then FP.Waypoints:RemoveBySource("bg"); return end
-	local flag = self.flags[1]
+	local flag
+	local selected = FP.settings.pvp.flagIndex
+	for _, f in ipairs(self.flags) do if f.index == selected then flag = f end end
+	if not selected and #self.flags == 1 then flag = self.flags[1] end
 	if not flag then FP.Waypoints:RemoveBySource("bg"); return end
 	local existing
 	for _, wp in ipairs(FP.Waypoints.list) do
@@ -124,9 +102,9 @@ function BG:UpdateFlagWaypoint()
 	end
 	if existing then
 		existing.mapID, existing.x, existing.y = self.mapID, flag.x, flag.y
-		existing.title = "Flag carrier " .. flag.near
+		existing.title = "Flag #" .. flag.index .. " " .. flag.near
 	else
-		FP.Waypoints:Add(self.mapID, flag.x, flag.y, "Flag carrier " .. flag.near, { source = { type = "bg" }, persistent = true, radius = 10, activate = true })
+		FP.Waypoints:Add(self.mapID, flag.x, flag.y, "Flag #" .. flag.index .. " " .. flag.near, { source = { type = "bg" }, persistent = true, radius = 10, activate = true })
 	end
 	FP:Fire("WAYPOINTS_CHANGED")
 end
@@ -135,14 +113,19 @@ function BG:Lines()
 	if not self.active then return {} end
 	local lines = {}
 	for _, p in ipairs(self.pois) do
-		local state = p.state or (p.atlas and ("[" .. p.atlas .. "]")) or (p.tex and ("[tex " .. p.tex .. "]")) or "?"
+		local state = p.state or "state unknown"
 		local color = p.state == "Horde" and "|cffff4040" or (p.state == "Alliance" and "|cff4080ff" or (p.state == "contested" and "|cffffd100" or FP.GREY))
 		local timer = p.secs and p.secs > 0 and (" " .. U.FormatTime(p.secs)) or ""
 		lines[#lines + 1] = { text = string.format("%s: %s%s|r%s", tostring(p.name), color, state, timer) }
 	end
 	for _, f in ipairs(self.flags) do
-		lines[#lines + 1] = { text = "flag " .. f.near, icon = f.tex }
+		lines[#lines + 1] = { text = "Flag #" .. f.index .. " " .. f.near, icon = f.tex }
 	end
+	if #self.flags > 1 and FP.settings.pvp.trackFlag and not FP.settings.pvp.flagIndex then
+		lines[#lines + 1] = { text = "Choose a flag: /fp pvp track 1 or 2" }
+	end
+	lines[#lines + 1] = { text = FP.GREY .. "Flag faction unverified; use the map.|r" }
+	if API.IsChatLocked() then lines[#lines + 1] = { text = FP.GREY .. "Party timer sharing unavailable here.|r" } end
 	local ms = FP.PvP:MatchState()
 	if ms then lines[#lines + 1] = { text = FP.GREY .. "match state " .. tostring(ms) .. (FP.settings.pvp.trackFlag and " · tracking flag" or "") .. "|r" } end
 	return lines

@@ -302,8 +302,9 @@ M.now = M.now + 40; FP.CastTimers:Prune(); check(#FP.CastTimers.active == 0, "ti
 check(FP.CastTimers:DRState("Noblewarrior", "polymorph") == "full", "DR resets after the window")
 -- coordination: in a group, own CC broadcasts; partner's message becomes a timer; lockdown blocks sends
 M.inGroup = true
+M.SetUnit("party1", {name="Hunterbro",realm="ClassicBetaPvP2"})
 cast(122, "Cast-8"); M.RunTimers(1)
-check(#M.addonSent >= 1 and M.addonSent[#M.addonSent]:match("^PT;122;Frost Nova;8%.0;Noblewarrior;DR full;root$"), "own CC broadcast: " .. tostring(M.addonSent[#M.addonSent]))
+check(#M.addonSent >= 1 and M.addonSent[#M.addonSent]:match("^PT;122;Frost Nova;8%.0;;;root$"), "own CC broadcast: " .. tostring(M.addonSent[#M.addonSent]))
 M.FireEvent("CHAT_MSG_ADDON", "FPATH", "PT;19503;Scatter Shot;4.0;Noblewarrior;DR full;cc", "PARTY", "Hunterbro-ClassicBetaPvP2")
 local partner = FP.CastTimers.active[#FP.CastTimers.active]
 check(partner and partner.owner == "Hunterbro" and partner.spell == "Scatter Shot" and partner.duration == 4, "partner CC received as a timer")

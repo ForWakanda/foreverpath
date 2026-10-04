@@ -20,11 +20,11 @@ function PvP:RegisterSection(name, order, fn)
 end
 
 function PvP:InBattleground()
-	return has(C_PvP, "IsBattleground") and C_PvP.IsBattleground() or false
+	return API.InBattleground()
 end
 
 function PvP:MatchState()
-	return has(C_PvP, "GetActiveMatchState") and C_PvP.GetActiveMatchState() or nil
+	return API.MatchState()
 end
 
 -- Hostile player check with every value secret-guarded.
@@ -205,13 +205,17 @@ function PvP:Command(rest)
 	elseif sub == "reset" then self:ResetPosition(); p("pvp hud position reset")
 	elseif sub == "scale" then s.scale = math.max(0.5, math.min(2, tonumber(args[2] or "") or 1)); self:ApplySettings(); p("pvp hud scale " .. s.scale)
 	elseif sub == "track" then
-		s.trackFlag = not s.trackFlag
-		p("enemy flag carrier tracking " .. (s.trackFlag and "on (waypoint follows the flag while in a battleground)" or "off"))
+		local index = tonumber(args[2])
+		if args[2] == "off" then s.trackFlag, s.flagIndex = false, nil
+		elseif index and index >= 1 and index <= 10 and index == math.floor(index) then s.trackFlag, s.flagIndex = true, index
+		elseif args[2] then p("usage: /fp pvp track [1|2|off]"); return
+		else s.trackFlag, s.flagIndex = not s.trackFlag, nil end
+		p("flag tracking " .. (s.trackFlag and (s.flagIndex and ("#" .. s.flagIndex) or "on; choose 1 or 2 when both flags appear") or "off"))
 		FP:Fire("PVP_CHANGED")
 	elseif sub == "status" then
 		p(string.format("pvp: module %s · hud %s · in battleground %s · match state %s · chat lockdown %s",
 			s.enabled and "on" or "off", s.manual or "auto", tostring(self:InBattleground()), tostring(self:MatchState()),
-			tostring(has(C_ChatInfo, "InChatMessagingLockdown") and C_ChatInfo.InChatMessagingLockdown())))
+			tostring(API.IsChatLocked())))
 		p("timers: " .. FP.CastTimers:Summary())
 		p("roster: " .. FP.Roster:Summary())
 		p("battleground: " .. FP.Battleground:Summary())

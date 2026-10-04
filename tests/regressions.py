@@ -539,6 +539,66 @@ assert(#list==0, "disabled recipes recommended")
 ''',
 })
 
+CASES.update({
+    "mage_cast_keeps_sent_target_identity_when_target_changes": r'''
+M.SetUnit("target",{name="Enemy",player=true})
+M.FireEvent("UNIT_SPELLCAST_SENT","player","Enemy","Cast-A",118)
+M.SetUnit("target",{name="Boar",player=false})
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","Cast-A",118)
+local e=FP.CastTimers.active[1]
+assert(e.target=="Enemy" and e.drText=="DR full", "DR reads the new target instead of the cast target")
+assert(FP.CastTimers:Lines()[1].text:find("est.",1,true), "cast estimate presented as observed effect")
+''',
+    "nova_does_not_invent_single_target_dr_and_missing_sent_does_not_guess": r'''
+M.SetUnit("target",{name="Enemy",player=true})
+M.FireEvent("UNIT_SPELLCAST_SENT","player","Enemy","Cast-N",122)
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","Cast-N",122)
+local e=FP.CastTimers.active[1]
+assert(not e.target and not e.drText and not FP.CastTimers.dr.Enemy, "AoE root attributed to selected target")
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","Cast-Unknown",118)
+e=FP.CastTimers.active[2]
+assert(not e.target and not e.drText, "missing cast target replaced with selected target")
+''',
+    "pvp_party_messages_reject_outsiders_and_invalid_durations": r'''
+M.inGroup=true; M.SetUnit("party1",{name="Friend",realm="Realm"})
+local function msg(body,channel,sender) M.FireEvent("CHAT_MSG_ADDON","FPATH",body,channel or "PARTY",sender or "Friend-Realm") end
+msg("PT;118;Polymorph;20;Enemy;;cc","WHISPER","Stranger-Realm")
+msg("PT;118;Polymorph;1e309;Enemy;;cc")
+msg("PT;118;Polymorph;-20;Enemy;;cc")
+assert(#FP.CastTimers.active==0 and FP.Coordination.received==0, "untrusted/invalid timer accepted")
+msg("PT;118;Polymorph;20;Enemy;;cc")
+assert(#FP.CastTimers.active==1 and FP.Coordination.received==1)
+''',
+    "quest_route_yields_to_battleground_and_recovers_after_exit": r'''
+addQuest(9001); FP.Planner:Auto("test"); assert(active())
+M.bg=true; FP.Planner:Auto("test")
+assert(not active(), "quest arrow stays active in battleground")
+M.bg=false; FP.Planner:Auto("test"); assert(active())
+''',
+    "bg_record_off_and_ambiguous_flag_selection": r'''
+cmd("record off"); M.bg=true; M.flags={{x=.3,y=.3,tex=111},{x=.7,y=.7,tex=222}}
+local before=snapshot(FP.data.bg)
+FP.Battleground:Detect(); cmd("pvp track"); FP.Battleground:Scan()
+assert(snapshot(FP.data.bg)==before, "battleground writes despite recording off")
+assert(not active(), "first flag silently assumed to be the enemy carrier")
+cmd("pvp track 2"); FP.Battleground:Scan()
+assert(active() and active().x==.7)
+cmd("pvp track off"); assert(not active())
+''',
+})
+
+CASES.update({
+    "pvp_roster_record_off_preserves_dataset_but_keeps_live_hud": r'''
+M.SetUnit("target",{name="Enemy",player=true,canAttack=true,class="MAGE",race="Human",level=30})
+FP.Roster:Observe("target")
+cmd("record off")
+local before=snapshot(FP.data.pvp)
+FP.Roster:Observe("target"); FP.Roster:OnTargetDied()
+assert(snapshot(FP.data.pvp)==before, "record off still writes PvP sightings/deaths")
+assert(FP.Roster.session.Enemy.note=="died")
+''',
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

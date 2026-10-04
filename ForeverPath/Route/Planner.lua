@@ -197,6 +197,11 @@ function P:Go(step, automatic)
 end
 
 function P:Auto(reason)
+	if API.InBattleground() then
+		FP.Waypoints:RemoveBySource("plan")
+		self.waiting = nil
+		return
+	end
 	if not FP.settings.autoNext or self.paused then return end
 	FP.Pos:Refresh(true)
 	self:Build()
