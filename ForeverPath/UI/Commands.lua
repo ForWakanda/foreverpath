@@ -201,7 +201,7 @@ function C:Handle(msg)
 		local v = rest:lower()
 		if v == "on" then FP.settings.autoNext = true elseif v == "off" then FP.settings.autoNext = false else FP.settings.autoNext = not FP.settings.autoNext end
 		p("auto-next " .. (FP.settings.autoNext and "on" or "off"))
-		if FP.settings.autoNext then FP.Planner:Auto("cmd") end
+		if FP.settings.autoNext then FP.Planner.paused, FP.Planner.pinned = nil, nil; FP.Planner:Auto("cmd") end
 	elseif cmd == "way" or cmd == "wp" then cmdWay(rest)
 	elseif cmd == "goto" then cmdGoto(rest)
 	elseif cmd == "arrow" then cmdArrow(rest)

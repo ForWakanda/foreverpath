@@ -146,7 +146,7 @@ function Panel:Refresh(positionOnly)
 	local pct = (xp and max and max > 0) and math.floor(xp / max * 100 + 0.5) or 0
 	local active = FP.Waypoints:GetActive()
 	self.status:SetText(string.format("Lvl %s · %d%% xp%s · %s", tostring(level or "?"), pct, rested and (" · rested " .. math.floor(rested / (max or 1) * 100 + 0.5) .. "%") or "",
-		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. "no waypoint|r"))
+		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. (FP.Planner.waiting and ("Working here: " .. U.Truncate(FP.Planner.waiting.title or "quest", 24)) or (FP.Planner.paused and "route paused — /fp auto on" or "finding next quest")) .. "|r"))
 	local n = 0
 	for i, row in ipairs(self.rows) do
 		local step = steps[i]

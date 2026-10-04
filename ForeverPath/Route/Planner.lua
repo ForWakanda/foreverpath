@@ -15,6 +15,9 @@ end
 function P:WaitingValid()
 	local s = self.waiting
 	if not s or not API.IsOnQuest(s.questID) then return false end
+	-- Stay put while working in the area, but recover if the player walks away.
+	local d = s.mapID and FP.Pos:DistanceTo(s)
+	if d and d > math.max(100, (s.radius or 35) * 3) then return false end
 	if s.kind == "turnin" then return API.IsQuestComplete(s.questID) end
 	if API.IsQuestComplete(s.questID) then return false end
 	local o = API.GetQuestObjectives(s.questID)[s.objIndex or 1]
@@ -179,9 +182,10 @@ function P:NextStep()
 	return nil
 end
 
-function P:Go(step)
+function P:Go(step, automatic)
 	if not step or not U.ValidMapPoint(step.mapID, step.x, step.y) then return nil end
-	self.waiting = nil
+	self.waiting, self.paused = nil, nil
+	self.pinned = not automatic
 	FP.Waypoints:RemoveBySource("plan")
 	local title = step.kind == "turnin" and step.title or (step.text .. (step.progress and (" " .. step.progress) or ""))
 	local wp = FP.Waypoints:Add(step.mapID, step.x, step.y, title, {
@@ -193,16 +197,35 @@ function P:Go(step)
 end
 
 function P:Auto(reason)
-	if not FP.settings.autoNext then return end
+	if not FP.settings.autoNext or self.paused then return end
+	FP.Pos:Refresh(true)
 	self:Build()
 	local active = FP.Waypoints:GetActive()
 	if active and (not active.source or active.source.type ~= "plan") then return end
 	if self:WaitingValid() then return end
 	self.waiting = nil
 	local s = self:NextStep()
+	local current
+	if active then
+		for _, step in ipairs(self.steps) do
+			if sameStep(step, active.source) then current = step; break end
+		end
+	end
+	-- Keep explicit selections until completed; automatic choices need a meaningful
+	-- improvement before switching, so neighboring POIs do not make the arrow flap.
+	if current and current.mapID and current.x then
+		if self.pinned or (s and current.dist and s.dist and current.score <= s.score + 75) then s = current end
+	end
 	if s then
-		if active and active.source and active.source.questID == s.questID and active.source.objIndex == s.objIndex and active.source.kind == s.kind then return end
-		self:Go(s)
+		if active and sameStep(active.source, s) then
+			-- POIs can move and objective counts change without a new quest ID.
+			active.mapID, active.x, active.y = s.mapID, s.x, s.y
+			active.title = s.kind == "turnin" and s.title or (s.text .. (s.progress and (" " .. s.progress) or ""))
+			self.current = s
+			FP:Fire("WAYPOINTS_CHANGED")
+			return
+		end
+		self:Go(s, true)
 		FP:Print(FP.GOLD .. "Next:|r " .. (s.kind == "turnin" and s.title or (s.text .. " — " .. s.title)) .. (s.dist and (" " .. FP.GREY .. U.FormatDistance(s.dist) .. "|r") or ""))
 	elseif active and active.source and active.source.type == "plan" then
 		FP.Waypoints:RemoveBySource("plan")
@@ -215,16 +238,25 @@ function P:OnEnable()
 	FP:On("QUEST_ACCEPTED", function() FP.After(1.5, function() P:Auto("accept") end) end)
 	FP:On("QUEST_REMOVED", function() FP.After(1, function() P:Auto("removed") end) end)
 	FP:On("PARTY_UPDATED", function() P:Build() end)
-	FP:On("NAV_CANCELLED", function() self.waiting = nil end)
+	FP:On("NAV_CANCELLED", function() self.waiting, self.pinned, self.paused = nil, nil, true end)
 	FP:On("WAYPOINT_ARRIVED", function(wp)
 		if wp.source and wp.source.type == "plan" then
 			self.waiting = U.Copy(wp.source)
+			self.waiting.mapID, self.waiting.x, self.waiting.y, self.waiting.radius = wp.mapID, wp.x, wp.y, wp.radius
+			self.waiting.title = wp.title
+			self.pinned = nil
 			if wp.source.kind == "objective" then
-				FP:Print(FP.GREY .. "You're in the objective area. Complete it to resume the arrow; /fp next to skip.|r")
+				FP:Print(FP.GREY .. "You're in the objective area. The arrow resumes when you finish or leave the area; /fp next to skip.|r")
 			end
 		end
 	end)
 	FP.After(8, function() P:Auto("login") end)
+	-- Independent of the arrow/panel position ticker: arrival removes the last
+	-- waypoint, and a hidden panel must not stop automatic navigation.
+	if C_Timer and C_Timer.NewTicker then
+		self.ticker = C_Timer.NewTicker(3, function() FP.pcall("auto-route", P.Auto, P, "position") end)
+	end
+	FP:RegisterEvent("ZONE_CHANGED_NEW_AREA", function() FP.After(1, function() P:Auto("zone") end) end)
 end
 
 -- Re-plan when the active planned waypoint no longer makes sense.
@@ -236,7 +268,8 @@ function P:CheckActive()
 		return
 	end
 	local active = FP.Waypoints:GetActive()
-	if not active or not active.source or active.source.type ~= "plan" then return end
+	if not active then self:Auto("idle"); return end
+	if not active.source or active.source.type ~= "plan" then return end
 	local s = active.source
 	local invalid = false
 	if not API.IsOnQuest(s.questID) then

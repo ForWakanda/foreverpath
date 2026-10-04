@@ -449,6 +449,52 @@ assert(nextFP.cdb.party.name=="Friend" and nextFP.cdb.party.mode=="paste")
 ''',
 })
 
+CASES.update({
+    "auto_recovers_idle_and_reroutes_after_movement": r'''
+local a=addQuest(9001); local b=addQuest(9002)
+a.waypoint={1413,.60,.60}; b.waypoint={1413,.80,.80}
+FP.Waypoints:RemoveBySource("plan")
+FP.Panel:Toggle(false)
+M.Tick(1); M.RunTimers(4)
+assert(active() and active().source.questID==9001, "idle planner requires /fp next")
+M.px,M.py=.78,.78
+M.Tick(1); M.RunTimers(4)
+assert(active() and active().source.questID==9002, "movement never reconsiders nearest quest")
+''',
+    "leaving_arrived_area_resumes_navigation": r'''
+addQuest(9001); local b=addQuest(9002); b.waypoint={1413,.80,.80}
+FP.Planner:Auto("test"); M.px,M.py=.6,.6; M.Tick(1)
+assert(FP.Planner.waiting and not active())
+FP.Panel:Toggle(false)
+M.px,M.py=.78,.78; M.Tick(1); M.RunTimers(4)
+assert(active() and active().source.questID==9002, "leaving area leaves arrow paused forever")
+''',
+    "active_plan_updates_changed_poi_and_progress": r'''
+local a=addQuest(9001); FP.Planner:Auto("test")
+a.waypoint={1413,.65,.65}; a.objectives[1].numFulfilled=1; a.objectives[1].numRequired=3
+FP.Planner:Auto("test")
+assert(active().x==.65 and active().title:find("1/3",1,true), "same quest keeps stale coordinates/progress")
+''',
+    "auto_respects_stop_off_and_explicit_selection": r'''
+addQuest(9001); local b=addQuest(9002); b.waypoint={1413,.80,.80}
+FP.Planner:Build(); FP.Planner:Go(FP.Planner.steps[2])
+M.Tick(1); M.RunTimers(4)
+assert(active().source.questID==9002, "explicit row selection overwritten")
+cmd("way clear"); M.Tick(1); M.RunTimers(4)
+assert(not active(), "clear immediately recreates arrow")
+cmd("auto on"); assert(active())
+cmd("auto off"); FP.Waypoints:RemoveBySource("plan")
+M.Tick(1); M.RunTimers(4); assert(not active())
+''',
+    "auto_small_distance_changes_do_not_flap": r'''
+local a=addQuest(9001); local b=addQuest(9002)
+b.waypoint={1413,.601,.6}
+FP.Planner:Auto("test"); local id=active().id
+M.px,M.py=.7,.6; M.Tick(1); M.RunTimers(4)
+assert(active().id==id, "tiny distance difference changes target")
+''',
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
