@@ -373,6 +373,48 @@ assert(not pin:ShouldMouseButtonBePassthrough("RightButton") and #pin._passthrou
 pin:OnClick("RightButton")
 assert(not active())
 ''',
+    "way_shortcut_decimal_coordinates_and_manual_priority": r'''
+assert(SLASH_FOREVERPATHWAY1 == "/way")
+SlashCmdList.FOREVERPATHWAY("45.4 70.4")
+local wp=active()
+assert(wp and wp.mapID==1413)
+assert(math.abs(wp.x-.454)<1e-12 and math.abs(wp.y-.704)<1e-12)
+addQuest(9001); M.RunTimers(4)
+assert(active().id==wp.id, "auto route replaced /way target")
+SlashCmdList.FOREVERPATHWAY("45.4 70.4 Quest cave")
+assert(active().title=="Quest cave")
+cmd("way 45.4 70.4 Quest cave")
+assert(active().mapID==wp.mapID and active().x==wp.x and active().y==wp.y)
+''',
+    "way_shortcut_map_edges_and_invalid_input": r'''
+SlashCmdList.FOREVERPATHWAY("12 45.4 70.4 Other zone")
+assert(active().mapID==12 and active().title=="Other zone")
+SlashCmdList.FOREVERPATHWAY("0 100 Map edge")
+assert(active().x==0 and active().y==1)
+SlashCmdList.FOREVERPATHWAY("0.5 1 Near edge")
+assert(active().x==.005 and active().y==.01)
+local n=#FP.Waypoints.list
+for _, input in ipairs({"-1 70.4", "45.4 100.1", "1e309 70.4", "45.4", "foo bar", "12 45.4 101"}) do
+    SlashCmdList.FOREVERPATHWAY(input)
+end
+assert(#FP.Waypoints.list==n)
+assert(#(FP.db.errors or {})==0)
+''',
+    "way_shortcut_management_commands": r'''
+SlashCmdList.FOREVERPATHWAY("45.4 70.4 First")
+local first=active().id
+SlashCmdList.FOREVERPATHWAY("46 71 Second")
+SlashCmdList.FOREVERPATHWAY("next")
+assert(active().id==first)
+SlashCmdList.FOREVERPATHWAY("rm "..first)
+assert(not FP.Waypoints:Get(first))
+SlashCmdList.FOREVERPATHWAY("clear")
+assert(#FP.Waypoints.list==0)
+SlashCmdList.FOREVERPATHWAY("here Home")
+assert(active().title=="Home" and active().persistent)
+SlashCmdList.FOREVERPATHWAY("")
+assert(#(FP.db.errors or {})==0)
+''',
     "waypoint_percent_validation_and_low_map_id": r'''
 cmd("way 1 2 Near edge")
 assert(active().x==0.01 and active().y==0.02)

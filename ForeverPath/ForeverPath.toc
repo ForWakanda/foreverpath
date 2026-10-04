@@ -2,7 +2,7 @@
 ## Title: ForeverPath
 ## Notes: Quest GPS, route planner and Forever data recorder. Free, open source, no automation: it shows you where to go, you play.
 ## Author: Michael + Claude
-## Version: 0.4.0
+## Version: 0.4.1
 ## SavedVariables: ForeverPathDB
 ## SavedVariablesPerCharacter: ForeverPathCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Map_01

@@ -39,7 +39,7 @@ Built around what Forever's secret-value rules leave readable (Blizzard's own pr
 
 ## Commands
 
-`/fp help` prints them. Waypoint coordinates always use percentages (0–100); three numeric arguments mean map ID, x%, y%. Short version: `/fp` panel · `/fp next` · `/fp goto <quest>` · `/fp way x y [title]` · `/fp way here` · `/fp arrow lock|flip|scale n|reset` · `/fp prof` · `/fp status` · `/fp apicheck` · `/fp selftest` · `/fp record on|off`.
+`/fp help` prints them. `/way 45.4 70.4` points to those coordinates in your current zone; add an optional title, e.g. `/way 45.4 70.4 Quest cave`. `/way` is a shortcut for `/fp way`, including `here`, `list`, `next`, `clear`, and `rm <id>`. Waypoint coordinates always use percentages (0–100); three numeric arguments mean map ID, x%, y% (e.g. `/way 1413 45.4 70.4`). If another addon owns `/way`, use `/fp way` explicitly. Short version: `/fp` panel · `/fp next` · `/fp goto <quest>` · `/way x y [title]` · `/fp way here` · `/fp arrow lock|flip|scale n|reset` · `/fp prof` · `/fp status` · `/fp apicheck` · `/fp selftest` · `/fp record on|off`.
 
 ## Getting the data out
 

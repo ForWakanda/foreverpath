@@ -10,7 +10,7 @@ local function help()
 	p("  /fp               toggle the next-steps panel")
 	p("  /fp next          arrow to the planner's best next step")
 	p("  /fp auto on|off   auto-advance the arrow (now " .. (FP.settings.autoNext and "on" or "off") .. ")")
-	p("  /fp way 47.2 61.8 [title]   waypoint on your current map (also: way <mapID> x y)")
+	p("  /way 45.4 70.4 [title]   waypoint on your current map (also: /fp way or /way <mapID> x y)")
 	p("  /fp way here [title] | way list | way next | way clear | way rm <id>")
 	p("  /fp goto <quest id or part of the title>")
 	p("  /fp arrow lock|unlock|flip|scale <n>|reset|hide|show")
@@ -261,6 +261,11 @@ SLASH_FOREVERPATH2 = "/foreverpath"
 SlashCmdList["FOREVERPATH"] = function(msg)
 	local ok, err = pcall(C.Handle, C, msg)
 	if not ok then FP:ReportError("command", err) end
+end
+
+SLASH_FOREVERPATHWAY1 = "/way"
+SlashCmdList["FOREVERPATHWAY"] = function(msg)
+	SlashCmdList["FOREVERPATH"]("way " .. (msg or ""))
 end
 
 function ForeverPath_OnAddonCompartmentClick()
