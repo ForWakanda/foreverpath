@@ -45,6 +45,7 @@ FP.defaults = {
 }
 
 FP.charDefaults = {
+	prep = { enabled = true, mode = "auto", water = 40, bandages = 10, reagents = 5 },
 	waypoints = {},
 	activeId = nil,
 	nextId = 1,

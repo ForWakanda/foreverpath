@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (b
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.3.0)
+## What it does (v0.4.0)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
@@ -12,6 +12,7 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Auto-next**: automatically rechecks the route every three seconds, including with the panel hidden. Arriving waits while you work nearby; completing the step or moving more than about 100 yards away resumes navigation. Nearby alternatives need a meaningful improvement before the arrow switches. Clicking a quest row keeps that selection until completion/arrival; manual waypoints remain yours. `/fp next` skips the arrived step, `/fp auto off` disables automatic selection, and `/fp auto on` resumes after clearing the route. Quest navigation pauses in battlegrounds.
 - **Recorder**: while you play it writes a Forever dataset into SavedVariables — quest givers/enders with positions, offer/turn-in XP per level, objective progress with candidate mob/loot associations, approximate observer sightings, source-attributed observed loot including quest items, vendors, trainers (with skill requirements), flight nodes and edge costs, inn binds, deaths, zone level ranges, XP samples, profession recipes with reagents and difficulty per skill level.
 - **Professions**: open your profession window and the next-steps panel shows three skill-up suggestions, bag-material craft counts and missing materials. `/fp prof` gives the longer list. Handles Forever base professions, delayed recipe loading, bag changes and skill-cap reminders. These are material/skill suggestions, not market-price or guaranteed skill-point estimates. Reopen the profession after changing skill to refresh old suggestions.
+- **Mage supplies** (`/fp prep`): an out-of-combat checklist in the PvP HUD. Shows carried drinks/bandages, missing mana gems you can conjure, and relevant Slow Fall/teleport/portal/Arcane Brilliance reagents. Appears briefly on login/zone entry, at a vendor, and out of combat in a battleground. Updates on bag/spell changes; unknown item data stays unavailable.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
 
 ## PvP module
@@ -76,3 +77,13 @@ MIT; see [LICENSE](LICENSE). Free, unobfuscated, no ads or donation prompts.
 ## v0.3.0 verification
 
 Checked against the Forever 70205 UI source; 18 self-tests, mock play-through and 62 regression checks pass. A copy of existing account/character SavedVariables also initializes cleanly in the mock. **The new behavior still needs in-game verification.** After installing, `/reload`, walk between quest areas, then open each profession. `/fp apicheck` with a profession open records which profession lookup worked. See [the review](docs/reviews/2026-10-04/REVIEW.md) for findings and the first battleground check.
+
+## Mage preparation (v0.4.0)
+
+After `/reload`, use `/fp prep` for a report or `/fp prep show` to keep the checklist visible outside combat. `/fp prep auto` restores contextual display; `hide` hides its HUD section, and `off` disables its scans. It respects `/fp pvp hide|off`; use `/fp pvp on` and `/fp pvp auto` to re-enable the containing HUD. Other classes do not activate this feature.
+
+Default per-character stocking targets: **40 drinks, 10 carried bandages, 5 of each relevant reagent**, and one of each known mana gem. Change them with `/fp prep water 60`, `/fp prep bandages 20`, or `/fp prep reagents 10`; targets accept 0–200 and zero hides that category. These are convenience targets, not required quantities. Gems/reagents appear only when the relevant supported spell is learned.
+
+Counts include equipped bags only, including the reagent bag when the client exposes it. Drinks match the client's localized Drink item effect and must meet the character's level; food, potions and higher-level drinks are excluded. Combined food/drink items with a different effect name are not included. Bandages are **carried stock**, not a claim about First Aid requirements or debuffs. No cooldown/aura checks, purchase, cast or item use occurs. Missing data is retried briefly and on item-cache events; `/fp apicheck` includes `probe:magePrep` for diagnosis.
+
+Validation: 72 regressions, 18 self-tests and the mock play-through. Actual bag classification, learned-spell lookups, layout and visibility still need the client. No battleground maps were present in the latest saved data, so faction-specific flag/base alerts remain pending real match evidence.

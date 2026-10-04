@@ -599,6 +599,119 @@ assert(FP.Roster.session.Enemy.note=="died")
 ''',
 })
 
+PREP_SETUP = r'''
+NUM_TOTAL_EQUIPPED_BAG_SLOTS=5
+M.level=30
+M.known={[759]=true,[3567]=true,[130]=true}
+C_SpellBook={IsSpellKnown=function(id) return M.known[id] or false end}
+M.bags={[0]={{159,12},{3772,10},{1251,5},{4540,99},{3385,2},{8079,20},{17056,1}},[5]={{17031,2}},[-1]={{159,200}}}
+C_Container.GetContainerNumSlots=function(bag) assert(bag>=0 and bag<=5, "bank scanned"); return #(M.bags[bag] or {}) end
+C_Container.GetContainerItemInfo=function(bag,slot) local i=M.bags[bag][slot]; return {itemID=i[1],stackCount=i[2]} end
+C_Item.GetItemInfo=function(id)
+    local food=id==159 or id==3772 or id==4540 or id==8079
+    local class=(food or id==1251 or id==3385) and 0 or 15
+    local sub=food and 5 or (id==1251 and 7 or 1)
+    return "Item "..id,"link",1,1,id==8079 and 55 or 1,"type","subtype",20,"",123,0,class,sub
+end
+C_Item.GetItemSpell=function(id) return id==4540 and "Nourriture" or "Boisson", 430 end
+local function prepRow(key)
+    for _,r in ipairs(FP.MagePrep.rows or {}) do if r.key==key then return r end end
+end
+FP.MagePrep:Refresh()
+'''
+CASES.update({
+    "mage_prep_counts_bags_excludes_food_potions_and_overlevel_drinks": PREP_SETUP + r'''
+assert(prepRow("water").count==22 and prepRow("water").missing==18)
+assert(prepRow("bandages").count==5)
+assert(prepRow("reagent:17031").count==2)
+assert(prepRow("reagent:17056").count==1)
+assert(prepRow("gem:5514").missing==1)
+assert(not prepRow("gem:5513") and not prepRow("reagent:17032") and not prepRow("reagent:17020"))
+''',
+    "mage_prep_updates_after_purchase_and_learning_without_dataset_writes": PREP_SETUP + r'''
+cmd("record off"); local before=snapshot(FP.data)
+M.bags[0][1][2]=40; M.bags[0][8]={5514,1}
+M.known[11417]=true
+M.FireEvent("BAG_UPDATE_DELAYED"); M.FireEvent("SPELLS_CHANGED"); M.RunTimers(1)
+assert(prepRow("water").missing==0 and prepRow("gem:5514").missing==0)
+assert(prepRow("reagent:17032").missing==5)
+assert(snapshot(FP.data)==before)
+''',
+    "mage_prep_unknown_api_cache_and_spell_state_do_not_report_zero": PREP_SETUP + r'''
+local original=C_Item.GetItemInfo
+C_Item.GetItemInfo=function(id) if id==159 then return nil end return original(id) end
+FP.MagePrep:Refresh(); assert(prepRow("water").count==nil and prepRow("water").missing==nil)
+C_Item.GetItemInfo=original; M.FireEvent("GET_ITEM_INFO_RECEIVED",159,true); M.RunTimers(1)
+assert(prepRow("water").count==22)
+C_SpellBook.IsSpellKnown=nil; FP.MagePrep:Refresh()
+assert(not prepRow("gem:5514") and not prepRow("reagent:17031"))
+assert(FP.MagePrep.rows[#FP.MagePrep.rows].text:find("unavailable",1,true))
+C_Container.GetContainerNumSlots=nil; FP.MagePrep:Refresh()
+assert(#FP.MagePrep.rows==1 and not prepRow("water"))
+''',
+    "mage_prep_never_scans_inventory_or_spells_during_combat": PREP_SETUP + r'''
+M.FireEvent("PLAYER_REGEN_DISABLED")
+C_Container.GetContainerNumSlots=function() error("combat bag read") end
+C_SpellBook.IsSpellKnown=function() error("combat spell read") end
+M.FireEvent("BAG_UPDATE_DELAYED"); M.RunTimers(2)
+FP.MagePrep:Refresh(); cmd("prep")
+assert(#FP.MagePrep:Lines()==0)
+assert(M.Chat()[#M.Chat()]:find("after combat",1,true))
+''',
+    "mage_prep_auto_visibility_and_user_controls": PREP_SETUP + r'''
+FP.MagePrep.untilTime=0; FP.MagePrep.bg=false
+assert(#FP.MagePrep:Lines()==0)
+M.FireEvent("MERCHANT_SHOW"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
+M.FireEvent("MERCHANT_CLOSED"); assert(#FP.MagePrep:Lines()==0)
+M.bg=true; M.FireEvent("ZONE_CHANGED_NEW_AREA"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
+M.bg=false; M.FireEvent("ZONE_CHANGED_NEW_AREA"); M.RunTimers(25); assert(#FP.MagePrep:Lines()==0)
+cmd("prep show"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
+cmd("prep hide"); assert(#FP.MagePrep:Lines()==0)
+cmd("prep auto"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
+cmd("prep off"); assert(#FP.MagePrep:Lines()==0)
+cmd("prep on"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
+''',
+    "mage_prep_goals_are_validated_and_character_specific": PREP_SETUP + r'''
+cmd("prep water 60"); M.RunTimers(1)
+assert(FP.cdb.prep.water==60 and prepRow("water").missing==38)
+cmd("prep water -1"); cmd("prep water 1e309"); cmd("prep water 2.5"); cmd("prep water 201")
+assert(FP.cdb.prep.water==60)
+cmd("prep bandages 0"); M.RunTimers(1); assert(not prepRow("bandages"))
+assert(not FP.settings.prep and FP.charDefaults.prep.water==40)
+''',
+    "mage_prep_non_mage_is_inert": PREP_SETUP + r'''
+M.class="HUNTER"; FP.MagePrep.isMage=false
+C_Container.GetContainerNumSlots=function() error("Hunter inventory scanned by Mage module") end
+FP.MagePrep:Refresh(); cmd("prep")
+assert(#FP.MagePrep:Lines()==0)
+assert(M.Chat()[#M.Chat()]:find("for Mages",1,true))
+''',
+    "mage_prep_probe_retains_real_counts_and_lookup_state": PREP_SETUP + r'''
+cmd("apicheck")
+local r=FP.db.apicheck["70124-manual"].rows["probe:magePrep"]
+assert(r.ok and r.note:find("drink count 22",1,true) and r.note:find("lookup true",1,true))
+''',
+})
+
+CASES.update({
+    "mage_prep_adapter_combat_guard_and_read_failures_are_unknown": PREP_SETUP + r'''
+InCombatLockdown=function() return true end
+C_Container.GetContainerNumSlots=function() error("must not read bags") end
+local inv,why=FP.API.GetPrepInventory()
+assert(not inv and why:find("combat",1,true))
+InCombatLockdown=function() return false end
+inv,why=FP.API.GetPrepInventory(); assert(not inv and why:find("unavailable",1,true))
+''',
+    "mage_prep_does_not_override_pvp_hide_or_off": PREP_SETUP + r'''
+cmd("pvp hide"); cmd("prep show"); M.RunTimers(2)
+assert(not FP.PvP.frame:IsShown() and FP.settings.pvp.manual=="hide")
+cmd("pvp off"); cmd("prep on"); M.RunTimers(2)
+assert(not FP.PvP.frame:IsShown() and not FP.settings.pvp.enabled)
+cmd("pvp on"); cmd("pvp auto"); M.RunTimers(2)
+assert(FP.PvP.frame:IsShown())
+''',
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

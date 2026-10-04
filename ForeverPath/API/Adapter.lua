@@ -535,6 +535,76 @@ function API.GetItemCount(itemID, includeBank)
 end
 
 local HEARTHSTONE = 6948
+-- Preparation reads are out-of-combat inventory/spellbook snapshots only.
+-- nil means unavailable, never "zero supplies" or "spell not learned".
+function API.KnowsSpell(spellID)
+	local fn = has(C_SpellBook, "IsSpellKnown") and C_SpellBook.IsSpellKnown or (hasg("IsSpellKnown") and IsSpellKnown)
+	if not fn then return nil end
+	local ok, known = pcall(fn, spellID)
+	if not ok then return nil end
+	known = safe(known)
+	if type(known) == "boolean" then return known end
+	return nil
+end
+
+local prepItemRequests = {}
+local function requestPrepItem(id)
+	if prepItemRequests[id] or not has(C_Item, "RequestLoadItemDataByID") then return end
+	prepItemRequests[id] = true
+	pcall(C_Item.RequestLoadItemDataByID, id)
+end
+
+function API.GetPrepInventory()
+	if API.InCombat() then return nil, "Refresh after combat" end
+	if not has(C_Container, "GetContainerNumSlots") or not has(C_Container, "GetContainerItemInfo") then return nil, "Bag counts unavailable" end
+	local out = { counts = {}, water = 0, bandages = 0, waterKnown = true, bandagesKnown = true }
+	local lastBag = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+	if not U.Finite(lastBag) or lastBag < 0 or lastBag > 10 then return nil, "Bag layout unavailable" end
+	for bag = 0, lastBag do
+		local ok, slots = pcall(C_Container.GetContainerNumSlots, bag)
+		slots = safe(slots)
+		if not ok or not U.Finite(slots) or slots < 0 or slots > 200 then return nil, "Bag counts unavailable" end
+		for slot = 1, slots do
+			local good, item = pcall(C_Container.GetContainerItemInfo, bag, slot)
+			if not good then return nil, "Bag counts unavailable" end
+			if item ~= nil then
+				if type(item) ~= "table" then return nil, "Bag counts unavailable" end
+				local id, count = safe(item.itemID), safe(item.stackCount)
+				if not U.Finite(id) or id < 1 or not U.Finite(count) or count < 0 then return nil, "Bag counts unavailable" end
+				out.counts[id] = (out.counts[id] or 0) + count
+			end
+		end
+	end
+	local itemInfo = has(C_Item, "GetItemInfo") and C_Item.GetItemInfo or (hasg("GetItemInfo") and GetItemInfo)
+	local itemSpell = has(C_Item, "GetItemSpell") and C_Item.GetItemSpell or (hasg("GetItemSpell") and GetItemSpell)
+	local drinkName
+	if itemSpell then
+		local ok, name = pcall(itemSpell, 159) -- Refreshing Spring Water: localized Drink effect
+		drinkName = ok and safe(name) or nil
+	end
+	if type(drinkName) ~= "string" then out.waterKnown = false; requestPrepItem(159) end
+	local level = API.PlayerLevel()
+	for id, count in pairs(out.counts) do
+		local v = itemInfo and { pcall(itemInfo, id) } or {}
+		local name, minLevel, class, subclass = safe(v[2]), safe(v[6]), safe(v[13]), safe(v[14])
+		if not v[1] or type(name) ~= "string" or not U.Finite(class) or not U.Finite(subclass) then
+			out.waterKnown, out.bandagesKnown = false, false
+			requestPrepItem(id)
+		elseif class == 0 and subclass == 7 then -- ItemClass.Consumable / ItemConsumableSubclass.Bandage
+			out.bandages = out.bandages + count -- carried stock, not a First Aid/cooldown usability claim
+		elseif class == 0 and subclass == 5 then -- Fooddrink: food and mana potions must not count as water
+			local ok, effect
+			if itemSpell then ok, effect = pcall(itemSpell, id); effect = safe(effect) end
+			if not ok or type(effect) ~= "string" then out.waterKnown = false; requestPrepItem(id)
+			elseif effect == drinkName then
+				if not U.Finite(level) or not U.Finite(minLevel) then out.waterKnown = false
+				elseif minLevel <= level then out.water = out.water + count end
+			end
+		end
+	end
+	return out
+end
+
 function API.GetHearthCooldown()
 	local start, duration
 	if has(C_Container, "GetItemCooldown") then
@@ -856,7 +926,8 @@ function API.Check()
 		{ "C_QuestLog", "GetNextWaypoint" }, { "C_QuestLog", "GetDistanceSqToQuest" }, { "C_QuestLog", "GetAllCompletedQuestIDs" },
 		{ "C_QuestLog", "GetLogIndexForQuestID" }, { "C_QuestLog", "GetTitleForQuestID" },
 		{ "C_GossipInfo", "GetAvailableQuests" }, { "C_GossipInfo", "GetActiveQuests" }, { "C_GossipInfo", "GetOptions" },
-		{ "C_Item", "GetItemInfo" }, { "C_Item", "GetItemCount" }, { "C_Container", "GetItemCooldown" }, { "C_Spell", "GetItemCooldown" },
+		{ "C_Item", "GetItemInfo" }, { "C_Item", "GetItemCount" }, { "C_Item", "GetItemSpell" },
+		{ "C_Container", "GetContainerNumSlots" }, { "C_Container", "GetContainerItemInfo" }, { "C_SpellBook", "IsSpellKnown" }, { "C_Container", "GetItemCooldown" }, { "C_Spell", "GetItemCooldown" },
 		{ "C_MerchantFrame", "GetItemInfo" }, { "C_TaxiMap", "GetAllTaxiNodes" }, { "C_Minimap", "GetViewRadius" },
 		{ "C_TradeSkillUI", "GetBaseProfessionInfo" }, { "C_TradeSkillUI", "GetChildProfessionInfo" }, { "C_TradeSkillUI", "GetAllRecipeIDs" }, { "C_TradeSkillUI", "GetFilteredRecipeIDs" },
 		{ "C_TradeSkillUI", "GetRecipeInfo" }, { "C_TradeSkillUI", "GetRecipeSchematic" }, { "C_SkillInfo", "GetSkillLineInfo" },
@@ -927,6 +998,12 @@ function API.Check()
 	probe("openProfession", function()
 		local info, source = API.GetOpenTradeSkill()
 		return info ~= nil, info and (tostring(info.professionName) .. " via " .. tostring(source) .. "; " .. #API.GetTradeSkillRecipeIDs() .. " recipe IDs") or "open your own profession window to verify recipe access"
+	end)
+	probe("magePrep", function()
+		local inv, reason = API.GetPrepInventory()
+		if not inv then return false, reason end
+		return inv.waterKnown and inv.bandagesKnown, string.format("drink count %s; bandages %s; learned spell lookup %s",
+			inv.waterKnown and tostring(inv.water) or "loading/unknown", inv.bandagesKnown and tostring(inv.bandages) or "loading/unknown", tostring(API.KnowsSpell(759)))
 	end)
 	probe("hearth", function() return API.HasHearthstone(), "bind: " .. tostring(API.GetBindLocation()) end)
 	probe("secretUnitName", function() return true, FP.issecret(UnitName("player")) and "player name is secret" or "player name readable" end)

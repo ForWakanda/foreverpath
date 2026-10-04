@@ -2,7 +2,7 @@
 ## Title: ForeverPath
 ## Notes: Quest GPS, route planner and Forever data recorder. Free, open source, no automation: it shows you where to go, you play.
 ## Author: Michael + Claude
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: ForeverPathDB
 ## SavedVariablesPerCharacter: ForeverPathCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Map_01
@@ -30,6 +30,7 @@ PvP\CastTimers.lua
 PvP\Roster.lua
 PvP\Battleground.lua
 PvP\Coordination.lua
+PvP\MagePrep.lua
 UI\Panel.lua
 UI\Commands.lua
 Core\SelfTest.lua
