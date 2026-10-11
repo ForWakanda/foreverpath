@@ -901,6 +901,31 @@ assert(FP.db.rare.secretLayout.detail == 1 and not FP.db.rare.secretLayout.name,
 """,
 })
 
+CASES.update({
+    "rare_watch_hunter_pet_guid_keys_the_run_on_entry": r"""
+local RW = FP.RareWatch
+-- a pet summoned on another map must not key the run
+M.SetUnit("partypet1", { guid = "Pet-0-4379-1-13-417-00003BB9A0", name = "Bigcow", player = false })
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW:Current().key:find("^visit%-") and not RW:Current().petZone, "foreign-map pet ignored")
+-- the pet re-summons inside: keyed before any loot
+M.SetUnit("partypet1", { guid = "Pet-0-4379-189-182404-417-00003BB9A1", name = "Bigcow", player = false })
+M.RunTimers(7)
+assert(RW:Current().key == "182404" and RW:Current().uidSource == "pet" and RW:Current().petZone == "182404", "pet zoneUID keys the run: " .. tostring(RW:Current().key))
+-- loot from the same instance agrees; nothing changes
+M.lootSlots = { { name = "Linen Cloth", qty = 1, itemID = 2589 } }
+M.lootSource = "Creature-0-4379-189-182404-4295-00003BB9A1"
+M.FireEvent("LOOT_OPENED", false, false)
+assert(RW:Current().key == "182404" and #FP.db.rare.order == 1, "loot agrees with the pet key")
+-- after a reset the pet carries the new zoneUID: new run without looting
+M.FireEvent("CHAT_MSG_SYSTEM", "Scarlet Monastery has been reset.", "", "", "")
+M.SetUnit("partypet1", { guid = "Pet-0-4379-189-182500-417-00003BB9A2", name = "Bigcow", player = false })
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW:Current().key == "182500" and #FP.db.rare.order == 2, "new run keyed from the pet after reset")
+""",
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

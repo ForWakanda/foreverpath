@@ -156,16 +156,33 @@ function RW:OnEnterWorld()
 		local run = self:Current()
 		if run and not run.closed and (U.Now() - (run.last or 0)) > STALE then self:CloseRun("stale"); run = nil end
 		if not run or run.closed then self:OpenRun(inst, "enter") else run.last = U.Now() end
-		-- hunter pets are player-controlled: their GUID stays readable and may carry the instance id
-		local pet = API.UnitGUID("pet") or API.UnitGUID("partypet1") or API.UnitGUID("partypet2")
-		if pet then
-			local _, _, zone = U.ParseGUIDFull(pet)
-			local cur = self:Current()
-			if cur and zone then cur.petZone = zone end
-		end
+		self:KeyFromPets(inst)
+		FP.After(6, function() RW:KeyFromPets(API.GetInstance()) end)   -- pets re-summon a moment after zoning
 		self:ProbeVignettes("enter")
 	end
 	self:Refresh()
+end
+
+-- Pets are player-controlled, so their GUID stays readable in a dungeon, and it
+-- carries the instance's zoneUID: in the live Azshir run (2026-10-11, build 70338)
+-- the hunter pet's zoneUID equalled the loot-source zoneUID (182404). That keys
+-- the run the moment the group zones in, before anyone loots. Guarded by the
+-- GUID's map id matching the current instance so a pet summoned elsewhere
+-- never keys a run.
+function RW:KeyFromPets(inst)
+	if not self.inside or not inst then return end
+	for _, unit in ipairs({ "pet", "partypet1", "partypet2", "partypet3", "partypet4" }) do
+		local guid = API.UnitGUID(unit)
+		if guid then
+			local kind, _, zone, mapID = U.ParseGUIDFull(guid)
+			if kind == "Pet" and zone and zone ~= "0" and mapID and mapID == inst.mapID then
+				local cur = self:Current()
+				if cur then cur.petZone = zone end
+				self:LearnZoneUID(zone, "pet")
+				return zone
+			end
+		end
+	end
 end
 
 function RW:ProbeVignettes(trigger)
