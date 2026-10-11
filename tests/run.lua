@@ -382,6 +382,8 @@ check(run.seen and run.sightings[1].cls == "rare" and run.sightings[1].secret ==
 check(#M.played == playedBefore + 1 and M.played[#M.played].kit == 8959, "alert sound played once")
 check(#M.addonSent == sentBefore + 1 and M.addonSent[#M.addonSent] == "RW;up;33;Undead;", "sighting broadcast to the party: " .. tostring(M.addonSent[#M.addonSent]))
 check(RW.frame:IsShown() and RW.status:GetText():find("RARE UP"), "hud shows RARE UP: " .. tostring(RW.status:GetText()))
+local need = 6 + 16 + 6 + RW.status:GetStringHeight() + 6 + RW.detail:GetStringHeight() + 6 + RW.stats:GetStringHeight() + 8 + 20 + 8
+check(RW.frame:GetHeight() >= need and (RW.detail._point[2] == RW.nameText or RW.detail._point[2] == RW.status), "hud height fits its text (" .. RW.frame:GetHeight() .. " >= " .. need .. ") and rows stack")
 M.FireEvent("PLAYER_TARGET_CHANGED")
 check(#M.played == playedBefore + 1, "re-targeting the same rare does not re-alert")
 -- looting the rare resolves which one it was and marks the run killed

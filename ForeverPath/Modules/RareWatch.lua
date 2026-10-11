@@ -451,18 +451,18 @@ function RW:OnInit()
 	status:SetJustifyH("LEFT")
 	local nameText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	self.nameText = nameText
-	nameText:SetPoint("TOPLEFT", 8, -40)
+	nameText:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -4)
 	nameText:SetWidth(WIDTH - 16)
 	nameText:SetJustifyH("LEFT")
 	local detail = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	self.detail = detail
-	detail:SetPoint("TOPLEFT", 8, -56)
+	detail:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -6)
 	detail:SetWidth(WIDTH - 16)
 	detail:SetJustifyH("LEFT")
 	local stats = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	self.stats = stats
-	stats:SetPoint("BOTTOMLEFT", 8, 8)
-	stats:SetWidth(WIDTH - 110)
+	stats:SetPoint("TOPLEFT", detail, "BOTTOMLEFT", 0, -6)
+	stats:SetWidth(WIDTH - 16)
 	stats:SetJustifyH("LEFT")
 
 	-- The Scan button is a protected frame: it lives on UIParent (never shown or
@@ -498,6 +498,16 @@ function RW:OnInit()
 	self:ApplySettings()
 	self:ApplyMacro()
 	f:Hide()
+end
+
+-- Rows stack from the title; the frame grows to fit wrapped text so nothing overlaps.
+function RW:Layout()
+	local nameShown = self.nameShown and true or false
+	self.detail:ClearAllPoints()
+	self.detail:SetPoint("TOPLEFT", nameShown and self.nameText or self.status, "BOTTOMLEFT", 0, -6)
+	local h = 6 + 16 + 6 + self.status:GetStringHeight() + 6 + self.detail:GetStringHeight() + 6 + self.stats:GetStringHeight() + 8 + 20 + 8
+	if nameShown then h = h + self.nameText:GetStringHeight() + 4 end
+	self.frame:SetHeight(math.max(96, math.floor(h + 0.5)))
 end
 
 function RW:ApplySettings()
@@ -545,7 +555,7 @@ function RW:StatusLines()
 		detail = "Marked " .. U.FormatTime(U.Now() - run.absent) .. " ago" .. (run.absentBy and (" by " .. run.absentBy) or "") .. ". Reset and try again."
 	else
 		status = FP.GREY .. primary .. ": unknown|r"
-		detail = (run.scans or 0) > 0 and (run.scans .. " scan" .. (run.scans > 1 and "s" or "") .. " with no hit — walk toward the lair and scan again") or "Press Scan while walking in, or target/mouse over anything rare."
+		detail = (run.scans or 0) > 0 and (run.scans .. " scan" .. (run.scans > 1 and "s" or "") .. ", no hit — closer to the lair, scan again") or "Scan while walking in, or target anything rare."
 	end
 	local st = self:Stats()
 	local stats = string.format("Runs %d · seen %d · killed %d%s · ~5%% expected", st.runs, st.seen, st.killed,
@@ -564,6 +574,7 @@ function RW:Refresh()
 		local run = self:Current()
 		if not (run and run.seen and self.nameShown) then self.nameText:SetText(""); self.nameShown = nil end
 		if self.inside then self.absentButton:Show() else self.absentButton:Hide() end
+		self:Layout()
 		f:Show()
 	else
 		f:Hide()
