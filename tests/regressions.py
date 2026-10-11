@@ -754,6 +754,133 @@ assert(FP.PvP.frame:IsShown())
 ''',
 })
 
+CASES.update({
+    "rare_watch_only_inside_watched_instance_and_secret_safe": r"""
+local RW = FP.RareWatch
+-- Barrens: a rare target with a readable name is not a watched sighting
+M.SetUnit("target", { guid = "Creature-0-4379-1-13-5842-00003BB8E0", name = "Takk the Leaper", level = 19, reaction = 2, classification = "rare" })
+M.FireEvent("PLAYER_TARGET_CHANGED")
+assert(RW:Current() == nil, "no run outside an instance")
+-- an unwatched dungeon: no run, no hud
+M.instance = { name = "The Deadmines", mapID = 36 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(not RW.inside and RW:Current() == nil and not RW.frame:IsShown(), "Deadmines is not watched")
+-- watched dungeon, secret everything on a normal mob: silent; on a rare: sighting without touching the secret
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW.inside and RW:Current(), "run opened")
+M.SetUnit("mouseover", { secret = true, level = 31, reaction = 2, classification = "elite" })
+M.FireEvent("UPDATE_MOUSEOVER_UNIT")
+assert(not RW:Current().seen, "elite trash is not a rare")
+M.SetUnit("nameplate3", { secret = true, level = 33, reaction = 2, classification = "rareelite", ctype = "Undead" })
+M.FireEvent("NAME_PLATE_UNIT_ADDED", "nameplate3")
+local run = RW:Current()
+assert(run.seen and run.sightings[1].how == "nameplate" and run.sightings[1].cls == "rareelite" and run.sightings[1].secret == 1, "rare elite via nameplate")
+assert(run.seenName == nil and run.seenID == nil, "secret identity is never stored")
+-- a friendly rare (reaction 5) is not a hunt target
+M.SetUnit("party1target", { secret = true, level = 60, reaction = 5, classification = "rare" })
+M.FireEvent("UNIT_TARGET", "party1")
+assert(#run.sightings == 1, "friendly rare ignored")
+-- with recording off the rare watch still works (it is live information, not dataset)
+cmd("record off")
+M.SetUnit("target", { secret = true, level = 33, reaction = 2, classification = "rare" })
+M.FireEvent("PLAYER_TARGET_CHANGED")
+assert(#run.sightings == 2, "sighting recorded with dataset recording off")
+assert(FP.data.creatures[6490] == nil, "no creature identity invented in the dataset")
+""",
+    "rare_watch_runs_key_by_loot_and_merge_on_reentry": r"""
+local RW = FP.RareWatch
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.lootSlots = { { name = "Linen Cloth", qty = 1, itemID = 2589 } }
+M.lootSource = "Creature-0-4379-189-1001-4295-00003BB9A1"
+M.FireEvent("LOOT_OPENED", false, false)
+assert(RW:Current().key == "1001" and FP.db.rare.order[1] == "1001" and #FP.db.rare.order == 1, "keyed by zoneUID")
+-- walk out and back in without a reset: same run
+M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.instance = { name = "Scarlet Monastery", mapID = 189 }; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW:Current().key == "1001" and #FP.db.rare.order == 1, "re-entry without reset keeps the run")
+-- the partner reset it while we were outside: a different zoneUID starts a new run
+M.lootSource = "Creature-0-4379-189-1002-4295-00003BB9A2"
+M.FireEvent("LOOT_OPENED", false, false)
+assert(RW:Current().key == "1002" and #FP.db.rare.order == 2 and FP.db.rare.runs["1001"].closedWhy == "superseded", "new zoneUID starts a new run")
+-- scan counts, then reset, re-enter, loot proves it is the SAME instance again (merge, no third run)
+RW:AfterScan()
+assert(RW:Current().scans == 1, "scan counted")
+M.FireEvent("CHAT_MSG_SYSTEM", "Scarlet Monastery has been reset.", "", "", "")
+assert(RW:Current() == nil, "closed on reset")
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(#FP.db.rare.order == 3 and RW:Current().key:find("^visit%-"), "provisional third run")
+RW:AfterScan()
+M.lootSource = "Creature-0-4379-189-1002-4295-00003BB9A3"
+M.FireEvent("LOOT_OPENED", false, false)
+assert(#FP.db.rare.order == 2 and RW:Current().key == "1002" and RW:Current().scans == 2 and RW:Current().visits == 2, "provisional visit folded into the known instance")
+local st = RW:Stats()
+assert(st.runs == 2 and st.checked == 1 and st.scans == 2, string.format("stats runs %d checked %d scans %d", st.runs, st.checked, st.scans))
+assert(RW.IsResetMessage("Scarlet Monastery has been reset.") == "Scarlet Monastery" and not RW.IsResetMessage("Scarlet Monastery cannot be reset."), "reset message parse")
+""",
+    "rare_watch_scan_button_is_a_macro_and_defers_in_combat": r"""
+local RW = FP.RareWatch
+assert(RW.scan:GetAttribute("type") == "macro", "secure macro button")
+assert(RW.scan._clicks[1] == "AnyUp" and RW.scan._clicks[2] == "AnyDown", "click registration")
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW.scan:IsShown(), "scan visible inside")
+-- combat: watch-list edits must not touch secure attributes until combat ends
+M.combatLockdown = true
+cmd("rare add 1234 Test Rare")
+assert(RW.macroPending and not RW.scan:GetAttribute("macrotext"):find("Test Rare"), "macro change deferred in combat")
+M.combatLockdown = false
+M.FireEvent("PLAYER_REGEN_ENABLED")
+assert(not RW.macroPending and RW.scan:GetAttribute("macrotext"):find("/targetexact Test Rare$"), "macro applied after combat")
+-- hiding/showing the protected button is also deferred
+M.combatLockdown = true
+M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW.scan:IsShown() and RW.scanPending and not RW.frame:IsShown(), "scan button untouched in combat; hud itself hidden")
+M.combatLockdown = false
+M.FireEvent("PLAYER_REGEN_ENABLED")
+assert(not RW.scan:IsShown(), "scan button hidden once combat ends")
+cmd("rare rm Test Rare")
+assert(#FP.db.rareWatch.rares == 3, "watch list restored")
+-- scan with the rare already targeted counts as a hit; without, as a miss
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+RW:AfterScan()
+assert(RW:Current().scans == 1 and RW:Current().lastMiss and not RW:Current().seen, "miss recorded")
+M.SetUnit("target", { secret = true, level = 33, reaction = 2, classification = "rare" })
+RW:AfterScan()
+assert(RW:Current().scans == 2 and RW:Current().seen and RW:Current().sightings[1].how == "scan", "hit via scan")
+""",
+    "rare_watch_party_messages_reject_outsiders_and_malformed": r"""
+local RW = FP.RareWatch
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.inGroup = true
+M.SetUnit("party1", { guid = "Player-4-0A1B2C3E", name = "Hunterbro", player = true })
+M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Stranger")
+assert(not RW:Current().seen, "outsider ignored")
+M.FireEvent("CHAT_MSG_ADDON", "OTHER", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Hunterbro")
+assert(not RW:Current().seen, "other prefix ignored")
+for _, bad in ipairs({ "RW;up", "RW;up;33", "RW;bogus;1", "RW;kill;x", "RW;no;extra", "RW;up;" .. string.rep("x", 200) }) do
+	assert(RW:Decode(bad) == nil, "malformed accepted: " .. bad)
+end
+assert(RW:Decode("RW;up;;;") and RW:Decode("RW;up;;;").level == nil, "empty fields decode")
+local sent = #M.addonSent
+M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Hunterbro")
+assert(RW:Current().seen and RW:Current().seenName == "Azshir the Sleepless" and RW:Current().sightings[1].by == "Hunterbro", "party sighting applied")
+assert(#M.addonSent == sent, "received sighting is not re-broadcast")
+-- name sanitising on send
+assert(RW:Encode("up", { level = 33, creatureType = "Undead", name = "Bad;Name|r" }) == "RW;up;33;Undead;BadNamer", "separators stripped")
+-- sharing off: no broadcast on our own sighting
+cmd("rare share off")
+M.FireEvent("CHAT_MSG_SYSTEM", "Scarlet Monastery has been reset.", "", "", "")
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.SetUnit("target", { secret = true, level = 33, reaction = 2, classification = "rare" })
+M.FireEvent("PLAYER_TARGET_CHANGED")
+assert(RW:Current().seen and #M.addonSent == sent, "share off: nothing sent")
+""",
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

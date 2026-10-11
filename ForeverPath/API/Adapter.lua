@@ -903,6 +903,86 @@ function API.PlayerLevel() return hasg("UnitLevel") and safe(UnitLevel("player")
 function API.UnitGUID(unit) return hasg("UnitGUID") and safe(UnitGUID(unit)) or nil end
 
 -------------------------------------------------------------------------------
+-- Rare watch (dungeon rare spawns). Probe evidence 2026-10-09 (build 70291):
+-- inside a dungeon the Map restriction makes NPC UnitName/UnitGUID secret even
+-- out of combat, while UnitClassification/UnitLevel/UnitReaction/UnitIsPlayer
+-- read as plain values (no secret gate in Blizzard's docs). Loot-source GUIDs
+-- are not guarded (boss loot recorded in City of Dalaran 2026-10-08).
+-------------------------------------------------------------------------------
+local issecrettable = (type(_G.issecrettable) == "function") and _G.issecrettable or function() return false end
+
+function API.UnitRare(unit)
+	if not hasg("UnitExists") or not safe(UnitExists(unit)) then return nil end
+	local info = { unit = unit }
+	info.isPlayer = safe(UnitIsPlayer(unit)) and true or false
+	if hasg("UnitClassification") then info.classification = safe(UnitClassification(unit)) end
+	info.level = safe(UnitLevel(unit))
+	if hasg("UnitReaction") then info.reaction = safe(UnitReaction("player", unit)) end
+	if hasg("UnitCreatureType") then info.creatureType = safe(UnitCreatureType(unit)) end
+	if hasg("UnitIsDead") then info.dead = safe(UnitIsDead(unit)) and true or false end
+	local name = UnitName(unit)
+	info.nameSecret = FP.issecret(name) and true or false
+	info.name = safe(name)
+	local guid = hasg("UnitGUID") and UnitGUID(unit) or nil
+	info.guid = safe(guid)
+	if type(info.guid) == "string" then info.kind, info.id = U.ParseGUID(info.guid) end
+	info.rare = (info.classification == "rare" or info.classification == "rareelite") and true or false
+	return info
+end
+
+-- Display only: hands the (possibly secret) unit name straight to a FontString.
+-- The value is never compared, stored or concatenated. Returns true if shown.
+function API.ShowUnitName(fontString, unit)
+	if not fontString or not hasg("UnitName") then return false end
+	local ok, name = pcall(UnitName, unit)
+	if not ok or name == nil then return false end
+	local shown = pcall(fontString.SetText, fontString, name)
+	if not shown then pcall(fontString.SetText, fontString, "") end
+	return shown
+end
+
+function API.GetInstance()
+	local inInstance, kind = API.InInstance()
+	local out = { inInstance = inInstance and true or false, kind = kind }
+	if not hasg("GetInstanceInfo") then return out end
+	local ok, name, itype, diffID, diffName, maxPlayers, dyn, isDyn, mapID = pcall(GetInstanceInfo)
+	if not ok then return out end
+	out.name, out.type, out.difficulty, out.mapID = safe(name), safe(itype), safe(diffID), safe(mapID)
+	return out
+end
+
+-- nil = API absent; {} = none. Vignettes are Mainline's minimap rare/treasure
+-- markers; whether Forever flags vanilla rares with them is unverified.
+function API.GetVignettes()
+	if not has(C_VignetteInfo, "GetVignettes") then return nil end
+	local out = {}
+	local ok, guids = pcall(C_VignetteInfo.GetVignettes)
+	if not ok or type(guids) ~= "table" or issecrettable(guids) then return out end
+	for _, guid in ipairs(guids) do
+		local g = safe(guid)
+		if type(g) == "string" then
+			local entry = { guid = g }
+			if has(C_VignetteInfo, "GetVignetteInfo") then
+				local good, info = pcall(C_VignetteInfo.GetVignetteInfo, g)
+				if good and type(info) == "table" and not issecrettable(info) then
+					entry.name, entry.atlas, entry.type, entry.onMinimap = safe(info.name), safe(info.atlasName), safe(info.type), safe(info.onMinimap)
+					entry.dead, entry.objectGUID, entry.vignetteID = safe(info.isDead), safe(info.objectGUID), safe(info.vignetteID)
+				end
+			end
+			out[#out + 1] = entry
+		end
+	end
+	return out
+end
+
+function API.PlayAlert()
+	if not hasg("PlaySound") then return false end
+	local kit = (type(SOUNDKIT) == "table" and SOUNDKIT.RAID_WARNING) or 8959
+	local ok, played = pcall(PlaySound, kit, "Master")
+	return (ok and played) and true or false
+end
+
+-------------------------------------------------------------------------------
 -- Positive control: which APIs exist and which live probes work RIGHT NOW.
 -------------------------------------------------------------------------------
 function API.Check()
@@ -917,7 +997,7 @@ function API.Check()
 		"NumTaxiNodes", "TaxiNodeName", "TaxiNodePosition", "TaxiNodeCost", "GetTaxiMapID", "GetBindLocation",
 		"GetProfessions", "GetProfessionInfo", "UnitXP", "UnitXPMax", "GetXPExhaustion", "GetServerTime", "CreateVector2D",
 		"GetNumAvailableQuests", "GetAvailableQuestInfo", "GetNumActiveQuests", "GetActiveQuestID", "issecretvalue", "PlaySoundFile",
-		"UnitUsesAmmo" }) do g(n) end -- UnitUsesAmmo: new in 70170
+		"UnitUsesAmmo", "UnitClassification", "GetInstanceInfo", "PlaySound" }) do g(n) end -- UnitUsesAmmo: new in 70170
 	for _, pair in ipairs({
 		{ "C_Map", "GetBestMapForUnit" }, { "C_Map", "GetPlayerMapPosition" }, { "C_Map", "GetWorldPosFromMapPos" }, { "C_Map", "GetMapInfo" },
 		{ "C_Map", "GetMapWorldSize" }, { "C_Map", "CanSetUserWaypointOnMap" }, { "C_Map", "SetUserWaypoint" },
@@ -931,7 +1011,7 @@ function API.Check()
 		{ "C_MerchantFrame", "GetItemInfo" }, { "C_TaxiMap", "GetAllTaxiNodes" }, { "C_Minimap", "GetViewRadius" },
 		{ "C_TradeSkillUI", "GetBaseProfessionInfo" }, { "C_TradeSkillUI", "GetChildProfessionInfo" }, { "C_TradeSkillUI", "GetAllRecipeIDs" }, { "C_TradeSkillUI", "GetFilteredRecipeIDs" },
 		{ "C_TradeSkillUI", "GetRecipeInfo" }, { "C_TradeSkillUI", "GetRecipeSchematic" }, { "C_SkillInfo", "GetSkillLineInfo" },
-		{ "C_ChatInfo", "SendAddonMessage" }, { "C_Spell", "GetSpellName" }, { "C_Timer", "After" }, { "C_Timer", "NewTicker" }, { "C_Texture", "GetAtlasInfo" },
+		{ "C_ChatInfo", "SendAddonMessage" }, { "C_Spell", "GetSpellName" }, { "C_VignetteInfo", "GetVignettes" }, { "C_Timer", "After" }, { "C_Timer", "NewTicker" }, { "C_Texture", "GetAtlasInfo" },
 	}) do c(_G[pair[1]], pair[1], pair[2]) end
 
 	-- Each probe is independent; a throwing API must not erase other evidence.
@@ -1007,6 +1087,24 @@ function API.Check()
 	end)
 	probe("hearth", function() return API.HasHearthstone(), "bind: " .. tostring(API.GetBindLocation()) end)
 	probe("secretUnitName", function() return true, FP.issecret(UnitName("player")) and "player name is secret" or "player name readable" end)
+	probe("instance", function()
+		local inst = API.GetInstance()
+		return inst.inInstance, inst.inInstance and string.format("%s (%s, map %s)", tostring(inst.name), tostring(inst.type), tostring(inst.mapID)) or "not in an instance"
+	end)
+	probe("vignettes", function()
+		local list = API.GetVignettes()
+		if not list then return false, "C_VignetteInfo absent" end
+		local names = {}
+		for _, v in ipairs(list) do names[#names + 1] = tostring(v.name or v.atlas or "?") end
+		return true, #list .. " vignettes" .. (#list > 0 and (": " .. table.concat(names, ", ")) or "")
+	end)
+	probe("targetClassification", function()
+		-- rare watch depends on this staying readable where names are secret
+		if not safe(UnitExists("target")) then return false, "no target to probe" end
+		local cls = hasg("UnitClassification") and UnitClassification("target") or nil
+		local secretCls, secretName = FP.issecret(cls), FP.issecret(UnitName("target"))
+		return not secretCls, string.format("classification %s%s · name %s", secretCls and "SECRET" or tostring(cls), (not secretCls and (" lvl " .. tostring(safe(UnitLevel("target"))))) or "", secretName and "secret" or "readable")
+	end)
 	local unavailable = {}
 	for ev in pairs(FP.unavailableEvents) do unavailable[#unavailable + 1] = ev end
 	row("probe:unavailableEvents", #unavailable == 0, table.concat(unavailable, ", "))

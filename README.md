@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (b
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.4.0)
+## What it does (v0.5.0)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
@@ -13,6 +13,7 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Recorder**: while you play it writes a Forever dataset into SavedVariables — quest givers/enders with positions, offer/turn-in XP per level, objective progress with candidate mob/loot associations, approximate observer sightings, source-attributed observed loot including quest items, vendors, trainers (with skill requirements), flight nodes and edge costs, inn binds, deaths, zone level ranges, XP samples, profession recipes with reagents and difficulty per skill level.
 - **Professions**: open your profession window and the next-steps panel shows three skill-up suggestions, bag-material craft counts and missing materials. `/fp prof` gives the longer list. Handles Forever base professions, delayed recipe loading, bag changes and skill-cap reminders. These are material/skill suggestions, not market-price or guaranteed skill-point estimates. Reopen the profession after changing skill to refresh old suggestions.
 - **Mage supplies** (`/fp prep`): an out-of-combat checklist in the PvP HUD. Shows carried drinks/bandages, missing mana gems you can conjure, and relevant Slow Fall/teleport/portal/Arcane Brilliance reagents. Appears briefly on login/zone entry, at a vendor, and out of combat in a battleground. Updates on bag/spell changes; unknown item data stays unavailable.
+- **Dungeon rare watch** (`/fp rare`): inside Scarlet Monastery a small HUD answers "is Azshir up?". A rare is recognised the moment anyone in the party targets, mouses over, gets a nameplate for, or has a pet on it (names are secret inside Forever dungeons, so the watch reads the unit's *classification*, which is not). A **Scan** button runs a plain `/targetexact` macro once per click to check what the client has loaded without walking the lair. Sightings and kills are shared with party members running the addon; a raid-warning style alert plus sound fires once per run. Runs are keyed by the instance id carried in loot GUIDs, so the HUD counts runs vs sightings and shows the measured spawn rate. `/fp rare list|add|rm|instance` retarget it at any dungeon rare.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
 
 ## PvP module
@@ -24,6 +25,19 @@ Built around what Forever's secret-value rules leave readable (Blizzard's own pr
 - **Battleground** (`PvP/Battleground.lua`): base states with capture timers, flag carriers described relative to the nearest objective, `/fp pvp track` follows a single visible flag. With two flags, select `/fp pvp track 1` or `2`; `/fp pvp track off` stops. Faction is unverified: numbers identify API positions, not ally/enemy identity, and should be checked against the map. Map position may be unavailable in instances. Records raw objective/flag data so a real match can establish the exact icon meanings.
 - **Coordination** (`PvP/Coordination.lua`): your CC timers are sent to party members running ForeverPath and shown on their HUD with a "window" flag before expiry. Blizzard locks addon messages inside battlegrounds and arenas; this works in world PvP and duels. Incoming timers must come from a current party member and have a valid, bounded duration.
 - `/fp pvp` toggles the HUD; `/fp pvp status`, `track`, `spells`, `lock`, `reset`, `scale n`, `on|off`.
+
+## Dungeon rare watch (v0.5.0)
+
+Built for farming Azshir the Sleepless in the Scarlet Monastery Graveyard with a friend. What the Forever client allows (probe evidence from build 70291, see `docs/FOREVERPATH_SPEC.md` §12): inside a dungeon the **Map** restriction is active even out of combat, so NPC names and GUIDs are secret and cannot be compared. `UnitClassification` (`rare` / `rareelite`), level, reaction and creature type are not gated and read normally, and loot-source GUIDs are never secret. The watch is built on exactly those reads.
+
+- **Detection**: target, mouseover, focus, nameplates (turn enemy nameplates on), your pet's target and every party member's and party pet's target. Any hostile `rare`/`rareelite` inside the watched instance is a sighting. Outside dungeons names are readable and the watch list names are matched too.
+- **Scan button**: a `SecureActionButtonTemplate` whose macro is `/targetexact Azshir the Sleepless` (one line per watched rare). It is the same thing as a player macro: one click, one targeting attempt, nothing automatic. It only finds a unit the client has already loaded, so press it while walking toward the lair; `/fp rare scan` prints the macro if you prefer your own keybind. How far it reaches inside the Graveyard is unverified: the HUD counts hits and misses per run so you learn it.
+- **Identity**: which of the three rares it was becomes certain when it is looted (loot-source GUID carries the creature id). Until then the HUD shows "RARE UP (lvl 33 Undead)" and, where the client permits, the name as a display-only value.
+- **Runs**: entering the instance opens a run; the first loot window keys it by the instance's zoneUID; a different zoneUID means the group reset while you were out; "has been reset" closes it; re-entering the same instance folds into the same run; runs idle for 2 h are over. `Not up` marks a run checked-and-empty; `/fp rare runs` lists the last ten. The stats line is sightings over checked runs against the ~5 % folk estimate.
+- **Party share**: `RW;up`, `RW;no`, `RW;kill` addon messages, accepted only from current party members. Addon chat works in dungeons outside boss encounters.
+- `/fp rare` status · `scan` · `notup` · `newrun` · `runs` · `list` · `add [id] <name>` · `rm <name>` · `instance <name>` · `show|hide|auto` · `on|off` · `share on|off` · `sound on|off` · `lock|unlock|reset|scale n` · `clear confirm`.
+
+In-game verification pending (mock-tested only): that `UnitClassification` really stays readable in the Graveyard where names are secret (`/fp apicheck` → `probe:targetClassification` with a mob targeted), the reach of `/targetexact` inside the instance, whether `FontString:SetText` accepts a secret name, whether Forever flags vanilla rares with minimap vignettes (`probe:vignettes`, recorded under `ForeverPathDB.rare.vignettes`), and the vanilla creature ids 6490/6489/6488 (confirmed by the first loot window). Report with `tools/pull-data.sh`.
 
 ## Install (WoW Forever beta)
 
@@ -39,7 +53,7 @@ Built around what Forever's secret-value rules leave readable (Blizzard's own pr
 
 ## Commands
 
-`/fp help` prints them. `/way 45.4 70.4` points to those coordinates in your current zone; add an optional title, e.g. `/way 45.4 70.4 Quest cave`. `/way` is a shortcut for `/fp way`, including `here`, `list`, `next`, `clear`, and `rm <id>`. Waypoint coordinates always use percentages (0–100); three numeric arguments mean map ID, x%, y% (e.g. `/way 1413 45.4 70.4`). If another addon owns `/way`, use `/fp way` explicitly. Short version: `/fp` panel · `/fp next` · `/fp goto <quest>` · `/way x y [title]` · `/fp way here` · `/fp arrow lock|flip|scale n|reset` · `/fp prof` · `/fp status` · `/fp apicheck` · `/fp selftest` · `/fp record on|off`.
+`/fp help` prints them. `/way 45.4 70.4` points to those coordinates in your current zone; add an optional title, e.g. `/way 45.4 70.4 Quest cave`. `/way` is a shortcut for `/fp way`, including `here`, `list`, `next`, `clear`, and `rm <id>`. Waypoint coordinates always use percentages (0–100); three numeric arguments mean map ID, x%, y% (e.g. `/way 1413 45.4 70.4`). If another addon owns `/way`, use `/fp way` explicitly. Short version: `/fp` panel · `/fp next` · `/fp goto <quest>` · `/way x y [title]` · `/fp way here` · `/fp arrow lock|flip|scale n|reset` · `/fp prof` · `/fp rare` · `/fp status` · `/fp apicheck` · `/fp selftest` · `/fp record on|off`.
 
 ## Getting the data out
 

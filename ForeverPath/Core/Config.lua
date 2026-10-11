@@ -33,6 +33,7 @@ FP.defaults = {
 		hunterAudio = { enabled = true, cooldown = 30 },   -- Hunter combat audio feedback (Hunters only)
 		probe = { enabled = true },                        -- beta diagnostic: records which values are secret and when
 		pvp = { enabled = true, share = true, trackFlag = false, locked = false, scale = 1.0, x = 30, y = 120, point = "LEFT" },
+		rare = { enabled = true, share = true, sound = true, locked = false, scale = 1.0, x = 0, y = -200, point = "TOP" },   -- dungeon rare watch (/fp rare)
 	},
 	data = {
 		quests = {}, npcs = {}, creatures = {}, objects = {}, items = {},

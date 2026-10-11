@@ -107,6 +107,15 @@ function U.ParseGUID(guid)
 	return kind, nil
 end
 
+-- Full creature/pet/object GUID: kind, id, zoneUID (unique per instance
+-- instance: a dungeon reset gives a new one), instanceID (map), spawnUID.
+function U.ParseGUIDFull(guid)
+	local kind, id = U.ParseGUID(guid)
+	if not kind or (kind ~= "Creature" and kind ~= "Vehicle" and kind ~= "Pet" and kind ~= "GameObject") then return kind, id end
+	local parts = U.Split(guid:match("^[A-Za-z]+%-(.+)$"), "-")
+	return kind, id, parts[4], tonumber(parts[3]), parts[6]
+end
+
 -------------------------------------------------------------------------------
 -- Geometry. World coordinates from C_Map.GetWorldPosFromMapPos are
 -- (x = north, y = west). GetPlayerFacing is radians counter-clockwise from

@@ -348,5 +348,79 @@ cmd("pvp clear"); cmd("pvp track")
 M.SetUnit("target", nil)
 errorsEmpty("pvp")
 
+
+-- Rare watch: Scarlet Monastery Graveyard. Names/GUIDs are secret in dungeons;
+-- a rare is recognised by classification, identity and the run key come from loot.
+local RW = FP.RareWatch
+check(not RW.frame:IsShown(), "rare hud hidden outside the instance")
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD")
+M.RunTimers(2)
+check(RW.inside and RW.frame:IsShown() and RW.scan:IsShown(), "rare hud + scan button shown inside Scarlet Monastery")
+check(RW.scan:GetAttribute("macrotext") == "/targetexact Azshir the Sleepless\n/targetexact Ironspine\n/targetexact Fallen Champion", "scan macro lists the three graveyard rares")
+local run = RW:Current()
+check(run and run.key:find("^visit%-") and not run.zoneUID, "provisional run opened on entry")
+-- trash sighting: secret name, ordinary mob → nothing
+M.SetUnit("target", { secret = true, level = 30, reaction = 2, ctype = "Undead", classification = "normal" })
+M.FireEvent("PLAYER_TARGET_CHANGED")
+check(not RW:Current().seen, "ordinary mob with secret name is not a sighting")
+-- loot a trash mob: the loot-source GUID keys the run by zoneUID
+M.lootSlots = { { name = "Linen Cloth", qty = 1, itemID = 2589 } }
+M.lootSource = "Creature-0-4379-189-7781-4295-00003BB9A1"
+M.FireEvent("LOOT_OPENED", false, false)
+run = RW:Current()
+check(run.zoneUID == "7781" and run.key == "7781", "run keyed by the loot-source zoneUID: " .. tostring(run.key))
+-- the rare: name secret, classification readable
+local sentBefore, playedBefore = #M.addonSent, #M.played
+M.inGroup = true
+M.SetUnit("party1", { guid = "Player-4-0A1B2C3E", name = "Hunterbro", player = true })
+M.SetUnit("target", { secret = true, level = 33, reaction = 2, ctype = "Undead", classification = "rare" })
+M.FireEvent("PLAYER_TARGET_CHANGED")
+M.RunTimers(1)
+run = RW:Current()
+check(run.seen and run.sightings[1].cls == "rare" and run.sightings[1].secret == 1 and run.sightings[1].name == nil, "rare recognised by classification with its name secret")
+check(#M.played == playedBefore + 1 and M.played[#M.played].kit == 8959, "alert sound played once")
+check(#M.addonSent == sentBefore + 1 and M.addonSent[#M.addonSent] == "RW;up;33;Undead;", "sighting broadcast to the party: " .. tostring(M.addonSent[#M.addonSent]))
+check(RW.frame:IsShown() and RW.status:GetText():find("RARE UP"), "hud shows RARE UP: " .. tostring(RW.status:GetText()))
+M.FireEvent("PLAYER_TARGET_CHANGED")
+check(#M.played == playedBefore + 1, "re-targeting the same rare does not re-alert")
+-- looting the rare resolves which one it was and marks the run killed
+M.lootSlots = { { name = "Ghostshard Talisman", qty = 1, itemID = 7716 } }
+M.lootSource = "Creature-0-4379-189-7781-6490-00003BB9F0"
+M.FireEvent("LOOT_OPENED", false, false)
+run = RW:Current()
+check(run.kills[6490] == 1 and run.seenName == "Azshir the Sleepless", "Azshir loot marks the run killed")
+check(M.addonSent[#M.addonSent] == "RW;kill;6490;Azshir the Sleepless", "kill shared with the party")
+M.FireEvent("LOOT_OPENED", false, false)
+check(run.kills[6490] == 1, "reopening the same corpse does not double count")
+M.RunTimers(1)
+check(RW.status:GetText():find("KILLED: Azshir the Sleepless"), "hud shows the kill: " .. tostring(RW.status:GetText()))
+-- reset → new run; partner reports it empty
+M.FireEvent("CHAT_MSG_SYSTEM", "Scarlet Monastery has been reset.", "", "", "")
+check(RW:Current() == nil and FP.db.rare.runs["7781"].closed, "reset closes the run")
+M.FireEvent("PLAYER_ENTERING_WORLD")
+M.RunTimers(2)
+check(RW:Current() and RW:Current().key:find("^visit%-"), "re-entry after reset opens a new provisional run")
+M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;no", "PARTY", "Hunterbro")
+check(RW:Current().absent and RW:Current().absentBy == "Hunterbro", "partner's not-up mark applied")
+M.lootSource = "Creature-0-4379-189-7790-4295-00003BB9A2"
+M.lootSlots = { { name = "Linen Cloth", qty = 2, itemID = 2589 } }
+M.FireEvent("LOOT_OPENED", false, false)
+local st = RW:Stats()
+check(st.runs == 2 and st.seen == 1 and st.killed == 1 and st.checked == 2, string.format("stats runs %d seen %d killed %d checked %d", st.runs, st.seen, st.killed, st.checked))
+-- partner sighting arrives → alert without re-broadcast
+sentBefore, playedBefore = #M.addonSent, #M.played
+M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;up;32;Undead;Ironspine", "PARTY", "Hunterbro")
+check(RW:Current().seen and RW:Current().seenName == "Ironspine" and #M.played == playedBefore + 1 and #M.addonSent == sentBefore, "partner sighting alerts locally and is not echoed")
+cmd("rare"); cmd("rare runs"); cmd("rare scan"); cmd("rare list")
+M.SetUnit("target", nil)
+M.instance = nil
+M.inGroup = false
+M.SetUnit("party1", nil)
+M.FireEvent("PLAYER_ENTERING_WORLD")
+M.RunTimers(2)
+check(not RW.inside and not RW.frame:IsShown() and not RW.scan:IsShown(), "rare hud hides after leaving the instance")
+errorsEmpty("rare watch")
+
 print("dataset: " .. FP.Recorder:Summary())
 print("ALL CHECKS PASSED")

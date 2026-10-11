@@ -56,6 +56,9 @@ function Frame:CreateTexture() return M.NewFrame("Texture") end
 function Frame:CreateFontString() return M.NewFrame("FontString") end
 function Frame:HighlightText() end
 function Frame:SetBackdrop() end
+function Frame:SetAttribute(k, v) self._attrs = self._attrs or {}; self._attrs[k] = v end
+function Frame:GetAttribute(k) return self._attrs and self._attrs[k] end
+function Frame:RegisterForClicks(...) self._clicks = { ... } end
 
 function M.NewFrame(kind, name, parent, template)
 	local f = setmetatable({ _kind = kind, _shown = true, _scripts = {}, _events = {}, _name = name, _parent = parent, _template = template }, Frame)
@@ -87,12 +90,27 @@ end }
 GetTime = function() return M.now end
 GetServerTime = function() return 1790000000 + M.now end
 GetBuildInfo = function() return "1.60.1", "70124", "Sep 30 2026", 16001, "", "beta" end
-issecretvalue = function() return false end
+-- Secret stand-in: a table that errors on concat/arithmetic/comparison like the client's secrets.
+local secretMeta = { __concat = function() error("secret value") end, __add = function() error("secret value") end,
+	__lt = function() error("secret value") end, __le = function() error("secret value") end, __tostring = function() return "<secret>" end }
+function M.Secret() return setmetatable({ __secret = true }, secretMeta) end
+issecretvalue = function(v) return type(v) == "table" and rawget(v, "__secret") == true end
 CreateVector2D = vec
 IsShiftKeyDown = function() return false end
 IsInGroup = function() return M.inGroup or false end
-InCombatLockdown = function() return false end
-IsInInstance = function() return false, "none" end
+InCombatLockdown = function() return M.combatLockdown or false end
+IsInInstance = function() if M.instance then return true, M.instance.type or "party" end return false, "none" end
+GetInstanceInfo = function()
+	local i = M.instance
+	if not i then return "The Barrens", "none", 0, "", 0, 0, false, 1414, 0, nil, false end
+	return i.name, i.type or "party", 1, "Normal", 5, 0, false, i.mapID or 189, 5, nil, false
+end
+M.played = {}
+PlaySound = function(kit, channel) table.insert(M.played, { kit = kit, channel = channel }); return true, 1 end
+SOUNDKIT = { RAID_WARNING = 8959 }
+C_VignetteInfo = { GetVignettes = function() local out = {}; for _, v in ipairs(M.vignettes or {}) do out[#out + 1] = v.guid end return out end,
+	GetVignetteInfo = function(guid) for _, v in ipairs(M.vignettes or {}) do if v.guid == guid then return { vignetteGUID = guid, name = v.name, atlasName = v.atlas or "VignetteKill", type = 0, onMinimap = true, isDead = false } end end end }
+INSTANCE_RESET_SUCCESS = "%s has been reset."
 SlashCmdList = {}
 C_AddOns = { GetAddOnMetadata = function() return "0.1.0-test" end }
 C_Timer = {
@@ -166,13 +184,13 @@ C_Texture = { GetAtlasInfo = function() return {} end }
 -- units
 function M.SetUnit(unit, info) M.units[unit] = info end
 UnitExists = function(unit) return M.units[unit] ~= nil end
-UnitGUID = function(unit) return M.units[unit] and M.units[unit].guid end
-UnitName = function(unit) if unit == "player" then return "Chiznooch" end return M.units[unit] and M.units[unit].name, M.units[unit] and M.units[unit].realm end
+UnitGUID = function(unit) local u = M.units[unit]; if u and u.secret then return M.Secret() end return u and u.guid end
+UnitName = function(unit) if unit == "player" then return "Chiznooch" end local u = M.units[unit]; if u and u.secret then return M.Secret() end return u and u.name, u and u.realm end
 UnitLevel = function(unit) if unit == "player" then return M.level or 20 end return M.units[unit] and M.units[unit].level end
 UnitIsPlayer = function(unit) if unit == "player" then return true end return M.units[unit] and M.units[unit].player or false end
 UnitIsDead = function(unit) return M.units[unit] and M.units[unit].dead or false end
 UnitIsDeadOrGhost = function() return false end
-UnitClassification = function() return "normal" end
+UnitClassification = function(unit) return M.units[unit] and M.units[unit].classification or "normal" end
 UnitCreatureType = function(unit) return M.units[unit] and M.units[unit].ctype or "Humanoid" end
 UnitReaction = function(_, unit) return M.units[unit] and M.units[unit].reaction or 2 end
 UnitClass = function(unit) if unit ~= "player" and M.units[unit] and M.units[unit].class then local c = M.units[unit].class; return c:sub(1,1) .. c:sub(2):lower(), c end if M.class == "HUNTER" then return "Hunter", "HUNTER" end return "Mage", "MAGE" end
