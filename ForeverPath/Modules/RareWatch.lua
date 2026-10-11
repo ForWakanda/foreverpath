@@ -471,6 +471,9 @@ function RW:OnInit()
 	self.scan = scan
 	scan:SetSize(60, 20)
 	scan:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+	-- above the HUD, which has mouse enabled for dragging and would otherwise swallow the click
+	scan:SetFrameStrata("HIGH")
+	scan:SetFrameLevel(f:GetFrameLevel() + 10)
 	scan:SetText("Scan")
 	scan:RegisterForClicks("AnyUp", "AnyDown")
 	scan:SetScript("PostClick", function() FP.Throttle("rare-scan", 0.3, function() RW:AfterScan() end) end)
