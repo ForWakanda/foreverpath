@@ -799,7 +799,10 @@ assert(RW:Current().key == "1001" and FP.db.rare.order[1] == "1001" and #FP.db.r
 -- walk out and back in without a reset: same run
 M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
 M.instance = { name = "Scarlet Monastery", mapID = 189 }; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
-assert(RW:Current().key == "1001" and #FP.db.rare.order == 1, "re-entry without reset keeps the run")
+assert(RW:Current().key:find("^visit%-") and #FP.db.rare.order == 2, "re-entry from outside opens a provisional run")
+M.lootSource = "Creature-0-4379-189-1001-4295-00003BB9A9"
+M.FireEvent("LOOT_OPENED", false, false)
+assert(RW:Current().key == "1001" and #FP.db.rare.order == 1 and RW:Current().visits == 2, "same-instance loot folds the visit back")
 -- the partner reset it while we were outside: a different zoneUID starts a new run
 M.lootSource = "Creature-0-4379-189-1002-4295-00003BB9A2"
 M.FireEvent("LOOT_OPENED", false, false)
@@ -923,6 +926,40 @@ M.FireEvent("CHAT_MSG_SYSTEM", "Scarlet Monastery has been reset.", "", "", "")
 M.SetUnit("partypet1", { guid = "Pet-0-4379-189-182500-417-00003BB9A2", name = "Bigcow", player = false })
 M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
 assert(RW:Current().key == "182500" and #FP.db.rare.order == 2, "new run keyed from the pet after reset")
+""",
+})
+
+CASES.update({
+    "rare_watch_reentry_from_outside_starts_fresh_but_merges_same_instance": r"""
+local RW = FP.RareWatch
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.SetUnit("partypet1", { guid = "Pet-0-4379-189-182404-417-00003BB9A1", name = "Bigcow", player = false })
+M.RunTimers(7)
+M.lootSlots = { { name = "Ghostshard Talisman", qty = 1, itemID = 7716 } }
+M.lootSource = "Creature-0-4379-189-182404-6490-00003BB9F0"
+M.FireEvent("LOOT_OPENED", false, false)
+assert(RW:Current().key == "182404" and RW:Current().kills[6490] == 1, "killed in run 182404")
+-- /reload inside the instance keeps the run
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(RW:Current().key == "182404" and #FP.db.rare.order == 1, "reload inside keeps the run")
+-- partner resets while we are outside: no system message here, pet carries the new id
+M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.SetUnit("partypet1", { guid = "Pet-0-4379-189-182500-417-00003BB9A2", name = "Bigcow", player = false })
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+local run = RW:Current()
+assert(run.key == "182500" and not next(run.kills) and #FP.db.rare.order == 2 and FP.db.rare.runs["182404"].closedWhy == "left", "fresh run after re-entry: " .. tostring(run.key))
+M.RunTimers(1)
+assert(not RW.status:GetText():find("KILLED"), "hud no longer says killed: " .. tostring(RW.status:GetText()))
+-- walking out and back into the SAME instance (no reset) folds the visit back, kill intact
+M.lootSource = "Creature-0-4379-189-182500-6489-00003BB9F1"
+M.FireEvent("LOOT_OPENED", false, false)
+M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.RunTimers(7)
+assert(RW:Current().key == "182500" and RW:Current().kills[6489] == 1 and #FP.db.rare.order == 2, "same instance merges back with its kill")
 """,
 })
 

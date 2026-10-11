@@ -155,11 +155,16 @@ function RW:OnEnterWorld()
 	if inside then
 		local run = self:Current()
 		if run and not run.closed and (U.Now() - (run.last or 0)) > STALE then self:CloseRun("stale"); run = nil end
+		-- Coming back in from outside starts a fresh run: the "has been reset" message
+		-- only reaches the player who reset, so a partner's reset is invisible here.
+		-- If it is the same instance after all, the pet/loot zoneUID folds this visit back.
+		if run and not run.closed and self.wasOutside then self:CloseRun("left"); run = nil end
 		if not run or run.closed then self:OpenRun(inst, "enter") else run.last = U.Now() end
 		self:KeyFromPets(inst)
 		FP.After(6, function() RW:KeyFromPets(API.GetInstance()) end)   -- pets re-summon a moment after zoning
 		self:ProbeVignettes("enter")
 	end
+	self.wasOutside = not inside
 	self:Refresh()
 end
 
