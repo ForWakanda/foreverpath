@@ -509,7 +509,9 @@ function RW:Layout()
 	self.detail:ClearAllPoints()
 	self.detail:SetPoint("TOPLEFT", nameShown and self.nameText or self.status, "BOTTOMLEFT", 0, -6)
 	local h = 6 + 16 + 6 + self.status:GetStringHeight() + 6 + self.detail:GetStringHeight() + 6 + self.stats:GetStringHeight() + 8 + 20 + 8
-	if nameShown then h = h + self.nameText:GetStringHeight() + 4 end
+	-- the name row may hold a SECRET string: its GetStringHeight() is a secret number
+	-- (in-game error 2026-10-11), so the row gets a fixed height instead of a measurement
+	if nameShown then h = h + 14 + 4 end
 	self.frame:SetHeight(math.max(96, math.floor(h + 0.5)))
 end
 

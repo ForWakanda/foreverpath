@@ -47,7 +47,7 @@ function Frame:SetAtlas(name) self._atlas = name end
 function Frame:SetText(t) self._text = t end
 function Frame:SetFormattedText(f, ...) self._text = string.format(f, ...) end
 function Frame:GetText() return self._text end
-function Frame:GetStringHeight() local t = self._text; if type(t) ~= "string" then t = "" end local _, n = t:gsub("\n", ""); return (n + 1) * 12 end
+function Frame:GetStringHeight() local t = self._text; if issecretvalue(t) then return M.Secret() end if type(t) ~= "string" then t = "" end local _, n = t:gsub("\n", ""); return (n + 1) * 12 end
 function Frame:SetRotation(r) self._rotation = r end
 function Frame:SetVertexColor(r, g, b) self._color = { r, g, b } end
 function Frame:SetAlpha(a) self._alpha = a end
