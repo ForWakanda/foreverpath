@@ -504,13 +504,25 @@ function RW:OnInit()
 end
 
 -- Rows stack from the title; the frame grows to fit wrapped text so nothing overlaps.
+-- A FontString that holds a secret string measures as a SECRET number, and the
+-- client may propagate that through anything anchored to it (in-game errors
+-- 2026-10-11). Nothing is anchored to the name row, and every measurement is
+-- checked; a secret one falls back to a fixed height and is counted in
+-- ForeverPathDB.rare.secretLayout so the pull shows which row it was.
+local function measure(self, key, fs, fallback)
+	local ok, h = pcall(fs.GetStringHeight, fs)
+	if ok and type(h) == "number" and not FP.issecret(h) and h == h then return h end
+	local d = db()
+	d.secretLayout = d.secretLayout or {}
+	d.secretLayout[key] = (d.secretLayout[key] or 0) + 1
+	return fallback
+end
+
 function RW:Layout()
 	local nameShown = self.nameShown and true or false
 	self.detail:ClearAllPoints()
-	self.detail:SetPoint("TOPLEFT", nameShown and self.nameText or self.status, "BOTTOMLEFT", 0, -6)
-	local h = 6 + 16 + 6 + self.status:GetStringHeight() + 6 + self.detail:GetStringHeight() + 6 + self.stats:GetStringHeight() + 8 + 20 + 8
-	-- the name row may hold a SECRET string: its GetStringHeight() is a secret number
-	-- (in-game error 2026-10-11), so the row gets a fixed height instead of a measurement
+	self.detail:SetPoint("TOPLEFT", self.status, "BOTTOMLEFT", 0, nameShown and -24 or -6)
+	local h = 6 + 16 + 6 + measure(self, "status", self.status, 14) + 6 + measure(self, "detail", self.detail, 24) + 6 + measure(self, "stats", self.stats, 12) + 8 + 20 + 8
 	if nameShown then h = h + 14 + 4 end
 	self.frame:SetHeight(math.max(96, math.floor(h + 0.5)))
 end

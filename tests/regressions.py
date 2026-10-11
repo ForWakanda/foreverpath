@@ -881,6 +881,26 @@ assert(RW:Current().seen and #M.addonSent == sent, "share off: nothing sent")
 """,
 })
 
+CASES.update({
+    "rare_hud_layout_survives_secret_measurements": r"""
+local RW = FP.RareWatch
+M.instance = { name = "Scarlet Monastery", mapID = 189 }
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+M.SetUnit("target", { secret = true, level = 33, reaction = 2, classification = "rare" })
+M.FireEvent("PLAYER_TARGET_CHANGED"); M.RunTimers(1)
+assert(RW.nameShown, "secret name shown")
+-- the client may hand back a secret height for any row; the layout must not throw
+local real = RW.detail.GetStringHeight
+RW.detail.GetStringHeight = function() return M.Secret() end
+RW:Refresh()
+assert(FP.db.rare.secretLayout and FP.db.rare.secretLayout.detail == 1, "secret measurement counted")
+assert(RW.frame:GetHeight() >= 96, "frame still sized")
+RW.detail.GetStringHeight = real
+RW:Refresh()
+assert(FP.db.rare.secretLayout.detail == 1 and not FP.db.rare.secretLayout.name, "name row is never measured")
+""",
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
