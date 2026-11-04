@@ -193,7 +193,7 @@ UnitIsDeadOrGhost = function() return false end
 UnitClassification = function(unit) return M.units[unit] and M.units[unit].classification or "normal" end
 UnitCreatureType = function(unit) return M.units[unit] and M.units[unit].ctype or "Humanoid" end
 UnitReaction = function(_, unit) return M.units[unit] and M.units[unit].reaction or 2 end
-UnitClass = function(unit) if unit ~= "player" and M.units[unit] and M.units[unit].class then local c = M.units[unit].class; return c:sub(1,1) .. c:sub(2):lower(), c end if M.class == "HUNTER" then return "Hunter", "HUNTER" end return "Mage", "MAGE" end
+UnitClass = function(unit) if unit ~= "player" and M.units[unit] and M.units[unit].class then local c = M.units[unit].class; return c:sub(1,1) .. c:sub(2):lower(), c end local c = M.class or "MAGE"; return c:sub(1,1) .. c:sub(2):lower(), c end
 UnitRace = function(unit) if unit ~= "player" and M.units[unit] and M.units[unit].race then return M.units[unit].race, M.units[unit].race end return "Blood Elf", "BloodElf" end
 UnitFactionGroup = function() return "Horde", "Horde" end
 UnitCanAttack = function(_, unit) return M.units[unit] and M.units[unit].canAttack or false end
@@ -236,7 +236,7 @@ C_QuestLog = {
 		if i == 1 then return { isHeader = true, title = "The Barrens" } end
 		local q = M.quests[i - 1]
 		if not q then return nil end
-		return { questID = q.questID, title = q.title, level = q.level or 20, difficultyLevel = q.level or 20, suggestedGroup = 0, isHeader = false, isHidden = false, questLogIndex = i }
+		return { questID = q.questID, title = q.title, level = q.level or 20, difficultyLevel = q.level or 20, suggestedGroup = q.suggestedGroup or 0, isHeader = false, isHidden = false, questLogIndex = i }
 	end,
 	GetQuestObjectives = function(id) local q = questByID(id); return q and q.objectives or {} end,
 	ReadyForTurnIn = function(id) return M.complete[id] and true or false end,

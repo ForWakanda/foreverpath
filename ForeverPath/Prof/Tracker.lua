@@ -146,7 +146,8 @@ function T:Craftable(r)
 	local best
 	for itemID, need in pairs(r.reag) do
 		if not U.Finite(need) or need <= 0 then return nil end
-		local have = API.GetItemCount(itemID, false)
+		local have = API.GetBagItemCount(itemID)
+		if have == nil then return nil end
 		local n = math.floor(have / need)
 		if not best or n < best then best = n end
 	end
@@ -179,9 +180,11 @@ end
 
 function T:MissingFor(r, crafts)
 	local parts = {}
-	if not r.reag then return "" end
+	if not r.reag then return "materials unavailable" end
 	for itemID, need in pairs(r.reag) do
-		local have = API.GetItemCount(itemID, false)
+		if not U.Finite(need) or need <= 0 then return "materials unavailable" end
+		local have = API.GetBagItemCount(itemID)
+		if have == nil then return "bag counts unavailable" end
 		local want = need * crafts
 		if have < want then
 			local name = (FP.data.items[itemID] and FP.data.items[itemID].n) or API.GetItemName(itemID) or ("item " .. itemID)
@@ -192,11 +195,46 @@ function T:MissingFor(r, crafts)
 	return table.concat(parts, ", ")
 end
 
+function T:PlanLines()
+	local plan = self.plan
+	if not plan then return {} end
+	local remaining = plan.target
+	local count = self:Craftable(plan.rec)
+	local missing = self:MissingFor(plan.rec, remaining)
+	return {
+		string.format("Shopping target: %s × %d crafts", plan.name, remaining),
+		count and ("Bag materials support " .. math.min(count, remaining) .. " of " .. remaining .. " crafts") or "Bag materials unavailable",
+		missing == "" and "Materials stocked. Craft manually at the required station." or ("Gather/buy: " .. missing),
+		"Update /fp prof plan after crafting; target stays fixed this session.",
+	}
+end
+
+function T:Command(rest)
+	local id, count = rest:match("^plan%s+(%d+)%s+(%d+)$")
+	if rest == "plan clear" then
+		self.plan = nil; FP:Fire("PROFESSIONS_CHANGED"); FP:Print("Craft batch cleared."); return
+	end
+	id, count = tonumber(id), tonumber(count)
+	if not id or not count or count < 1 or count > 200 then
+		FP:Print("Use /fp prof plan <recipeID> <crafts 1-200> or plan clear. Recipe IDs appear in /fp prof."); return
+	end
+	local open = self.open
+	if not open or open.stale then FP:Print("Open your profession to load current learned recipes first."); return end
+	for _, e in ipairs(open.recipes) do
+		if e.id == id and not e.rec.disabled and e.rec.reag and next(e.rec.reag) then
+			self.plan = { id = id, name = e.name, rec = U.Copy(e.rec), target = count }
+			for _, line in ipairs(self:PlanLines()) do FP:Print(line) end
+			FP:Fire("PROFESSIONS_CHANGED"); return
+		end
+	end
+	FP:Print("Recipe not learned/usable, or its material choices are unavailable. Keep your profession open and retry.")
+end
+
 -- Visible guidance for the most recently opened profession; quantities mean
 -- crafts supported by bag materials, not guaranteed skill points or profit.
 function T:Guidance(limit)
 	local list, open = self:BestCrafts(limit or 3)
-	if not list then return { "Open Tailoring or Enchanting (or another profession) for craft suggestions." } end
+	if not list then return { "Open your crafting profession for learned recipes and material suggestions." } end
 	if open.stale then return { tostring(open.name) .. ": skill changed; reopen the profession to refresh." } end
 	if open.max and open.max > 0 and open.skill and open.skill >= open.max then
 		return { tostring(open.name) .. ": at the current skill cap. Check your trainer before crafting for skill." }
@@ -206,7 +244,7 @@ function T:Guidance(limit)
 	local lines = { tostring(open.name) .. " — skill-up suggestions (bag materials):" }
 	for _, e in ipairs(list) do
 		local color = DIFF_COLORS[e.diff] or ""
-		lines[#lines + 1] = color .. U.Truncate(e.name, 35) .. "|r" .. (e.craftable and (" ×" .. e.craftable .. " crafts") or " — materials unknown")
+		lines[#lines + 1] = color .. U.Truncate(e.name, 35) .. "|r" .. (e.craftable and (" ×" .. e.craftable .. " crafts") or " — materials unknown") .. (limit and limit > 3 and (" [" .. e.id .. "]") or "")
 		if e.craftable == 0 then lines[#lines + 1] = "Need: " .. self:MissingFor(e.rec, 1) end
 	end
 	return lines

@@ -687,7 +687,7 @@ C_Item.GetItemInfo=original; M.FireEvent("GET_ITEM_INFO_RECEIVED",159,true); M.R
 assert(prepRow("water").count==22)
 C_SpellBook.IsSpellKnown=nil; FP.MagePrep:Refresh()
 assert(not prepRow("gem:5514") and not prepRow("reagent:17031"))
-assert(FP.MagePrep.rows[#FP.MagePrep.rows].text:find("unavailable",1,true))
+assert(table.concat((function() local t={} for _,r in ipairs(FP.MagePrep.rows) do t[#t+1]=r.text end return t end)(), " "):find("spells unavailable",1,true))
 C_Container.GetContainerNumSlots=nil; FP.MagePrep:Refresh()
 assert(#FP.MagePrep.rows==1 and not prepRow("water"))
 ''',
@@ -721,9 +721,9 @@ assert(FP.cdb.prep.water==60)
 cmd("prep bandages 0"); M.RunTimers(1); assert(not prepRow("bandages"))
 assert(not FP.settings.prep and FP.charDefaults.prep.water==40)
 ''',
-    "mage_prep_non_mage_is_inert": PREP_SETUP + r'''
-M.class="HUNTER"; FP.MagePrep.isMage=false
-C_Container.GetContainerNumSlots=function() error("Hunter inventory scanned by Mage module") end
+    "class_prep_unsupported_class_is_inert": PREP_SETUP + r'''
+M.class="WARRIOR"; FP.MagePrep.isMage=false
+C_Container.GetContainerNumSlots=function() error("Unsupported class inventory scanned") end
 FP.MagePrep:Refresh(); cmd("prep")
 assert(#FP.MagePrep:Lines()==0)
 assert(M.Chat()[#M.Chat()]:find("for Mages",1,true))
@@ -963,6 +963,115 @@ assert(RW:Current().key == "182500" and RW:Current().kills[6489] == 1 and #FP.db
 """,
 })
 
+
+CASES.update({
+    "shaman_supplies_no_mage_gems_and_hunter_preserved": PREP_SETUP + r'''
+M.class="SHAMAN"
+FP.MagePrep:Refresh()
+assert(prepRow("water").count==22 and not prepRow("gem:5514") and not prepRow("reagent:17031"))
+assert(FP.MagePrep.rows[#FP.MagePrep.rows-2].text:find("Enhancement",1,true))
+cmd("prep show"); assert(#FP.MagePrep:Lines()>0)
+M.class="HUNTER"; FP.MagePrep:Refresh()
+assert(prepRow("water") and not prepRow("gem:5514"))
+assert(FP.MagePrep.rows[#FP.MagePrep.rows].text:find("pet supplies",1,true))
+''',
+    "bag_space_excludes_specialty_bags_and_preserves_unknown": r'''
+NUM_TOTAL_EQUIPPED_BAG_SLOTS=2
+C_Container.GetContainerNumFreeSlots=function(bag) return 4, bag==1 and 32 or 0 end
+assert(FP.API.GetFreeBagSlots()==8)
+C_Container.GetContainerNumFreeSlots=function() return M.Secret(),0 end
+assert(FP.API.GetFreeBagSlots()==nil)
+InCombatLockdown=function() return true end
+C_Container.GetContainerNumFreeSlots=function() error("combat read") end
+assert(FP.API.GetFreeBagSlots()==nil)
+''',
+    "turnin_live_navigation_beats_beta_and_recorded_is_fallback": r'''
+local q=addQuest(9001,true)
+FP.data.quests[9001].epos={m=1413,x=.1,y=.1}
+local m,x,y,how=FP.Planner:ResolveTurnIn(9001)
+assert(how=="waypoint" and x==.6)
+q.waypoint=nil; M.pois={}
+m,x,y,how=FP.Planner:ResolveTurnIn(9001)
+assert(how=="recorded" and x==.1)
+''',
+    "route_cluster_counts_distinct_quests_and_bonus_is_bounded": r'''
+for id=9001,9006 do addQuest(id) end
+FP.Planner:Build()
+assert(FP.Planner.steps[1].cluster==5)
+assert(FP.Planner.steps[1].score==FP.Planner.steps[1].dist-180)
+M.RemoveQuest(9003); M.RemoveQuest(9004); M.RemoveQuest(9005); M.RemoveQuest(9006)
+local q=M.quests[1]
+q.objectives[2]={text="Other",finished=false}
+FP.Planner:Build()
+for _,s in ipairs(FP.Planner.steps) do assert(s.cluster==1) end
+''',
+    "skip_defers_all_objectives_expires_and_keeps_manual_waypoints": r'''
+local q=addQuest(9001); addQuest(9002)
+q.objectives[2]={text="Other",finished=false}
+FP.Planner:Auto("test"); assert(active().source.questID==9001)
+cmd("skip 1"); assert(active().source.questID==9002)
+FP.Planner:Auto("test"); assert(active().source.questID==9002)
+assert(FP.Planner.deferred[9001])
+M.now=M.now+61; FP.Planner:Build(); assert(not FP.Planner.deferred[9001])
+cmd("way .4 .5 Manual"); local id=active().id
+cmd("skip"); assert(active().id==id)
+''',
+    "skip_only_quest_does_not_loop_and_click_resumes": r'''
+addQuest(9001); FP.Planner:Auto("test")
+cmd("skip 10"); assert(not active())
+FP.Planner:Auto("test"); assert(not active())
+FP.Planner:Go(FP.Planner.steps[1]); assert(active() and not FP.Planner.deferred[9001])
+cmd("skip 10"); cmd("skip clear"); assert(active())
+''',
+    "skip_after_arrival_and_invalid_minutes": r'''
+addQuest(9001); FP.Planner:Auto("test")
+M.px,M.py=.6,.6; M.Tick(1); assert(FP.Planner.waiting)
+cmd("skip -1"); assert(not FP.Planner.deferred[9001])
+cmd("skip"); assert(FP.Planner.deferred[9001] and not FP.Planner.waiting)
+''',
+    "duo_snapshot_distinguishes_missing_pending_and_both_ready": r'''
+addQuest(9001,true); addQuest(9002,true); addQuest(9003)
+assert(FP.Party:Import("FP1;Friend;HUNTER;20;9001,9002c,9004", "paste"))
+local text=table.concat(FP.Party:Checklist(), "\n")
+assert(text:find("Partner still working: Quest 9001",1,true))
+assert(text:find("Both ready to turn in: Quest 9002",1,true))
+assert(text:find("Only you: Quest 9003",1,true) and text:find("Partner only: quest 9004",1,true))
+FP.Planner:Build()
+for _,s in ipairs(FP.Planner.steps) do if s.questID==9001 then assert(s.partnerPending) end end
+''',
+    "high_level_quest_penalty_does_not_penalize_turnin": r'''
+local q=addQuest(9001); q.level=30; q.suggestedGroup=5
+local q2=addQuest(9002,true); q2.level=30
+M.level=20; FP.Planner:Build()
+assert(FP.Planner.steps[1].questID==9002)
+local s=FP.Planner.steps[2]; assert(s.highLevel and s.groupSize==5 and s.score>s.dist)
+''',
+    "profession_batch_shopping_updates_bags_and_clears": r'''
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(3)
+C_Item.GetItemCount=function() return 5 end
+cmd("prof plan 3839 3")
+local lines=table.concat(FP.Prof:PlanLines(),"\n")
+assert(lines:find("7×",1,true) and lines:find("1 of 3",1,true))
+assert(FP.Panel.footer:GetText():find("Shopping target",1,true))
+C_Item.GetItemCount=function() return 12 end
+M.FireEvent("BAG_UPDATE_DELAYED")
+assert(FP.Panel.footer:GetText():find("Materials stocked",1,true))
+cmd("prof plan 3839 0"); assert(FP.Prof.plan.target==3)
+cmd("prof plan 99999 4"); assert(FP.Prof.plan.id==3839)
+cmd("prof plan clear"); assert(not FP.Prof.plan and #FP.Prof:PlanLines()==0)
+''',
+    "profession_unavailable_counts_never_invent_shopping_deficit": r'''
+local rec={reag={[4306]=4}}
+C_Item.GetItemCount=function() error("unavailable") end
+assert(FP.Prof:Craftable(rec)==nil)
+assert(FP.Prof:MissingFor(rec,3)=="bag counts unavailable")
+C_Item.GetItemCount=function() return M.Secret() end
+assert(FP.Prof:Craftable(rec)==nil)
+C_Item.GetItemCount=function() return -1 end
+assert(FP.Prof:Craftable(rec)==nil)
+''',
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
@@ -970,6 +1079,24 @@ for name, body in CASES.items():
     if result.returncode:
         failed += 1
         print("  " + result.stderr.splitlines()[0])
+
+# Fresh release logins exercise module registration with each actual launch class.
+for player_class in ("SHAMAN", "HUNTER"):
+    boot = BOOT.replace('local FP = {}', 'M.class = "' + player_class + '"\nGetBuildInfo = function() return "1.60.1", "70790", "Nov 4 2026", 16001 end\nlocal FP = {}')
+    body = PREP_SETUP + r'''
+cmd("prep show"); M.RunTimers(1)
+assert(FP.clientBuild=="70790" and #FP.MagePrep:Lines()>0)
+assert(not prepRow("gem:5514") and not prepRow("reagent:17031"))
+assert(FP.PvP.frame:IsShown())
+M.FireEvent("PLAYER_REGEN_DISABLED"); assert(#FP.MagePrep:Lines()==0)
+M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(1)
+assert(#FP.MagePrep:Lines()>0 and #FP.db.errors==0)
+'''
+    result = subprocess.run([LUA, "-"], input=boot + body, text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + "fresh_70790_" + player_class.lower())
+    if result.returncode:
+        failed += 1
+        print(result.stderr)
 
 # Corrupt an actual XML file in an ephemeral copy; never change the real checkout.
 with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
@@ -1013,5 +1140,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 4} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 6} preflight regressions")
 raise SystemExit(1 if failed else 0)

@@ -15,7 +15,10 @@ local function help()
 	p("  /fp goto <quest id or part of the title>")
 	p("  /fp arrow lock|unlock|flip|scale <n>|reset|hide|show")
 	p("  /fp panel reset|scale <n>|lock|unlock")
-	p("  /fp prep [show|hide|auto|on|off|water n|bandages n|reagents n]   Mage supplies")
+	p("  /fp prep [show|hide|auto|on|off|water n|bandages n|reagents n]   class supplies")
+	p("  /fp skip [minutes|clear]   defer a crowded quest (default 10 minutes; this session)")
+	p("  /fp duo           compare quest logs and turn-in readiness with your partner")
+	p("  /fp prof plan <recipeID> <crafts> | plan clear   batch materials checklist")
 	p("  /fp prof          professions + best skill-up crafts (open the profession window first)")
 	p("  /fp record on|off | /fp status | /fp apicheck | /fp selftest | /fp export")
 	p("  /fp pvp [status|track|spells|lock|reset|scale n|on|off]   PvP HUD: your CC/lockout timers with DR estimates, battleground objectives, enemies seen")
@@ -131,8 +134,9 @@ local function cmdApiCheck()
 	API.StoreCheck(rows, true)
 end
 
-local function cmdProf()
+local function cmdProf(rest)
 	FP.Prof:Snapshot()
+	if rest and rest ~= "" then FP.Prof:Command(rest); return end
 	p("professions: " .. FP.Prof:Summary())
 	for _, line in ipairs(FP.Prof:Guidance(12)) do p(line) end
 end
@@ -194,12 +198,22 @@ function C:Handle(msg)
 		if v == "on" then FP.settings.autoNext = true elseif v == "off" then FP.settings.autoNext = false else FP.settings.autoNext = not FP.settings.autoNext end
 		p("auto-next " .. (FP.settings.autoNext and "on" or "off"))
 		if FP.settings.autoNext then FP.Planner.paused, FP.Planner.pinned = nil, nil; FP.Planner:Auto("cmd") end
+	elseif cmd == "skip" then
+		if rest == "clear" then
+			FP.Planner.deferred = {}; FP.Planner:Build(); FP.Planner:Auto("undefer"); p("Deferred quests restored.")
+		else
+			local minutes = rest == "" and 10 or tonumber(rest)
+			if not U.Finite(minutes) or minutes < 1 or minutes > 60 or minutes ~= math.floor(minutes) then p("Use /fp skip <whole minutes 1-60> or /fp skip clear.")
+			elseif FP.Planner:Skip(minutes) then p("Quest deferred for " .. minutes .. " minutes. /fp skip clear restores it.")
+			else p("No active quest route to defer; manual waypoints are preserved.") end
+		end
 	elseif cmd == "way" or cmd == "wp" then cmdWay(rest)
 	elseif cmd == "goto" then cmdGoto(rest)
 	elseif cmd == "arrow" then cmdArrow(rest)
 	elseif cmd == "panel" then cmdPanel(rest)
-	elseif cmd == "prof" then cmdProf()
+	elseif cmd == "prof" then cmdProf(rest)
 	elseif cmd == "prep" then FP.MagePrep:Command(rest)
+	elseif cmd == "duo" then for _, line in ipairs(FP.Party:Checklist()) do p(line) end
 	elseif cmd == "status" then cmdStatus()
 	elseif cmd == "apicheck" then cmdApiCheck()
 	elseif cmd == "selftest" then FP.SelfTest:Run()

@@ -50,6 +50,11 @@ local function poiFor(questID, mapID, wantStart)
 end
 
 function P:ResolveTurnIn(questID)
+	-- Current client navigation wins over beta observations or a quest's giver.
+	local m, x, y = API.GetQuestNextWaypoint(questID)
+	if m then return m, x, y, "waypoint" end
+	m, x, y = poiFor(questID, API.GetBestMap(), false)
+	if m then return m, x, y, "poi" end
 	local q = FP.data.quests[questID]
 	if q and q.epos then return q.epos.m, q.epos.x, q.epos.y, "recorded" end
 	if q then
@@ -58,10 +63,6 @@ function P:ResolveTurnIn(questID)
 			if n and n.pos[1] then return n.pos[1].m, n.pos[1].x, n.pos[1].y, "npc" end
 		end
 	end
-	local m, x, y = poiFor(questID, API.GetBestMap(), false)
-	if m then return m, x, y, "poi" end
-	m, x, y = API.GetQuestNextWaypoint(questID)
-	if m then return m, x, y, "waypoint" end
 	if q and q.gpos then return q.gpos.m, q.gpos.x, q.gpos.y, "giver" end
 	if q then
 		for npcID in pairs(q.givers) do
@@ -104,8 +105,15 @@ end
 function P:Build()
 	local steps = {}
 	local log = API.GetQuestLog()
+	local infoByID = {}
+	for _, info in ipairs(log) do infoByID[info.questID] = info end
+	local level = API.PlayerLevel()
 	local party = FP.cdb.party and FP.cdb.party.quests or nil
 	local now = API.Time()
+	self.deferred = self.deferred or {}
+	for qid, untilTime in pairs(self.deferred) do
+		if now >= untilTime or not API.IsOnQuest(qid) then self.deferred[qid] = nil end
+	end
 	for _, info in ipairs(log) do
 		local qid = info.questID
 		local shared = party and party[qid] and true or false
@@ -130,6 +138,9 @@ function P:Build()
 	end
 	-- distance + score
 	for _, s in ipairs(steps) do
+		local info = infoByID[s.questID]
+		s.level, s.groupSize = FP.safe(info.level), FP.safe(info.suggestedGroup)
+		s.highLevel = U.Finite(level) and U.Finite(s.level) and s.level > level + 3 or false
 		if s.mapID and s.x then
 			local d, _, sameCont = FP.Pos:VectorTo(s)
 			s.dist = d
@@ -145,10 +156,31 @@ function P:Build()
 		end
 		if s.kind == "turnin" then s.score = s.score - 250 end
 		if s.shared then s.score = s.score - 150 end
+		if s.highLevel and s.kind ~= "turnin" then s.score = s.score + 500 end
+		s.deferred = self.deferred[s.questID] ~= nil
+		s.partnerPending = s.kind == "turnin" and s.shared and FP.cdb.party.complete and not FP.cdb.party.complete[s.questID] or false
+	end
+	-- Modest local cluster bonus: count distinct quests, never duplicate objectives.
+	-- Straight-line proximity is a hint, not terrain pathfinding or an XP/hour claim.
+	for _, s in ipairs(steps) do
+		local nearby = {}
+		if s.dist and not s.deferred then
+			for _, other in ipairs(steps) do
+				if other.questID ~= s.questID and not other.deferred and other.mapID == s.mapID and other.x then
+					local d = FP.Pos:MapDistance(s.mapID, s.x, s.y, other.x, other.y)
+					if d and d <= 200 then nearby[other.questID] = true end
+				end
+			end
+		end
+		s.cluster = U.Count(nearby)
+		s.score = s.score - math.min(s.cluster, 3) * 60
+		if s.deferred then s.score = s.score + 2e9 end
 	end
 	table.sort(steps, function(a, b)
 		if a.score ~= b.score then return a.score < b.score end
-		return tostring(a.title) < tostring(b.title)
+		if a.title ~= b.title then return tostring(a.title) < tostring(b.title) end
+		if a.questID ~= b.questID then return a.questID < b.questID end
+		return (a.objIndex or 0) < (b.objIndex or 0)
 	end)
 	-- hearth hint: several turn-ins near the bind point and hearth ready
 	local bind = FP.cdb.bind
@@ -174,16 +206,17 @@ end
 
 function P:NextStep()
 	for _, s in ipairs(self.steps) do
-		if s.kind ~= "hearth" and not sameStep(s, self.waiting) and s.mapID and s.x and s.dist then return s end
+		if not s.deferred and s.kind ~= "hearth" and not sameStep(s, self.waiting) and s.mapID and s.x and s.dist then return s end
 	end
 	for _, s in ipairs(self.steps) do
-		if s.kind ~= "hearth" and not sameStep(s, self.waiting) and s.mapID and s.x then return s end
+		if not s.deferred and s.kind ~= "hearth" and not sameStep(s, self.waiting) and s.mapID and s.x then return s end
 	end
 	return nil
 end
 
 function P:Go(step, automatic)
 	if not step or not U.ValidMapPoint(step.mapID, step.x, step.y) then return nil end
+	if not automatic and self.deferred and step.questID then self.deferred[step.questID] = nil end
 	self.waiting, self.paused = nil, nil
 	self.pinned = not automatic
 	FP.Waypoints:RemoveBySource("plan")
@@ -218,7 +251,7 @@ function P:Auto(reason)
 	end
 	-- Keep explicit selections until completed; automatic choices need a meaningful
 	-- improvement before switching, so neighboring POIs do not make the arrow flap.
-	if current and current.mapID and current.x then
+	if current and not current.deferred and current.mapID and current.x then
 		if self.pinned or (s and current.dist and s.dist and current.score <= s.score + 75) then s = current end
 	end
 	if s then
@@ -235,6 +268,22 @@ function P:Auto(reason)
 	elseif active and active.source and active.source.type == "plan" then
 		FP.Waypoints:RemoveBySource("plan")
 	end
+end
+
+-- Defer the current quest, including all its objectives, for this login session.
+function P:Skip(minutes)
+	local active = FP.Waypoints:GetActive()
+	if active and (not active.source or active.source.type ~= "plan") then return false end
+	local source = active and active.source or self.waiting
+	if not source or not source.questID then return false end
+	self.deferred = self.deferred or {}
+	self.deferred[source.questID] = API.Time() + minutes * 60
+	self.waiting, self.pinned, self.paused = nil, nil, nil
+	FP.Waypoints:RemoveBySource("plan")
+	self:Build()
+	local nextStep = self:NextStep()
+	if nextStep then self:Go(nextStep, true) end
+	return true
 end
 
 function P:OnEnable()
@@ -303,5 +352,9 @@ function P:Describe(step)
 	elseif step.kind == "hearth" then label = FP.GREEN .. step.title .. "|r " .. FP.GREY .. step.text .. "|r"
 	else label = step.text .. (step.progress and (" " .. FP.GREY .. step.progress .. "|r") or "") .. FP.GREY .. " — " .. U.Truncate(step.title, 28) .. "|r" end
 	if step.shared then label = "★ " .. label end
+	if step.highLevel then label = FP.GOLD .. "[Lv " .. step.level .. "]|r " .. label end
+	if step.cluster and step.cluster > 0 then label = label .. FP.GREY .. " (+" .. step.cluster .. " nearby)|r" end
+	if step.partnerPending then label = label .. FP.GOLD .. " [partner still working]|r" end
+	if step.deferred then label = FP.GREY .. "[deferred] |r" .. label end
 	return d, label
 end

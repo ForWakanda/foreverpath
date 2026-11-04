@@ -156,9 +156,9 @@ FP.Planner:Build()
 check(FP.Planner.steps[1].kind == "turnin" and FP.Planner.steps[1].questID == 1236, "complete quest ranks first as turn-in: " .. tostring(FP.Planner.steps[1].title))
 -- 1236 has no recorded ender yet -> falls back to the giver (most Classic quests return to the giver)
 check(FP.Planner.steps[1].how == "giver", "turn-in falls back to giver, got " .. tostring(FP.Planner.steps[1].how))
--- 1234's ender (Mankrik) was recorded from the gossip active-quest list
+-- Live POIs override an older recorded ender (release locations can change).
 local m, x, y, how = FP.Planner:ResolveTurnIn(1234)
-check((how == "recorded" or how == "npc") and m == 1413, "recorded ender resolves to a recorded position, got " .. tostring(how))
+check(how == "poi" and m == 1413, "live turn-in POI preferred to old recorded position, got " .. tostring(how))
 M.SetUnit("npc", { guid = "Creature-0-4379-1-13-3446-00003BB8D2", name = "Mankrik", level = 25, reaction = 5 })
 M.dialogQuest = 1236
 M.FireEvent("QUEST_COMPLETE")

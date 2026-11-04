@@ -2,8 +2,7 @@
 -- The ONLY file that talks to the WoW API. Everything is feature-detected so a
 -- renamed or removed function on the next build degrades one feature instead
 -- of breaking the addon. Verified against Blizzard's Forever UI source
--- (build 1.60.1.70170, interface 16001, Mainline 12.1.5 API family;
--- re-verified against the 70124 -> 70170 source diff on 2026-10-01).
+-- (release source 1.60.1.70790, interface 16001; checked 2026-11-04).
 local ADDON, FP = ...
 local U = FP.Util
 local safe = FP.safe
@@ -532,6 +531,30 @@ function API.GetItemCount(itemID, includeBank)
 	end
 	if hasg("GetItemCount") then return GetItemCount(itemID, includeBank) or 0 end
 	return 0
+end
+
+-- Strict count for crafting advice: unavailable is not zero materials.
+function API.GetBagItemCount(itemID)
+	local fn = has(C_Item, "GetItemCount") and C_Item.GetItemCount or (hasg("GetItemCount") and GetItemCount)
+	if not fn or API.InCombat() then return nil end
+	local ok, n = pcall(fn, itemID, false)
+	n = safe(n)
+	if ok and U.Finite(n) and n >= 0 then return n end
+	return nil
+end
+
+-- Only general-purpose bags count; herb bags/quivers cannot hold arbitrary loot.
+function API.GetFreeBagSlots()
+	if API.InCombat() or not has(C_Container, "GetContainerNumFreeSlots") then return nil end
+	local total, last = 0, NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+	if not U.Finite(last) or last < 0 or last > 10 then return nil end
+	for bag = 0, last do
+		local ok, n, family = pcall(C_Container.GetContainerNumFreeSlots, bag)
+		n, family = safe(n), safe(family)
+		if not ok or not U.Finite(n) or n < 0 or not U.Finite(family) then return nil end
+		if family == 0 then total = total + n end
+	end
+	return total
 end
 
 local HEARTHSTONE = 6948
@@ -1084,6 +1107,10 @@ function API.Check()
 		if not inv then return false, reason end
 		return inv.waterKnown and inv.bandagesKnown, string.format("drink count %s; bandages %s; learned spell lookup %s",
 			inv.waterKnown and tostring(inv.water) or "loading/unknown", inv.bandagesKnown and tostring(inv.bandages) or "loading/unknown", tostring(API.KnowsSpell(759)))
+	end)
+	probe("classPrep", function()
+		local free = API.GetFreeBagSlots()
+		return free ~= nil, tostring(API.GetCharInfo().class) .. "; general bag slots " .. tostring(free or "unavailable")
 	end)
 	probe("hearth", function() return API.HasHearthstone(), "bind: " .. tostring(API.GetBindLocation()) end)
 	probe("secretUnitName", function() return true, FP.issecret(UnitName("player")) and "player name is secret" or "player name readable" end)

@@ -77,6 +77,11 @@ function Panel:OnInit()
 			GameTooltip:SetOwner(btn, "ANCHOR_LEFT")
 			GameTooltip:AddLine(tostring(btn.step.title), 1, 0.82, 0)
 			if btn.step.text and btn.step.kind ~= "turnin" then GameTooltip:AddLine(tostring(btn.step.text), 1, 1, 1, true) end
+			if btn.step.cluster and btn.step.cluster > 0 then GameTooltip:AddLine(btn.step.cluster .. " other quests within about 200 yd (straight-line).", 0.5, 0.8, 1, true) end
+			if btn.step.partnerPending then GameTooltip:AddLine("Partner's last shared snapshot: still working on this quest. Check before leaving.", 1, 0.82, 0, true) end
+			if btn.step.deferred then GameTooltip:AddLine("Deferred for this session. Click to resume now.", 1, 0.82, 0, true) end
+			if btn.step.highLevel then GameTooltip:AddLine("Quest is more than 3 levels above you; easier nearby work is favored.", 1, 0.5, 0.3, true) end
+			if U.Finite(btn.step.groupSize) and btn.step.groupSize > 1 then GameTooltip:AddLine("Client suggests a group of " .. btn.step.groupSize .. ".", 1, 0.82, 0, true) end
 			if btn.step.mapID then GameTooltip:AddLine(API.GetMapName(btn.step.mapID) .. "  " .. U.FormatCoords(btn.step.x, btn.step.y) .. "  " .. FP.GREY .. "(" .. tostring(btn.step.how) .. ")|r", 0.7, 0.7, 0.7)
 			else GameTooltip:AddLine("Location unknown yet: talk to the quest giver again or make progress and ForeverPath will learn it.", 0.9, 0.5, 0.5, true) end
 			GameTooltip:AddLine("Click to send the arrow here.", 0.5, 0.8, 1)
@@ -171,6 +176,7 @@ function Panel:Refresh(positionOnly)
 	local cd = API.GetHearthCooldown()
 	local bind = FP.cdb.bind and FP.cdb.bind.area or API.GetBindLocation()
 	local hearth = bind and ("Hearth: " .. tostring(bind) .. (cd > 0 and (" (" .. U.FormatTime(cd) .. ")") or " (ready)")) or ""
-	self.footer:SetText(FP.Prof:Summary() .. "\n" .. table.concat(FP.Prof:Guidance(3), "\n") .. (hearth ~= "" and ("\n" .. hearth) or ""))
+	local batch = FP.Prof:PlanLines()
+	self.footer:SetText(FP.Prof:Summary() .. "\n" .. table.concat(FP.Prof:Guidance(3), "\n") .. (#batch > 0 and ("\n" .. table.concat(batch, "\n")) or "") .. (hearth ~= "" and ("\n" .. hearth) or ""))
 	self.frame:SetHeight(40 + n * ROW_HEIGHT + self.footer:GetStringHeight() + 20)
 end

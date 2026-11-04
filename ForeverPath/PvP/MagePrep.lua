@@ -1,4 +1,5 @@
--- Mage supplies: information only. No casts, purchases, item use, cooldowns or auras.
+-- Class supplies: information only. Keep the module name for saved/API compatibility.
+-- No casts, purchases, item use, cooldowns or aura decisions.
 local ADDON, FP = ...
 local API, U = FP.API, FP.Util
 local Prep = FP:NewModule("MagePrep")
@@ -33,6 +34,11 @@ function Prep:IsMage()
 	return API.GetCharInfo().class == "MAGE"
 end
 
+function Prep:ClassLabel()
+	local class = API.GetCharInfo().class
+	return ({ MAGE = "Mage", SHAMAN = "Shaman", HUNTER = "Hunter" })[class]
+end
+
 local function stockRow(key, name, count, goal, action)
 	local missing = count and math.max(0, goal - count) or nil
 	local text, color
@@ -43,7 +49,7 @@ local function stockRow(key, name, count, goal, action)
 end
 
 function Prep:Refresh(attempt)
-	if self.combat or API.InCombat() or not FP.cdb.prep.enabled or not self:IsMage() then return end
+	if self.combat or API.InCombat() or not FP.cdb.prep.enabled or not self:ClassLabel() then return end
 	local inv, reason = API.GetPrepInventory()
 	self.inventory, self.reason, self.rows = inv, reason, {}
 	self.bg = API.InBattleground()
@@ -54,19 +60,29 @@ function Prep:Refresh(attempt)
 		if s.water > 0 then self.rows[#self.rows + 1] = stockRow("water", "Drinks", inv.waterKnown and inv.water or nil, s.water, "stock") end
 		if s.bandages > 0 then self.rows[#self.rows + 1] = stockRow("bandages", "Bandages (carried)", inv.bandagesKnown and inv.bandages or nil, s.bandages, "stock") end
 		local unknown = false
-		for _, gem in ipairs(GEMS) do
+		for _, gem in ipairs(self:IsMage() and GEMS or {}) do
 			local known = API.KnowsSpell(gem.spell)
 			if known == true then self.rows[#self.rows + 1] = stockRow("gem:" .. gem.item, gem.name, inv.counts[gem.item] or 0, 1, "conjure")
 			elseif known == nil then unknown = true end
 		end
 		if s.reagents > 0 then
-			for _, reagent in ipairs(REAGENTS) do
+			for _, reagent in ipairs(self:IsMage() and REAGENTS or {}) do
 				local known = knowsAny(reagent.spells)
 				if known == true then self.rows[#self.rows + 1] = stockRow("reagent:" .. reagent.item, reagent.name, inv.counts[reagent.item] or 0, s.reagents, reagent.action or "buy")
 				elseif known == nil then unknown = true end
 			end
 		end
 		if unknown then self.rows[#self.rows + 1] = { text = FP.GREY .. "Gem/reagent needs: spells unavailable|r" } end
+		local free = API.GetFreeBagSlots()
+		self.rows[#self.rows + 1] = { key = "bags", count = free, text = free and ((free <= 4 and FP.GOLD or FP.GREY) .. "General bag slots free: " .. free .. (free <= 4 and " — plan a vendor stop" or "") .. "|r") or (FP.GREY .. "Free bag space unavailable|r") }
+	end
+	local class = API.GetCharInfo().class
+	if class == "SHAMAN" then
+		self.rows[#self.rows + 1] = { text = FP.GREY .. "Enhancement: check imbue + shield.|r" }
+		self.rows[#self.rows + 1] = { text = FP.GREY .. "Duo: agree pulls; save healing mana.|r" }
+		self.rows[#self.rows + 1] = { text = FP.GREY .. "Trainer: check utility/travel spells.|r" }
+	elseif class == "HUNTER" then
+		self.rows[#self.rows + 1] = { text = FP.GREY .. "Town: check pet supplies + weapon.|r" }
 	end
 	self.scannedAt = API.Time()
 	FP:Fire("PVP_CHANGED")
@@ -90,13 +106,14 @@ end
 
 function Prep:Lines()
 	local s = FP.cdb.prep
-	if not self.isMage or not s.enabled or s.mode == "hide" or self.combat or API.InCombat() then return {} end
+	if not self:ClassLabel() or not s.enabled or s.mode == "hide" or self.combat or API.InCombat() then return {} end
 	if s.mode ~= "show" and not self.merchant and not self.bg and API.Time() >= (self.untilTime or 0) then return {} end
 	return self.rows or { { text = FP.GREY .. "Reading bag supplies…|r" } }
 end
 
 function Prep:Command(rest)
-	if not self:IsMage() then FP:Print("The preparation checklist is for Mages."); return end
+	local label = self:ClassLabel()
+	if not label then FP:Print("The preparation checklist is for Mages, Shamans and Hunters."); return end
 	local args, s = U.Split(rest or "", " "), FP.cdb.prep
 	local sub = (args[1] or ""):lower()
 	if sub == "water" or sub == "bandages" or sub == "reagents" then
@@ -107,11 +124,11 @@ function Prep:Command(rest)
 	elseif sub == "on" or sub == "off" then
 		s.enabled = sub == "on"
 		if s.enabled then s.mode = "auto" end
-		FP:Print("Mage preparation checklist " .. sub)
+		FP:Print(label .. " preparation checklist " .. sub)
 	elseif sub == "show" or sub == "hide" or sub == "auto" then
 		s.mode = sub
 		if sub ~= "hide" then s.enabled = true end
-		FP:Print("Mage preparation display: " .. sub)
+		FP:Print(label .. " preparation display: " .. sub)
 	elseif sub ~= "" then
 		FP:Print("prep: show | hide | auto | on | off | water <n> | bandages <n> | reagents <n>")
 		return
@@ -124,7 +141,7 @@ function Prep:Command(rest)
 		if self.combat or API.InCombat() then FP:Print("Supply checks resume after combat."); return end
 		if not s.enabled then FP:Print("Checklist disabled; /fp prep on to enable."); return end
 		self:Refresh()
-		FP:Print("Mage supplies — bags only; stocking targets, not combat readiness:")
+		FP:Print(label .. " supplies — bags only; stocking targets, not combat readiness:")
 		for _, row in ipairs(self.rows or {}) do FP:Print(row.text) end
 	end
 	FP:Fire("PVP_CHANGED")
@@ -132,9 +149,10 @@ end
 
 function Prep:OnEnable()
 	self.isMage = self:IsMage()
-	if not self.isMage then return end
+	local label = self:ClassLabel()
+	if not label then return end
 	self.combat = API.InCombat()
-	FP.PvP:RegisterSection("Mage supplies", 5, function() return Prep:Lines() end)
+	FP.PvP:RegisterSection(label .. " supplies", 5, function() return Prep:Lines() end)
 	for _, event in ipairs({ "BAG_UPDATE_DELAYED", "SPELLS_CHANGED", "PLAYER_LEVEL_UP", "GET_ITEM_INFO_RECEIVED" }) do
 		FP:RegisterEvent(event, function() self:RequestRefresh() end)
 	end

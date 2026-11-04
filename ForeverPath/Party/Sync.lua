@@ -114,3 +114,24 @@ function S:Summary()
 	for _, info in ipairs(API.GetQuestLog()) do if p.quests[info.questID] then shared = shared + 1 end end
 	return string.format("%s (%s %s): %d quests, %d shared%s", tostring(p.name), tostring(p.class), tostring(p.level), U.Count(p.quests), shared, p.mode == "paste" and " (paste seed)" or "")
 end
+
+function S:Checklist()
+	local p = FP.cdb.party
+	local lines = { self:Summary() }
+	if not p or not p.quests then return lines end
+	if p.t then lines[#lines + 1] = "Last snapshot: " .. U.FormatTime(math.max(0, U.Now() - p.t)) .. " ago; confirm with your partner." end
+	local own = {}
+	for _, info in ipairs(API.GetQuestLog()) do
+		own[info.questID] = true
+		local title = tostring(info.title)
+		if not p.quests[info.questID] then lines[#lines + 1] = "Only you: " .. title
+		elseif info.isComplete and not (p.complete and p.complete[info.questID]) then lines[#lines + 1] = "Partner still working: " .. title
+		elseif not info.isComplete and p.complete and p.complete[info.questID] then lines[#lines + 1] = "You still need: " .. title
+		elseif info.isComplete then lines[#lines + 1] = "Both ready to turn in: " .. title end
+	end
+	local missing = {}
+	for id in pairs(p.quests) do if not own[id] then missing[#missing + 1] = id end end
+	table.sort(missing)
+	for _, id in ipairs(missing) do lines[#lines + 1] = "Partner only: quest " .. id .. " (ask them for the title/giver)" end
+	return lines
+end
