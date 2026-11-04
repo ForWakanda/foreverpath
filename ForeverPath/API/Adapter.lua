@@ -1195,16 +1195,24 @@ function API.Check()
 	return rows
 end
 
-function API.StoreCheck(rows, manual)
-	local result = { t = U.Now(), build = FP.clientBuild, version = FP.version, ok = 0, fail = 0, rows = {} }
+function API.CaptureNavigation()
 	-- Bounded diagnostic snapshot, including the exact data used to route.
 	local snapshotOK, navigation = pcall(function()
 		local mapID = API.GetBestMap()
-		return { mapID = mapID, quests = API.GetQuestLog(), pois = API.GetQuestsOnMap(mapID), selected = API.GetSelectedQuest(),
+		local arrow = FP.Arrow
+		return { t = U.Now(), version = FP.version, build = FP.clientBuild,
+			arrowShown = arrow.frame:IsShown(), arrowEnabled = FP.settings.arrow.shown,
+			arrowTitle = arrow.title:GetText(), arrowText = arrow.dist:GetText(), texture = arrow.tex:GetTexture(),
+			mapID = mapID, quests = API.GetQuestLog(), pois = API.GetQuestsOnMap(mapID), selected = API.GetSelectedQuest(),
 			offers = API.GetQuestOffers(mapID), active = U.Copy(FP.Waypoints:GetActive() or {}),
 			waiting = U.Copy(FP.Planner.waiting or {}), paused = FP.Planner.paused }
 	end)
-	result.navigation = snapshotOK and navigation or { error = tostring(navigation) }
+	return snapshotOK and navigation or { t = U.Now(), error = tostring(navigation) }
+end
+
+function API.StoreCheck(rows, manual)
+	local result = { t = U.Now(), build = FP.clientBuild, version = FP.version, ok = 0, fail = 0, rows = {} }
+	result.navigation = API.CaptureNavigation()
 	for _, r in ipairs(rows) do
 		result.rows[r.name] = { ok = r.ok, note = r.note, status = r.status or (r.ok and "ok" or "unavailable") }
 		if r.ok then result.ok = result.ok + 1 else result.fail = result.fail + 1 end

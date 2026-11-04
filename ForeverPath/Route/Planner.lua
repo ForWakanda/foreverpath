@@ -321,6 +321,18 @@ function P:Skip(minutes)
 	return true
 end
 
+-- The normal path is entirely event/timer driven. Reconcile the display even
+-- when Auto returns early (waiting, manual waypoint, paused, or unavailable data).
+function P:Tick()
+	FP.pcall("auto-route", self.Auto, self, "position")
+	FP.Arrow:Refresh()
+	local now = API.Time()
+	if not self.lastDiagnostic or now - self.lastDiagnostic >= 30 then
+		self.lastDiagnostic = now
+		FP.db.navigation = API.CaptureNavigation()
+	end
+end
+
 function P:OnEnable()
 	FP:On("QUESTLOG_SCANNED", function() FP.Throttle("plan-check", 1, function() P:CheckActive() end) end)
 	FP:On("QUEST_TURNED_IN", function() FP.After(1.5, function() P:Auto("turnin") end) end)
@@ -339,11 +351,11 @@ function P:OnEnable()
 			end
 		end
 	end)
-	FP.After(8, function() P:Auto("login") end)
+	FP.After(8, function() P:Tick() end)
 	-- Independent of the arrow/panel position ticker: arrival removes the last
 	-- waypoint, and a hidden panel must not stop automatic navigation.
 	if C_Timer and C_Timer.NewTicker then
-		self.ticker = C_Timer.NewTicker(3, function() FP.pcall("auto-route", P.Auto, P, "position") end)
+		self.ticker = C_Timer.NewTicker(3, function() FP.pcall("guidance-tick", P.Tick, P) end)
 	end
 	FP:RegisterEvent("ZONE_CHANGED_NEW_AREA", function() FP.After(1, function() P:Auto("zone") end) end)
 	FP:RegisterEvent("QUEST_POI_UPDATE", function() FP.Throttle("plan-poi", 1, function() P:Auto("poi") end) end)

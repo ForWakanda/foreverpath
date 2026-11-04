@@ -42,6 +42,49 @@ end
 '''
 
 CASES = {
+    "normal_questing_needs_no_commands": r'''
+FP.Panel:Toggle(false)
+local q=addQuest(9001)
+M.Tick(4)
+assert(active() and active().source.questID==9001 and FP.Arrow.frame:IsShown())
+FP.Arrow.frame:Hide(); M.Tick(4)
+assert(FP.Arrow.frame:IsShown(), "normal tick did not recover display")
+M.px,M.py=.6,.6; M.Tick(1)
+assert(FP.Planner.waiting and FP.Arrow.frame:IsShown())
+FP.Arrow.frame:Hide(); M.Tick(4)
+assert(FP.Arrow.frame:IsShown(), "waiting state did not recover display")
+q.objectives[1].finished=true; M.complete[9001]=true; q.waypoint={1413,.7,.7}
+M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(2); M.Tick(4)
+assert(active().source.kind=="turnin")
+M.px,M.py=.7,.7; M.Tick(1)
+assert(FP.Planner.waiting.kind=="turnin" and FP.Arrow.frame:IsShown())
+M.RemoveQuest(9001)
+C_QuestLine={GetAvailableQuestLines=function() return {{questID=9002,questName="Next quest",x=.8,y=.8}} end}
+M.FireEvent("QUEST_TURNED_IN",9001,100,0); M.Tick(4)
+assert(active().source.kind=="pickup" and active().source.questID==9002)
+M.px,M.py=.8,.8; M.Tick(1)
+assert(FP.Planner.waiting.kind=="pickup")
+local nextQuest=addQuest(9002); nextQuest.waypoint={1413,.9,.9}
+M.FireEvent("QUEST_ACCEPTED",9002); M.Tick(4)
+assert(active().source.kind=="objective" and active().source.questID==9002)
+M.Tick(31)
+assert(FP.db.navigation.active.source.questID==9002 and FP.db.navigation.arrowShown)
+assert(not FP.Panel.frame:IsShown(), "automatic guidance must work with the panel closed")
+''',
+    "missing_coordinates_show_status_then_recover_automatically": r'''
+local q=addQuest(9001); q.waypoint=nil
+M.Tick(4)
+assert(not active() and FP.Arrow.frame:IsShown())
+assert(FP.Arrow.title:GetText()=="Quest directions unavailable" and not FP.Arrow.tex:IsShown())
+M.pois={{questID=9001,x=.7,y=.7,isQuestStart=false}}
+M.Tick(4)
+assert(active().source.questID==9001 and FP.Arrow.tex:IsShown())
+FP.settings.arrow.shown=false; M.Tick(4)
+assert(not FP.Arrow.frame:IsShown(), "respect deliberate hide")
+FP.settings.arrow.shown=true; FP.Waypoints:Clear(); M.Tick(4)
+assert(not FP.Arrow.frame:IsShown() and not active(), "respect deliberate stop")
+''',
+
     "quest_pickups_follow_client_offers_then_acceptance": r'''
 M.pois = {{questID=9100,x=.55,y=.55,isQuestStart=true}, {questID=9101,x=.65,y=.65,isQuestStart=false}}
 C_QuestLine = {GetAvailableQuestLines=function() return {

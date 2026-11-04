@@ -96,9 +96,13 @@ end
 
 function Arrow:Refresh()
 	local wp = displayedWaypoint()
-	if wp and FP.settings.arrow.shown then
+	local idle = FP.settings.autoNext and not FP.Planner.paused and not API.InBattleground()
+	if FP.settings.arrow.shown and (wp or idle) then
 		self.frame:Show()
-		FP.Pos:Acquire("arrow")
+		if wp then FP.Pos:Acquire("arrow") else FP.Pos:Release("arrow") end
+		-- Paint immediately; a shown frame must not wait for a later OnUpdate
+		-- to acquire its label or recover after being hidden.
+		FP.pcall("arrow-render", self.OnUpdate, self, 0.1)
 	else
 		self.frame:Hide()
 		FP.Pos:Release("arrow")
@@ -111,7 +115,14 @@ function Arrow:OnUpdate(elapsed)
 	if elapsedAcc < 0.05 then return end
 	elapsedAcc = 0
 	local wp = displayedWaypoint()
-	if not wp then self:Refresh(); return end
+	if not wp then
+		self.tex:Hide()
+		local steps = FP.Planner.steps or {}
+		self.title:SetText(#steps > 0 and "Quest directions unavailable" or "Looking for available quests")
+		self.dist:SetText(#steps > 0 and "Check the quest's directions in your log" or "No pickup locations reported on this map")
+		return
+	end
+	self.tex:Show()
 	if not FP.Waypoints:GetActive() and FP.Planner.waiting then
 		self.title:SetText(U.Truncate(wp.title, 40))
 		self.tex:SetRotation(0)

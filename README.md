@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.6.1)
+## What it does (v0.6.2)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
@@ -24,9 +24,9 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Current directions first:** live client waypoints/POIs now override recorded beta turn-in positions. Recorded locations remain a fallback. The planner includes available pickups reported by the current client map. It does not contain a complete prewritten 1–60 route or terrain pathfinder.
 - **Profession shopping:** open your learned crafting profession, then `/fp prof` for recipe IDs. `/fp prof plan <recipeID> <crafts>` displays a bag-aware materials checklist in the main panel; `/fp prof plan clear` clears it. The target is a fixed number of future crafts for this session: update it after crafting. It does not buy/craft anything or infer skill points. Unavailable counts stay unknown. Skinning is shown in the profession summary; it has no crafting recipe list. Switching to Engineering uses that character's learned recipes once opened.
 
-Quest guidance (v0.6.1): `/fp guide` restores the arrow/panel positions and resumes guidance. Select a quest in the game's tracker to prioritize it, or `/fp goto Vile Familiars` to pin a specific quest. The indicator stays visible when you reach an unfinished objective area. `/fp pickups` lists currently available pickups and guides to the best scored one; accepting it switches to its objectives. Pickup eligibility comes from live client offers, not historical NPC sightings. If the client supplies no coordinates, the panel says so.
+Quest guidance (v0.6.2) starts automatically at login. The arrow follows the quest selected in the game's tracker when coordinates exist, otherwise it picks a nearby objective, turn-in or client-reported available pickup. It stays visible on arrival, advances when the objective is finished or quest is accepted/turned in, and runs independently of the panel. Missing coordinates produce a visible explanation instead of a blank area. Every few seconds it reconciles display state; deliberate hide/stop settings remain respected. Commands are optional overrides. Pickup eligibility comes from live client offers, not historical NPC sightings.
 
-Release evidence: 70790 SavedVariables contain readable quest POIs, player position/facing and zero stored addon errors, but the user reports a blank arrow area on v0.6.0. v0.6.1 is mock-tested; its visual behavior and pickup coverage still need client confirmation. After updating: `/reload`, `/fp guide`, `/fp goto Vile Familiars`, then `/fp apicheck` and `/reload` to save UI state, quest coordinates and any rendering failure. `tools/pull-data.sh` reads the release client's WTF folder; it does not import beta data.
+Release evidence: 70790 SavedVariables contain readable quest POIs, player position/facing and zero stored addon errors, but the user reports a blank arrow area on v0.6.0. v0.6.2 is mock-tested; its visual behavior and pickup coverage still need client confirmation. Reload the UI once after updating, then play normally. Diagnostics refresh automatically on addon-version changes, and the latest navigation/display snapshot updates every 30 seconds; ordinary logout or UI reload saves them to disk. `tools/pull-data.sh` reads the release client's WTF folder; it does not import beta data.
 
 ## PvP module
 

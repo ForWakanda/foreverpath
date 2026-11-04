@@ -287,9 +287,9 @@ function R:OnEnable()
 
 	FP.After(3, function() rescanLog("login") end)
 
-	-- store the API check once per build (positive control for the recorder)
+	-- Refresh on addon updates too; diagnostics must not require a slash command.
 	local buildKey = tostring(FP.clientBuild)
-	if not FP.db.apicheck[buildKey] then
+	if not FP.db.apicheck[buildKey] or FP.db.apicheck[buildKey].version ~= FP.version then
 		FP.After(6, function()
 			local rows = API.Check()
 			local out = API.StoreCheck(rows, false)
