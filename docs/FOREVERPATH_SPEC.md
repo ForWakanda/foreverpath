@@ -200,3 +200,12 @@ Quest scoring adds at most 180 yards of cluster preference (60 per other distinc
 Profession batch targets are session-only fixed craft counts; they recalculate bag deficits but do not decrement based on ambiguous item-output events. Players adjust the target after crafting. Only current learned usable recipes with complete supported reagent schematics can seed a plan. No price/profit claims, purchases, or crafting actions.
 
 Old beta SavedVariables are retained as historical evidence and not installed into the release client. The latest local October 11 archive contains six rare-watch secret-height errors predating the existing fixed-height repairs; it is not a fresh 70790 result. First release login must establish actual arrow, party, profession and supply behavior through `/fp apicheck`, `/reload`, and `tools/pull-data.sh`.
+
+
+## 14. Release quest guidance repair — 2026-11-04 (Codex, v0.6.1)
+
+Fresh build 70790 SavedVariables report three logged quests, three map POIs, readable position/facing, and zero stored errors. GetNextWaypoint for quest 4402 returned no waypoint, while the planner saved a valid POI-derived objective waypoint. Arrow setting was shown=true, default center offset; panel hidden. User reports the entire arrow area blank and wants Vile Familiars (792), while automatic routing had selected Galgar's Cactus Apple Surprise (4402). This does not establish a working arrow: the old render callback was outside the stored error handler.
+
+Code changes: unfinished-objective arrival retains a visible area indicator; explicit client quest selection takes precedence over distance heuristics; /fp guide restores frame positions and display; /fp pickups selects among current-map available offers. C_QuestLine.GetAvailableQuestLines and RequestQuestLinesForMap signatures/offer coordinates checked against 70790 Blizzard UI source (QuestOfferDataProvider.lua uses coordinates in the queried map). GetNextWaypointForMap supplements GetNextWaypoint before POI fallback. No historical giver sightings are treated as eligibility; no full static quest database is bundled. New manual diagnostics capture exact log/POI/offer/active/waiting state and arrow visibility/texture; rendering failures now enter the stored error sink.
+
+Runtime boundary: source and regression-tested changes only until the user's reload and subsequent saved-data read. Selected-quest tracking and available questline coverage remain client checks.

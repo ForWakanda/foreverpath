@@ -69,7 +69,8 @@ function Panel:OnInit()
 					FP:Print("Use your Hearthstone: " .. tostring(btn.step.title))
 					return
 				end
-				if FP.Planner:Go(btn.step) then FP:Print(FP.GOLD .. "Go:|r " .. btn.step.title) end
+				if FP.Planner:Go(btn.step) then FP:Print(FP.GOLD .. "Go:|r " .. btn.step.title)
+				else FP:Print("No coordinates available for " .. btn.step.title .. ". Check the quest's directions in your log.") end
 			end
 		end)
 		row:SetScript("OnEnter", function(btn)
@@ -83,7 +84,7 @@ function Panel:OnInit()
 			if btn.step.highLevel then GameTooltip:AddLine("Quest is more than 3 levels above you; easier nearby work is favored.", 1, 0.5, 0.3, true) end
 			if U.Finite(btn.step.groupSize) and btn.step.groupSize > 1 then GameTooltip:AddLine("Client suggests a group of " .. btn.step.groupSize .. ".", 1, 0.82, 0, true) end
 			if btn.step.mapID then GameTooltip:AddLine(API.GetMapName(btn.step.mapID) .. "  " .. U.FormatCoords(btn.step.x, btn.step.y) .. "  " .. FP.GREY .. "(" .. tostring(btn.step.how) .. ")|r", 0.7, 0.7, 0.7)
-			else GameTooltip:AddLine("Location unknown yet: talk to the quest giver again or make progress and ForeverPath will learn it.", 0.9, 0.5, 0.5, true) end
+			else GameTooltip:AddLine("The client has supplied no coordinates for this objective. Check the quest directions in your log.", 0.9, 0.5, 0.5, true) end
 			GameTooltip:AddLine("Click to send the arrow here.", 0.5, 0.8, 1)
 			GameTooltip:Show()
 		end)
@@ -152,7 +153,7 @@ function Panel:Refresh(positionOnly)
 	local pct = (xp and max and max > 0) and math.floor(xp / max * 100 + 0.5) or 0
 	local active = FP.Waypoints:GetActive()
 	self.status:SetText(string.format("Lvl %s · %d%% xp%s · %s", tostring(level or "?"), pct, rested and (" · rested " .. math.floor(rested / (max or 1) * 100 + 0.5) .. "%") or "",
-		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. (FP.Planner.waiting and ("Working here: " .. U.Truncate(FP.Planner.waiting.title or "quest", 24)) or (FP.Planner.paused and "route paused — /fp auto on" or "finding next quest")) .. "|r"))
+		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. (FP.Planner.waiting and ("Working here: " .. U.Truncate(FP.Planner.waiting.title or "quest", 24)) or (FP.Planner.paused and "route paused — /fp auto on" or (#steps > 0 and "No route coordinates available" or "No available quest locations reported"))) .. "|r"))
 	local n = 0
 	for i, row in ipairs(self.rows) do
 		local step = steps[i]
@@ -169,7 +170,7 @@ function Panel:Refresh(positionOnly)
 	end
 	if n == 0 then
 		self.rows[1].dist:SetText("")
-		self.rows[1].label:SetText(FP.GREY .. "No quests in the log. Go pick some up.|r")
+		self.rows[1].label:SetText(FP.GREY .. "No known steps or available pickups on this map.|r")
 		self.rows[1]:Show()
 		n = 1
 	end

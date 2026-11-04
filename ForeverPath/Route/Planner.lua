@@ -14,10 +14,17 @@ end
 
 function P:WaitingValid()
 	local s = self.waiting
-	if not s or not API.IsOnQuest(s.questID) then return false end
+	if not s then return false end
+	if s.kind == "pickup" then
+		if API.IsOnQuest(s.questID) or API.IsQuestFlaggedCompleted(s.questID) then return false end
+		local offered = false
+		for _, q in ipairs(API.GetQuestOffers(API.GetBestMap())) do if q.questID == s.questID then offered = true end end
+		if not offered then return false end
+	elseif not API.IsOnQuest(s.questID) then return false end
 	-- Stay put while working in the area, but recover if the player walks away.
 	local d = s.mapID and FP.Pos:DistanceTo(s)
 	if d and d > math.max(100, (s.radius or 35) * 3) then return false end
+	if s.kind == "pickup" then return true end
 	if s.kind == "turnin" then return API.IsQuestComplete(s.questID) end
 	if API.IsQuestComplete(s.questID) then return false end
 	local o = API.GetQuestObjectives(s.questID)[s.objIndex or 1]
@@ -42,7 +49,7 @@ end
 local function poiFor(questID, mapID, wantStart)
 	if not mapID then return nil end
 	for _, poi in ipairs(API.GetQuestsOnMap(mapID)) do
-		if poi.questID == questID and ((wantStart and poi.isQuestStart) or (not wantStart and not poi.isQuestStart)) then
+		if poi.questID == questID and U.ValidMapPoint(mapID, poi.x, poi.y) and ((wantStart and poi.isQuestStart) or (not wantStart and not poi.isQuestStart)) then
 			return mapID, poi.x, poi.y
 		end
 	end
@@ -53,6 +60,9 @@ function P:ResolveTurnIn(questID)
 	-- Current client navigation wins over beta observations or a quest's giver.
 	local m, x, y = API.GetQuestNextWaypoint(questID)
 	if m then return m, x, y, "waypoint" end
+	m = API.GetBestMap()
+	x, y = API.GetQuestNextWaypointForMap(questID, m)
+	if x then return m, x, y, "map waypoint" end
 	m, x, y = poiFor(questID, API.GetBestMap(), false)
 	if m then return m, x, y, "poi" end
 	local q = FP.data.quests[questID]
@@ -76,6 +86,9 @@ end
 function P:ResolveObjective(questID, i)
 	local m, x, y = API.GetQuestNextWaypoint(questID)
 	if m then return m, x, y, "waypoint" end
+	m = API.GetBestMap()
+	x, y = API.GetQuestNextWaypointForMap(questID, m)
+	if x then return m, x, y, "map waypoint" end
 	m, x, y = poiFor(questID, API.GetBestMap(), false)
 	if m then return m, x, y, "poi" end
 	local q = FP.data.quests[questID]
@@ -112,7 +125,7 @@ function P:Build()
 	local now = API.Time()
 	self.deferred = self.deferred or {}
 	for qid, untilTime in pairs(self.deferred) do
-		if now >= untilTime or not API.IsOnQuest(qid) then self.deferred[qid] = nil end
+		if now >= untilTime or API.IsQuestFlaggedCompleted(qid) then self.deferred[qid] = nil end
 	end
 	for _, info in ipairs(log) do
 		local qid = info.questID
@@ -134,6 +147,15 @@ function P:Build()
 				local m, x, y, how = self:ResolveObjective(qid, 1)
 				steps[#steps + 1] = { kind = "objective", questID = qid, objIndex = 1, title = tostring(info.title), text = "go there", mapID = m, x = x, y = y, how = how, shared = shared, radius = 35 }
 			end
+		end
+	end
+	local mapID = API.GetBestMap()
+	API.RequestQuestOffers(mapID)
+	for _, offer in ipairs(API.GetQuestOffers(mapID)) do
+		if not infoByID[offer.questID] then
+			infoByID[offer.questID] = offer
+			steps[#steps + 1] = { kind = "pickup", questID = offer.questID, title = "Pick up: " .. offer.title,
+				text = offer.title, mapID = offer.mapID, x = offer.x, y = offer.y, how = offer.how, radius = 12 }
 		end
 	end
 	-- distance + score
@@ -205,6 +227,10 @@ function P:Build()
 end
 
 function P:NextStep()
+	local selected = API.GetSelectedQuest()
+	for _, s in ipairs(self.steps) do
+		if s.questID == selected and not s.deferred and not sameStep(s, self.waiting) and s.mapID and s.x then return s end
+	end
 	for _, s in ipairs(self.steps) do
 		if not s.deferred and s.kind ~= "hearth" and not sameStep(s, self.waiting) and s.mapID and s.x and s.dist then return s end
 	end
@@ -220,7 +246,7 @@ function P:Go(step, automatic)
 	self.waiting, self.paused = nil, nil
 	self.pinned = not automatic
 	FP.Waypoints:RemoveBySource("plan")
-	local title = step.kind == "turnin" and step.title or (step.text .. (step.progress and (" " .. step.progress) or ""))
+	local title = step.kind ~= "objective" and step.title or (step.text .. (step.progress and (" " .. step.progress) or ""))
 	local wp = FP.Waypoints:Add(step.mapID, step.x, step.y, title, {
 		source = { type = "plan", kind = step.kind, questID = step.questID, objIndex = step.objIndex },
 		radius = step.radius, desc = step.kind == "turnin" and ("Quest: " .. tostring(step.text)) or ("Quest: " .. tostring(step.title) .. "  (" .. tostring(step.how) .. ")"),
@@ -231,8 +257,9 @@ end
 
 function P:Auto(reason)
 	if API.InBattleground() then
-		FP.Waypoints:RemoveBySource("plan")
 		self.waiting = nil
+		FP.Waypoints:RemoveBySource("plan")
+		FP:Fire("WAYPOINTS_CHANGED")
 		return
 	end
 	if not FP.settings.autoNext or self.paused then return end
@@ -240,8 +267,15 @@ function P:Auto(reason)
 	self:Build()
 	local active = FP.Waypoints:GetActive()
 	if active and (not active.source or active.source.type ~= "plan") then return end
-	if self:WaitingValid() then return end
+	if self:WaitingValid() then
+		for _, step in ipairs(self.steps) do
+			if sameStep(step, self.waiting) then self.waiting.title = step.kind == "objective" and (step.text .. (step.progress and (" " .. step.progress) or "")) or step.title end
+		end
+		return
+	end
+	local hadWaiting = self.waiting ~= nil
 	self.waiting = nil
+	if hadWaiting then FP:Fire("WAYPOINTS_CHANGED") end
 	local s = self:NextStep()
 	local current
 	if active then
@@ -252,19 +286,19 @@ function P:Auto(reason)
 	-- Keep explicit selections until completed; automatic choices need a meaningful
 	-- improvement before switching, so neighboring POIs do not make the arrow flap.
 	if current and not current.deferred and current.mapID and current.x then
-		if self.pinned or (s and current.dist and s.dist and current.score <= s.score + 75) then s = current end
+		if self.pinned or (s and s.questID ~= API.GetSelectedQuest() and current.dist and s.dist and current.score <= s.score + 75) then s = current end
 	end
 	if s then
 		if active and sameStep(active.source, s) then
 			-- POIs can move and objective counts change without a new quest ID.
 			active.mapID, active.x, active.y = s.mapID, s.x, s.y
-			active.title = s.kind == "turnin" and s.title or (s.text .. (s.progress and (" " .. s.progress) or ""))
+			active.title = s.kind ~= "objective" and s.title or (s.text .. (s.progress and (" " .. s.progress) or ""))
 			self.current = s
 			FP:Fire("WAYPOINTS_CHANGED")
 			return
 		end
 		self:Go(s, true)
-		FP:Print(FP.GOLD .. "Next:|r " .. (s.kind == "turnin" and s.title or (s.text .. " — " .. s.title)) .. (s.dist and (" " .. FP.GREY .. U.FormatDistance(s.dist) .. "|r") or ""))
+		FP:Print(FP.GOLD .. "Next:|r " .. (s.kind ~= "objective" and s.title or (s.text .. " — " .. s.title)) .. (s.dist and (" " .. FP.GREY .. U.FormatDistance(s.dist) .. "|r") or ""))
 	elseif active and active.source and active.source.type == "plan" then
 		FP.Waypoints:RemoveBySource("plan")
 	end
@@ -283,6 +317,7 @@ function P:Skip(minutes)
 	self:Build()
 	local nextStep = self:NextStep()
 	if nextStep then self:Go(nextStep, true) end
+	FP:Fire("WAYPOINTS_CHANGED")
 	return true
 end
 
@@ -300,7 +335,7 @@ function P:OnEnable()
 			self.waiting.title = wp.title
 			self.pinned = nil
 			if wp.source.kind == "objective" then
-				FP:Print(FP.GREY .. "You're in the objective area. The arrow resumes when you finish or leave the area; /fp next to skip.|r")
+				FP:Print(FP.GREY .. "You're in the objective area. Look for the quest targets nearby; /fp next to skip.|r")
 			end
 		end
 	end)
@@ -311,6 +346,16 @@ function P:OnEnable()
 		self.ticker = C_Timer.NewTicker(3, function() FP.pcall("auto-route", P.Auto, P, "position") end)
 	end
 	FP:RegisterEvent("ZONE_CHANGED_NEW_AREA", function() FP.After(1, function() P:Auto("zone") end) end)
+	FP:RegisterEvent("QUEST_POI_UPDATE", function() FP.Throttle("plan-poi", 1, function() P:Auto("poi") end) end)
+	FP:RegisterEvent("SUPER_TRACKING_CHANGED", function()
+		local selected = API.GetSelectedQuest()
+		if selected and selected ~= self.lastSelected then
+			self.lastSelected = selected
+			self.waiting, self.pinned = nil, nil
+			FP:Fire("WAYPOINTS_CHANGED")
+			P:Auto("selected")
+		end
+	end)
 end
 
 -- Re-plan when the active planned waypoint no longer makes sense.
@@ -318,6 +363,7 @@ function P:CheckActive()
 	if self.waiting then
 		if self:WaitingValid() then return end
 		self.waiting = nil
+		FP:Fire("WAYPOINTS_CHANGED")
 		self:Auto("completed-after-arrival")
 		return
 	end
@@ -326,7 +372,9 @@ function P:CheckActive()
 	if not active.source or active.source.type ~= "plan" then return end
 	local s = active.source
 	local invalid = false
-	if not API.IsOnQuest(s.questID) then
+	if s.kind == "pickup" then
+		invalid = API.IsOnQuest(s.questID) or API.IsQuestFlaggedCompleted(s.questID)
+	elseif not API.IsOnQuest(s.questID) then
 		invalid = true
 	elseif s.kind == "objective" then
 		if API.IsQuestComplete(s.questID) then
@@ -348,7 +396,7 @@ end
 function P:Describe(step)
 	local d = step.dist and U.FormatDistance(step.dist) or (step.mapID and FP.GREY .. "far|r" or FP.GREY .. "?|r")
 	local label
-	if step.kind == "turnin" then label = FP.GOLD .. step.title .. "|r"
+	if step.kind == "turnin" or step.kind == "pickup" then label = FP.GOLD .. step.title .. "|r"
 	elseif step.kind == "hearth" then label = FP.GREEN .. step.title .. "|r " .. FP.GREY .. step.text .. "|r"
 	else label = step.text .. (step.progress and (" " .. FP.GREY .. step.progress .. "|r") or "") .. FP.GREY .. " — " .. U.Truncate(step.title, 28) .. "|r" end
 	if step.shared then label = "★ " .. label end

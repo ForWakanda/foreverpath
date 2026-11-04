@@ -9,6 +9,8 @@ local function help()
 	p("commands:")
 	p("  /fp               toggle the next-steps panel")
 	p("  /fp next          arrow to the planner's best next step")
+	p("  /fp guide         show/reset arrow and panel, resume automatic guidance")
+	p("  /fp pickups       list available nearby pickups and guide to the closest")
 	p("  /fp auto on|off   auto-advance the arrow (now " .. (FP.settings.autoNext and "on" or "off") .. ")")
 	p("  /way 45.4 70.4 [title]   waypoint on your current map (also: /fp way or /way <mapID> x y)")
 	p("  /fp way here [title] | way list | way next | way clear | way rm <id>")
@@ -189,6 +191,23 @@ function C:Handle(msg)
 	cmd = cmd and cmd:lower() or ""
 	if cmd == "" or cmd == "panel" and rest == "" then FP.Panel:Toggle()
 	elseif cmd == "help" or cmd == "?" then help()
+	elseif cmd == "guide" then
+		FP.settings.autoNext, FP.settings.arrow.shown = true, true
+		FP.Planner.paused, FP.Planner.pinned = nil, nil
+		FP.Arrow:ResetPosition(); FP.Panel:ResetPosition(); FP.Panel:Toggle(true)
+		FP.Planner:Auto("guide"); FP.Arrow:Refresh()
+		p("Guidance shown. Select a quest in the game's tracker, or use /fp goto <quest title>.")
+	elseif cmd == "pickups" then
+		FP.Pos:Refresh(true); FP.Planner:Build()
+		local first
+		for _, step in ipairs(FP.Planner.steps) do
+			if step.kind == "pickup" and not step.deferred then
+				first = first or step
+				p(step.title .. (step.dist and (" — " .. U.FormatDistance(step.dist)) or ""))
+			end
+		end
+		if first then FP.Planner:Go(first)
+		else p("The client reports no available quest pickups on this map yet.") end
 	elseif cmd == "next" then
 		FP.Planner:Build()
 		local s = FP.Planner:NextStep()

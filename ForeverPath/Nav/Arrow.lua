@@ -7,6 +7,10 @@ local Arrow = FP:NewModule("Arrow")
 local ARROW_TEXTURE = "Interface\\AddOns\\ForeverPath\\Media\\arrow"
 local FALLBACK_TEXTURE = "Interface\\Minimap\\MinimapArrow"
 
+local function displayedWaypoint()
+	return FP.Waypoints:GetActive() or (FP.Planner and FP.Planner.waiting)
+end
+
 local function savePosition(frame)
 	local s = FP.settings.arrow
 	local point, _, _, x, y = frame:GetPoint(1)
@@ -17,7 +21,7 @@ function Arrow:OnInit()
 	local f = CreateFrame("Frame", "ForeverPathArrow", UIParent)
 	self.frame = f
 	f:SetSize(96, 72)
-	f:SetFrameStrata("MEDIUM")
+	f:SetFrameStrata("HIGH")
 	f:SetMovable(true)
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
@@ -35,7 +39,7 @@ function Arrow:OnInit()
 		end
 	end)
 	f:SetScript("OnEnter", function(frame)
-		local wp = FP.Waypoints:GetActive()
+		local wp = displayedWaypoint()
 		if not wp then return end
 		GameTooltip:SetOwner(frame, "ANCHOR_BOTTOM")
 		GameTooltip:AddLine(tostring(wp.title), 1, 0.82, 0)
@@ -68,7 +72,7 @@ function Arrow:OnInit()
 
 	self:ApplySettings()
 	f:Hide()
-	f:SetScript("OnUpdate", function(frame, elapsed) self:OnUpdate(elapsed) end)
+	f:SetScript("OnUpdate", function(frame, elapsed) FP.pcall("arrow-render", self.OnUpdate, self, elapsed) end)
 end
 
 function Arrow:ApplySettings()
@@ -91,7 +95,7 @@ function Arrow:OnEnable()
 end
 
 function Arrow:Refresh()
-	local wp = FP.Waypoints:GetActive()
+	local wp = displayedWaypoint()
 	if wp and FP.settings.arrow.shown then
 		self.frame:Show()
 		FP.Pos:Acquire("arrow")
@@ -106,8 +110,15 @@ function Arrow:OnUpdate(elapsed)
 	elapsedAcc = elapsedAcc + elapsed
 	if elapsedAcc < 0.05 then return end
 	elapsedAcc = 0
-	local wp = FP.Waypoints:GetActive()
-	if not wp then self.frame:Hide(); return end
+	local wp = displayedWaypoint()
+	if not wp then self:Refresh(); return end
+	if not FP.Waypoints:GetActive() and FP.Planner.waiting then
+		self.title:SetText(U.Truncate(wp.title, 40))
+		self.tex:SetRotation(0)
+		self.tex:SetVertexColor(0.2, 1, 0.2)
+		self.dist:SetText(wp.kind == "pickup" and "Talk to the quest giver here" or (wp.kind == "turnin" and "Turn in here" or "Objective area — search nearby"))
+		return
+	end
 	local pos = FP.Pos.cache
 	local d, bearing, sameContinent = FP.Pos:VectorTo(wp)
 	self.title:SetText(U.Truncate(wp.title, 40))

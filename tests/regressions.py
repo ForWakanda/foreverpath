@@ -42,6 +42,80 @@ end
 '''
 
 CASES = {
+    "quest_pickups_follow_client_offers_then_acceptance": r'''
+M.pois = {{questID=9100,x=.55,y=.55,isQuestStart=true}, {questID=9101,x=.65,y=.65,isQuestStart=false}}
+C_QuestLine = {GetAvailableQuestLines=function() return {
+    {questID=9100,questName="Nearby pickup",x=.55,y=.55},
+    {questID=9102,questName="Hidden",x=.6,y=.6,isHidden=true},
+    {questID=9103,questName="Already working",x=.6,y=.6,inProgress=true},
+    {questID=9104,questName="Bad coords",x=2,y=.6},
+    {questID=9105,questName="Done",x=.6,y=.6},
+} end}
+C_QuestLog.IsQuestFlaggedCompleted=function(id) return id==9105 end
+FP.Planner:Auto("test")
+assert(#FP.Planner.steps==1 and active().source.kind=="pickup" and active().source.questID==9100)
+assert(active().title=="Pick up: Nearby pickup")
+M.px,M.py=.55,.55; M.Tick(1)
+assert(not active() and FP.Planner.waiting.kind=="pickup" and FP.Arrow.frame:IsShown())
+FP.Planner:Auto("test"); assert(not active(), "pickup arrival must wait for acceptance")
+addQuest(9100); FP.Planner:CheckActive()
+assert(active() and active().source.kind=="objective", "accepted offer did not become objective")
+assert(#FP.Planner.steps==1)
+''',
+    "pickup_deferral_expiry_and_missing_apis": r'''
+C_QuestLine={GetAvailableQuestLines=function() return {{questID=9100,x=.55,y=.55}} end}
+cmd("pickups"); assert(active().source.kind=="pickup")
+cmd("skip 1"); FP.Planner:Auto("test"); assert(not active())
+M.now=M.now+61; FP.Planner:Auto("test"); assert(active().source.questID==9100)
+C_QuestLine.GetAvailableQuestLines=function() error("unavailable") end
+FP.Planner:Auto("test"); assert(not active(), "vanished offer must stop routing")
+C_QuestLine=nil; C_QuestLog.GetQuestsOnMap=nil
+assert(#FP.API.GetQuestOffers(M.mapID)==0)
+assert(#FP.db.errors==0)
+''',
+    "selected_quest_priority_and_manual_override": r'''
+local a=addQuest(9001); a.waypoint={1413,.46,.56}
+local b=addQuest(9002); b.waypoint={1413,.8,.8}
+C_SuperTrack={GetSuperTrackedQuestID=function() return 9002 end}
+FP.Planner:Auto("test"); assert(active().source.questID==9002)
+cmd("goto 9001"); FP.Planner:Auto("test"); assert(active().source.questID==9001)
+M.FireEvent("SUPER_TRACKING_CHANGED"); assert(active().source.questID==9002)
+cmd("way 80 80 manual"); M.FireEvent("SUPER_TRACKING_CHANGED")
+assert(active().title=="manual")
+''',
+    "arrived_indicator_stays_visible_then_clears": r'''
+addQuest(9001); FP.Planner:Auto("test")
+M.px,M.py=.6,.6; M.Tick(1)
+assert(FP.Planner.waiting and not active() and FP.Arrow.frame:IsShown())
+FP.Arrow:OnUpdate(.1)
+assert(FP.Arrow.dist:GetText():find("Objective area",1,true))
+cmd("way clear"); assert(not FP.Arrow.frame:IsShown())
+cmd("guide"); assert(FP.Arrow.frame:IsShown() and FP.Panel.frame:IsShown())
+M.Tick(1); FP.API.InBattleground=function() return true end; FP.Planner:Auto("bg")
+assert(not FP.Arrow.frame:IsShown())
+''',
+    "map_specific_waypoint_fallback_and_invalid_points": r'''
+local q=addQuest(9001); q.waypoint={0,0,0}
+C_QuestLog.GetNextWaypointForMap=function(id,m) return .7,.8 end
+FP.Planner:Auto("test")
+assert(active() and active().x==.7 and active().y==.8)
+q.waypoint=nil; C_QuestLog.GetNextWaypointForMap=function() return -1,2 end
+M.pois={{questID=9001,x=2,y=.5}}
+FP.Planner:Auto("test"); assert(not active())
+''',
+    "navigation_snapshot_captures_actual_ui_and_quests": r'''
+cmd("apicheck")
+assert(#FP.db.errors==0, "empty navigation snapshot throws")
+addQuest(9001); cmd("guide"); cmd("apicheck")
+local check=FP.db.apicheck["70124-manual"]
+assert(check.navigation.active.source.questID==9001)
+assert(check.rows["probe:navigationUI"].ok and #check.navigation.quests==1)
+FP.Arrow.OnUpdate=function() error("render failure fixture") end
+FP.Arrow.frame:GetScript("OnUpdate")(FP.Arrow.frame,.1)
+assert(FP.db.errors[#FP.db.errors].where=="arrow-render")
+FP.db.errors={} -- the deliberate rendering failure was captured above
+''',
+
     "arrival_then_completion_resumes_arrow": r'''
 local q = addQuest(9001)
 FP.Planner:Auto("review")

@@ -392,15 +392,24 @@ end
 function API.GetQuestNextWaypoint(questID)
 	if not has(C_QuestLog, "GetNextWaypoint") then return nil end
 	local ok, mapID, x, y = pcall(C_QuestLog.GetNextWaypoint, questID)
-	if ok and mapID and x and y then return mapID, x, y end
+	if ok and U.ValidMapPoint(mapID, x, y) then return mapID, x, y end
 	return nil
 end
 
 function API.GetQuestNextWaypointForMap(questID, mapID)
+	if not mapID then return nil end
 	if not has(C_QuestLog, "GetNextWaypointForMap") then return nil end
 	local ok, x, y = pcall(C_QuestLog.GetNextWaypointForMap, questID, mapID)
-	if ok and x and y then return x, y end
+	if ok and U.ValidMapPoint(mapID, x, y) then return x, y end
 	return nil
+end
+
+function API.GetSelectedQuest()
+	if has(C_SuperTrack, "GetSuperTrackedQuestID") then
+		local ok, id = pcall(C_SuperTrack.GetSuperTrackedQuestID)
+		id = ok and safe(id) or nil
+		if U.Finite(id) and id > 0 then return id end
+	end
 end
 
 -- Quest POIs on a map: { questID, x, y, isQuestStart, inProgress, numObjectives, ... }
@@ -418,8 +427,44 @@ function API.GetDistanceSqToQuest(questID)
 	return nil
 end
 
+-- Current client offers, not historical giver sightings (which cannot establish
+-- prerequisites, class eligibility, or whether a quest is still available).
+function API.GetQuestOffers(mapID)
+	local out, seen = {}, {}
+	if not mapID then return out end
+	local function add(q, isLine)
+		if type(q) ~= "table" then return end
+		local id, x, y = safe(q.questID), safe(q.x), safe(q.y)
+		if not U.Finite(id) or id <= 0 or seen[id] or not U.ValidMapPoint(mapID, x, y) then return end
+		if safe(q.isHidden) or safe(q.inProgress) or (not isLine and not safe(q.isQuestStart)) then return end
+		if API.IsOnQuest(id) or API.IsQuestFlaggedCompleted(id) then return end
+		seen[id] = true
+		out[#out + 1] = { questID = id, title = safe(q.questName) or API.GetQuestTitle(id) or ("Quest " .. id),
+			mapID = mapID, x = x, y = y, level = API.GetQuestDifficultyLevel(id), how = "available on current map" }
+	end
+	if has(C_QuestLine, "GetAvailableQuestLines") then
+		local ok, list = pcall(C_QuestLine.GetAvailableQuestLines, mapID)
+		if ok and type(list) == "table" then for _, q in ipairs(list) do add(q, true) end end
+	end
+	for _, q in ipairs(API.GetQuestsOnMap(mapID)) do add(q, false) end
+	return out
+end
+
+local requestedQuestMap, requestedQuestAt
+function API.RequestQuestOffers(mapID)
+	if not mapID or not has(C_QuestLine, "RequestQuestLinesForMap") then return end
+	local now = API.Time()
+	if mapID == requestedQuestMap and requestedQuestAt and now - requestedQuestAt < 10 then return end
+	requestedQuestMap, requestedQuestAt = mapID, now
+	pcall(C_QuestLine.RequestQuestLinesForMap, mapID)
+end
+
 function API.GetQuestDifficultyLevel(questID)
-	return has(C_QuestLog, "GetQuestDifficultyLevel") and C_QuestLog.GetQuestDifficultyLevel(questID) or nil
+	if has(C_QuestLog, "GetQuestDifficultyLevel") then
+		local ok, level = pcall(C_QuestLog.GetQuestDifficultyLevel, questID)
+		if ok then return safe(level) end
+	end
+	return nil
 end
 
 -------------------------------------------------------------------------------
@@ -1076,6 +1121,18 @@ function API.Check()
 		local pois = API.GetQuestsOnMap(mapID)
 		return #pois > 0, #pois .. " POIs on this map; zero alone does not prove unsupported API"
 	end)
+	probe("questOffers", function()
+		local offers = API.GetQuestOffers(mapID)
+		return #offers > 0, #offers .. " available pickups on this map"
+	end)
+	probe("navigationUI", function()
+		local active = FP.Waypoints and FP.Waypoints:GetActive()
+		local waiting = FP.Planner and FP.Planner.waiting
+		local arrow = FP.Arrow
+		return arrow and arrow.frame and arrow.frame:IsShown(), string.format("auto=%s arrowEnabled=%s arrowShown=%s active=%s waiting=%s texture=%s",
+			tostring(FP.settings.autoNext), tostring(FP.settings.arrow.shown), tostring(arrow and arrow.frame and arrow.frame:IsShown()),
+			tostring(active and active.title), tostring(waiting and waiting.title), tostring(arrow and arrow.tex and arrow.tex:GetTexture()))
+	end)
 	local first = log and log[1]
 	probe("nextWaypoint", function()
 		if not first then return false, "no quest to probe" end
@@ -1140,6 +1197,14 @@ end
 
 function API.StoreCheck(rows, manual)
 	local result = { t = U.Now(), build = FP.clientBuild, version = FP.version, ok = 0, fail = 0, rows = {} }
+	-- Bounded diagnostic snapshot, including the exact data used to route.
+	local snapshotOK, navigation = pcall(function()
+		local mapID = API.GetBestMap()
+		return { mapID = mapID, quests = API.GetQuestLog(), pois = API.GetQuestsOnMap(mapID), selected = API.GetSelectedQuest(),
+			offers = API.GetQuestOffers(mapID), active = U.Copy(FP.Waypoints:GetActive() or {}),
+			waiting = U.Copy(FP.Planner.waiting or {}), paused = FP.Planner.paused }
+	end)
+	result.navigation = snapshotOK and navigation or { error = tostring(navigation) }
 	for _, r in ipairs(rows) do
 		result.rows[r.name] = { ok = r.ok, note = r.note, status = r.status or (r.ok and "ok" or "unavailable") }
 		if r.ok then result.ok = result.ok + 1 else result.fail = result.fail + 1 end
