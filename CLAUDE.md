@@ -3,7 +3,7 @@
 This file is loaded automatically by Claude Code. It carries the durable engineering rules for this repo so a fresh session, local or cloud, can work safely without any other context.
 
 ## What this is
-A World of Warcraft: Forever addon: quest GPS + route planner + profession help + PvP HUD, plus a recorder that builds a Forever dataset while people play. Lua 5.1 (WoW's dialect), interface 16001 (Forever beta, build 1.60.1.x). Design, verified API facts and phases: `docs/FOREVERPATH_SPEC.md`.
+A World of Warcraft: Forever addon: quest GPS + route planner + profession help + PvP HUD, plus a recorder that builds a Forever dataset while people play. Lua 5.1 (WoW's dialect), interface 16001 (Forever release, build 1.60.1.70790). Design, verified API facts and phases: `docs/FOREVERPATH_SPEC.md`.
 
 ## Hard rules
 - **No automation, ever.** The addon shows information; the player acts. No inputs, targeting, casting, looting, turn-ins, or decisions driven by combat data. This is Blizzard's line and the project's.

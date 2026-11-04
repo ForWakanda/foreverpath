@@ -1,10 +1,10 @@
 # ForeverPath
 
-Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (beta build 1.60.1.70205, interface 16001; launch 2026-11-04).
+Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (release build 1.60.1.70790, interface 16001).
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.5.0)
+## What it does (v0.6.0)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
@@ -12,9 +12,19 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Auto-next**: automatically rechecks the route every three seconds, including with the panel hidden. Arriving waits while you work nearby; completing the step or moving more than about 100 yards away resumes navigation. Nearby alternatives need a meaningful improvement before the arrow switches. Clicking a quest row keeps that selection until completion/arrival; manual waypoints remain yours. `/fp next` skips the arrived step, `/fp auto off` disables automatic selection, and `/fp auto on` resumes after clearing the route. Quest navigation pauses in battlegrounds.
 - **Recorder**: while you play it writes a Forever dataset into SavedVariables — quest givers/enders with positions, offer/turn-in XP per level, objective progress with candidate mob/loot associations, approximate observer sightings, source-attributed observed loot including quest items, vendors, trainers (with skill requirements), flight nodes and edge costs, inn binds, deaths, zone level ranges, XP samples, profession recipes with reagents and difficulty per skill level.
 - **Professions**: open your profession window and the next-steps panel shows three skill-up suggestions, bag-material craft counts and missing materials. `/fp prof` gives the longer list. Handles Forever base professions, delayed recipe loading, bag changes and skill-cap reminders. These are material/skill suggestions, not market-price or guaranteed skill-point estimates. Reopen the profession after changing skill to refresh old suggestions.
-- **Mage supplies** (`/fp prep`): an out-of-combat checklist in the PvP HUD. Shows carried drinks/bandages, missing mana gems you can conjure, and relevant Slow Fall/teleport/portal/Arcane Brilliance reagents. Appears briefly on login/zone entry, at a vendor, and out of combat in a battleground. Updates on bag/spell changes; unknown item data stays unavailable.
+- **Class supplies** (`/fp prep`): an out-of-combat checklist in the PvP HUD. Shows carried drinks/bandages and general bag space. Shaman characters get Enhancement preparation reminders; Hunters retain their audio feedback and get a town preparation reminder. Mage-only gems/reagents stay on Mages. Reminders do not inspect buffs, prescribe a rotation, or claim an imbue is active. Appears briefly on login/zone entry, at a vendor, and out of combat in a battleground. Updates on bag/spell changes; unknown item data stays unavailable.
 - **Dungeon rare watch** (`/fp rare`): inside Scarlet Monastery a small HUD answers "is Azshir up?". A rare is recognised the moment anyone in the party targets, mouses over, gets a nameplate for, or has a pet on it (names are secret inside Forever dungeons, so the watch reads the unit's *classification*, which is not). A **Scan** button runs a plain `/targetexact` macro once per click to check what the client has loaded without walking the lair. Sightings and kills are shared with party members running the addon; a raid-warning style alert plus sound fires once per run. Runs are keyed by the instance id carried in loot GUIDs, so the HUD counts runs vs sightings and shows the measured spawn rate. `/fp rare list|add|rm|instance` retarget it at any dungeon rare.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
+
+## Launch questing tools
+
+- **Nearby clusters:** routes modestly favor objectives within about 200 yards of other distinct quests. This uses straight-line distance, so caves, cliffs and travel connections still need player judgment. Quests more than three levels above you receive a bounded priority penalty; their level and suggested group size appear in the UI. Turn-ins are not penalized for level.
+- **Crowded objective:** `/fp skip` defers the current quest for 10 minutes; `/fp skip 5` changes that. All its objectives are deferred together. `/fp skip clear` restores them, and clicking a deferred row resumes it immediately. Deferrals last only this login session. Manual waypoints are preserved.
+- **Duo quest check:** `/fp duo` compares your log with your partner's latest addon snapshot: quests only one of you has, who still needs to finish, and turn-ins ready for both. ★ marks shared quests. Partner snapshots can be stale; the report shows their age. Both players need the addon for automatic sync.
+- **Current directions first:** live client waypoints/POIs now override recorded beta turn-in positions. Recorded locations remain a fallback. This is a planner for your accepted quests, not a complete prewritten 1–60 pickup route or terrain pathfinder.
+- **Profession shopping:** open your learned crafting profession, then `/fp prof` for recipe IDs. `/fp prof plan <recipeID> <crafts>` displays a bag-aware materials checklist in the main panel; `/fp prof plan clear` clears it. The target is a fixed number of future crafts for this session: update it after crafting. It does not buy/craft anything or infer skill points. Unavailable counts stay unknown. Skinning is shown in the profession summary; it has no crafting recipe list. Switching to Engineering uses that character's learned recipes once opened.
+
+Release validation: source/API review against `Gethe/wow-ui-source` commit `eac30af597e5aaa43a60f6675ef5fdcea100375f` (70790), Lua/XML/TOC gate, self-tests, mock play-through and regression checks including fresh Shaman/Hunter startup. **Release gameplay is not yet verified.** After first login: `/fp status` (0.6.0), accept a quest, verify the arrow, group with your friend and use `/fp duo`, open your profession, then `/fp apicheck` and `/reload` to save evidence. `tools/pull-data.sh` reads the release client's WTF folder; it does not import beta data.
 
 ## PvP module
 
@@ -39,17 +49,17 @@ Built for farming Azshir the Sleepless in the Scarlet Monastery Graveyard with a
 
 In-game verification pending (mock-tested only): that `UnitClassification` really stays readable in the Graveyard where names are secret (`/fp apicheck` → `probe:targetClassification` with a mob targeted), the reach of `/targetexact` inside the instance, whether `FontString:SetText` accepts a secret name, whether Forever flags vanilla rares with minimap vignettes (`probe:vignettes`, recorded under `ForeverPathDB.rare.vignettes`), and the vanilla creature ids 6490/6489/6488 (confirmed by the first loot window). Report with `tools/pull-data.sh`.
 
-## Install (WoW Forever beta)
+## Install (WoW Forever release)
 
 1. Download **[ForeverPath.zip](https://github.com/ForWakanda/foreverpath/releases/latest/download/ForeverPath.zip)** (latest release).
-2. Open your WoW folder, usually `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns\`. If `AddOns` does not exist yet, create it.
+2. Open your WoW folder, usually `D:\World of Warcraft\_forever_\Interface\AddOns\`. If `AddOns` does not exist yet, create it.
 3. Extract the zip there. You should end up with `...\AddOns\ForeverPath\ForeverPath.toc` (a `ForeverPath` folder directly inside `AddOns`, not a folder inside a folder).
 4. Start the game. If it was already running, close it completely and start it again (the client only picks up new addon files at startup). On the character screen, click **AddOns** and make sure ForeverPath is ticked.
 5. In game, type `/fp` for the panel and `/fp help` for the commands.
 
 **Updating:** delete the old `ForeverPath` folder, extract the new zip, restart the client. Your settings and recorded data live in `WTF\` and survive updates.
 
-**Developers on WSL:** `tools/deploy.sh` runs the checks and copies the addon into the beta folder directly.
+**Developers on WSL:** `tools/deploy.sh` runs the checks and copies the addon into the release folder directly. Set `WOW_CLIENT` for a different client root or `WOW_ADDONS` for an explicit AddOns directory. The default is `/mnt/d/World of Warcraft/_forever_`.
 
 ## Commands
 

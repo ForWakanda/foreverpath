@@ -2,7 +2,7 @@
 # Copy the recorded dataset (SavedVariables) out of the WoW folder into data/ and print a summary.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WTF="${WOW_WTF:-/mnt/c/Program Files (x86)/World of Warcraft/_classic_beta_/WTF/Account}"
+WTF="${WOW_WTF:-${WOW_CLIENT:-/mnt/d/World of Warcraft/_forever_}/WTF/Account}"
 LUA="${LUA:-$HOME/.local/bin/lua5.1}"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$ROOT/data/chars"

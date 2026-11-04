@@ -187,3 +187,16 @@ Purpose: tell two players farming the Scarlet Monastery Graveyard whether Azshir
 
 Validation: mock play-through scenario + 4 regressions (79 total) + 18 self-tests; `tools/check.sh` green.
 
+
+
+## 13. Release launch update — 2026-11-04 (Codex, v0.6.0)
+
+The installed release manifest reports `wowf 1.60.1.70790`. Blizzard UI source mirror `Gethe/wow-ui-source`, branch `forever`, HEAD `eac30af597e5aaa43a60f6675ef5fdcea100375f`, has the identical `version.txt`. Interface remains 16001. This is source/install evidence, not a loaded-client probe.
+
+New adapter reads: `C_Container.GetContainerNumFreeSlots(bagIndex)` returns `numFreeSlots, bagFamily`; only family zero contributes general loot capacity. `C_Item.GetItemCount(itemID, false)` is guarded for crafting guidance: missing, throwing, secret, or negative counts become unavailable, never zero. Both new helpers refuse reads in combat. `C_QuestLog.GetInfo` documents `level` and `suggestedGroup`; routing uses guarded values and does not guess when absent. Class supplies use existing bag/learned-spell reads; shaman/hunter reminders are static, not aura/rotation decisions. The historical `probe:magePrep` key remains, with `probe:classPrep` added for class/general bag capacity.
+
+Quest scoring adds at most 180 yards of cluster preference (60 per other distinct quest within 200 yards), and a 500-yard penalty for unfinished quests more than three levels above the player. These are bounded heuristics, not measured XP/hour improvement. Explicit pins/manual waypoints remain authoritative. Live turn-in navigation is preferred over beta recordings. `/fp skip` defers the entire active quest for 1–60 minutes, defaults to 10, expires/clears without abandoning any quest, and is session-only. `/fp duo` labels partner data as a last snapshot.
+
+Profession batch targets are session-only fixed craft counts; they recalculate bag deficits but do not decrement based on ambiguous item-output events. Players adjust the target after crafting. Only current learned usable recipes with complete supported reagent schematics can seed a plan. No price/profit claims, purchases, or crafting actions.
+
+Old beta SavedVariables are retained as historical evidence and not installed into the release client. The latest local October 11 archive contains six rare-watch secret-height errors predating the existing fixed-height repairs; it is not a fresh 70790 result. First release login must establish actual arrow, party, profession and supply behavior through `/fp apicheck`, `/reload`, and `tools/pull-data.sh`.
