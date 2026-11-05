@@ -333,6 +333,20 @@ function API.IsOnQuest(questID)
 	return has(C_QuestLog, "IsOnQuest") and C_QuestLog.IsOnQuest(questID) or false
 end
 
+-- Checklist reads must distinguish false from an unavailable / secret result.
+-- Verified signatures in Forever's 70790 QuestLogDocumentation.lua.
+function API.GetDungeonQuestState(questID)
+	local function flag(name)
+		if not has(C_QuestLog, name) then return nil end
+		local ok, value = pcall(C_QuestLog[name], questID)
+		if not ok then return nil end
+		value = safe(value)
+		if type(value) == "boolean" then return value end
+		return nil
+	end
+	return { onQuest = flag("IsOnQuest"), completed = flag("IsQuestFlaggedCompleted"), ready = flag("IsComplete") }
+end
+
 function API.GetQuestObjectives(questID)
 	if not has(C_QuestLog, "GetQuestObjectives") then return {} end
 	local ok, objs = pcall(C_QuestLog.GetQuestObjectives, questID)

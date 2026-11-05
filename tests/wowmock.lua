@@ -25,6 +25,8 @@ function Frame:Hide() self._shown = false end
 function Frame:IsShown() return self._shown and true or false end
 function Frame:SetSize(w, h) self._w, self._h = w, h end
 function Frame:SetWidth(w) self._w = w end
+function Frame:SetScrollChild(child) self._scrollChild = child end
+function Frame:SetVerticalScroll(y) self._scrollY = y end
 function Frame:SetHeight(h) self._h = h end
 function Frame:GetWidth() return self._w or 140 end
 function Frame:GetHeight() return self._h or 100 end

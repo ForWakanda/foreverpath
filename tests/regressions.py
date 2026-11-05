@@ -42,6 +42,141 @@ end
 '''
 
 CASES = {
+    "dungeon_catalog_integrity_and_all_panels": r"""
+local D,P=FP.Dungeons,FP.DungeonPanel
+local before=snapshot(FP.Waypoints.list)
+local count, populated=0,0
+for _,item in ipairs(D:List()) do
+    count=count+1
+    local seen={}
+    for _,id in ipairs(item.data.quests) do
+        assert(not seen[id], "duplicate dungeon row"); seen[id]=true
+        local q=FP.DungeonCatalog.quests[id]
+        assert(q and type(q.name)=="string" and type(q.pickup)=="table", "incomplete catalogue record")
+    end
+    if #item.data.quests>0 then populated=populated+1 end
+    P:Open(item.key)
+    for page=1,math.max(1,math.ceil(#P.rows/6)) do
+        P.questPage=page; P:Refresh()
+        for _,b in ipairs(P.questButtons) do
+            if b.row then b:GetScript("OnClick")(b); assert(P.details:GetText():find("Pickup:",1,true)) end
+        end
+    end
+end
+assert(count==35 and populated==30, "catalogue coverage count changed")
+assert(snapshot(FP.Waypoints.list)==before, "browsing changed the active route")
+assert(#FP.db.errors==0)
+""",
+    "dungeon_checklist_live_lifecycle_without_commands": r"""
+local D,P=FP.Dungeons,FP.DungeonPanel
+FP.Panel.dungeons:GetScript("OnClick")()
+assert(P.frame:IsShown())
+P:Select("ragefire-chasm")
+local function status(id) for _,r in ipairs(P.rows) do if r.id==id then return r.code end end end
+assert(status(5761)=="pickup")
+addQuest(5761); M.FireEvent("QUEST_ACCEPTED",5761); M.RunTimers(1)
+assert(status(5761)=="active")
+M.complete[5761]=true; M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(1)
+assert(status(5761)=="ready")
+M.RemoveQuest(5761); M.FireEvent("QUEST_REMOVED",5761); M.RunTimers(1)
+assert(status(5761)=="pickup", "abandon was mistaken for turn-in")
+C_QuestLog.IsQuestFlaggedCompleted=function(id) return id==5761 end
+M.FireEvent("QUEST_TURNED_IN",5761); M.RunTimers(1)
+assert(status(5761)=="done")
+assert(P.counts.done==1 and #FP.db.errors==0)
+""",
+    "dungeon_prerequisites_any_all_active_optional_and_unknown": r"""
+local D=FP.Dungeons
+local states={}
+local ctx={char={faction="Horde",class="SHAMAN",level=60},offers={}}
+function ctx:State(id) return states[id] or {onQuest=false,completed=false} end
+assert(D:Gate({relationship="breadcrumb",questID=1},ctx)==true)
+assert(D:Gate({relationship="required",anyOf={1,2}},ctx)==false)
+states[2]={completed=true,onQuest=false}
+assert(D:Gate({relationship="required",anyOf={1,2}},ctx)==true)
+assert(D:Gate({relationship="required",questID=2,state="active"},ctx)==false)
+states[2].onQuest=true
+assert(D:Gate({relationship="required",questID=2,state="active"},ctx)==true)
+states[1]={}
+assert(D:Gate({relationship="required",questID=1},ctx)==nil)
+assert(D:Gate({relationship="required",note="Unknown chain"},ctx)==nil)
+assert(D:Gate({relationship="required",anyOf={1,3}},ctx)==nil)
+local q=FP.DungeonCatalog.quests[5761]
+q.prerequisites={{relationship="required",anyOf={1,2}},{relationship="required",questID=3}}
+assert(D:Evaluate(5761,ctx)=="prereq", "separate gates must be ANDed")
+states[3]={completed=true}
+assert(D:Evaluate(5761,ctx)=="pickup")
+q.prerequisites={{relationship="required",questID=1}}
+assert(D:Evaluate(5761,ctx)=="unknown")
+q.prerequisites={{relationship="required",questID=5761}}
+local text=D:Details({id=5761,quest=q,color="",label="Missing"},ctx)
+assert(#text<3000, "cyclic prerequisite details did not terminate")
+""",
+    "dungeon_unknown_apis_and_secret_flags_do_not_become_missing": r"""
+local D=FP.Dungeons
+C_QuestLog.IsOnQuest=function() return M.Secret() end
+C_QuestLog.IsComplete=function() error("unavailable") end
+C_QuestLog.IsQuestFlaggedCompleted=nil
+local s=FP.API.GetDungeonQuestState(5761)
+assert(s.onQuest==nil and s.ready==nil and s.completed==nil)
+FP.DungeonPanel:Open("ragefire-chasm")
+for _,r in ipairs(FP.DungeonPanel.rows) do assert(r.code=="unknown") end
+C_QuestLog.IsOnQuest=function() return true end
+assert(D:Evaluate(5761,D:Context())=="active", "known active state should survive missing completion API")
+assert(#FP.db.errors==0)
+""",
+    "dungeon_filters_live_offers_and_actual_log_override_reference": r"""
+local D=FP.Dungeons
+local ctx={char={faction="Alliance",class="MAGE",level=1},offers={}}
+function ctx:State(id) return {onQuest=false,completed=false,ready=false} end
+local rows,counts=D:Rows("ragefire-chasm",false,ctx)
+assert(#rows==0 and counts.hidden==8)
+assert(#D:Rows("ragefire-chasm",true,ctx)==8)
+assert(D:Evaluate(5761,ctx)=="restricted")
+ctx.offers[5761]={questID=5761}
+assert(D:Evaluate(5761,ctx)=="offer", "live offer must override faction and level reference")
+ctx.offers={}
+function ctx:State(id) return {onQuest=id==5761,completed=false,ready=false} end
+rows,counts=D:Rows("ragefire-chasm",false,ctx)
+assert(#rows==1 and rows[1].code=="active")
+assert(D:Restriction({classes={"WARLOCK"}},ctx.char)=="WARLOCK only")
+assert(not D:Restriction({classes={"MAGE"}},ctx.char))
+ctx.char.faction=nil; ctx.char.class=nil
+assert(not D:Restriction({faction="Horde",classes={"WARLOCK"}},ctx.char), "unknown character must not hide quests")
+""",
+    "dungeon_paging_filter_empty_coverage_and_persistence": r"""
+local P=FP.DungeonPanel
+cmd("dungeon blackrock depths")
+assert(P.settings.selected=="blackrock-depths" and #P.rows>6)
+P.questNext:GetScript("OnClick")(); assert(P.questPage==2)
+local last=P.questButtons[1].row.id
+P.questButtons[1]:GetScript("OnClick")(P.questButtons[1]); assert(P.selectedQuest==last)
+P.filter:GetScript("OnClick")(); assert(P.settings.all and P.questPage==1)
+P.frame:Hide(); P:Open(); assert(P.settings.selected=="blackrock-depths" and P.settings.all)
+P:Select("the-drowned-city")
+assert(P.summary:GetText():find("Coverage missing",1,true))
+assert(P.details:GetText():find("does not mean it has no quests",1,true))
+P:Select("ragefire-chasm")
+P.selectedQuest=5722; P:RefreshDetails(true)
+assert(P.details:GetText():find("Conflicting reports",1,true))
+assert(P.scroll._scrollY==0 and #FP.db.errors==0)
+""",
+    "dungeon_list_refresh_does_not_require_recorder_or_steal_navigation": r"""
+cmd("record off")
+cmd("way 55 66 Dungeon group meeting")
+local before=snapshot(FP.Waypoints.list)
+FP.DungeonPanel:Open("wailing")
+assert(FP.DungeonPanel.settings.selected=="wailing-caverns")
+addQuest(1486); M.FireEvent("QUEST_ACCEPTED",1486); M.RunTimers(1)
+local found=false
+for _,r in ipairs(FP.DungeonPanel.rows) do if r.id==1486 then found=r.code=="active" end end
+assert(found and snapshot(FP.Waypoints.list)==before)
+FP.DungeonPanel.frame:Hide()
+local old=FP.DungeonPanel.rows
+M.FireEvent("QUEST_LOG_UPDATE"); M.RunTimers(1)
+assert(FP.DungeonPanel.rows==old, "closed panel should not rescan catalogue")
+""",
+
     "normal_questing_needs_no_commands": r'''
 FP.Panel:Toggle(false)
 local q=addQuest(9001)

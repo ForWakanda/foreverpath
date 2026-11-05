@@ -39,6 +39,13 @@ function Panel:OnInit()
 	close:SetPoint("TOPRIGHT", 2, 2)
 	close:SetScript("OnClick", function() Panel:Toggle(false) end)
 
+	local dungeons = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	self.dungeons = dungeons
+	dungeons:SetSize(78, 20)
+	dungeons:SetPoint("TOPRIGHT", -28, -5)
+	dungeons:SetText("Dungeons")
+	dungeons:SetScript("OnClick", function() FP.DungeonPanel:Open() end)
+
 	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	self.status = status
 	status:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
