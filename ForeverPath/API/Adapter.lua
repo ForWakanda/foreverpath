@@ -330,7 +330,10 @@ function API.IsQuestComplete(questID)
 end
 
 function API.IsOnQuest(questID)
-	return has(C_QuestLog, "IsOnQuest") and C_QuestLog.IsOnQuest(questID) or false
+	-- Live 70790 error: C_QuestLog.IsOnQuest(nil) throws (Usage) -> guard the argument.
+	if not U.Finite(questID) or not has(C_QuestLog, "IsOnQuest") then return false end
+	local ok, on = pcall(C_QuestLog.IsOnQuest, questID)
+	return ok and safe(on) == true or false
 end
 
 -- Checklist reads must distinguish false from an unavailable / secret result.
