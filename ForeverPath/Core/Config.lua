@@ -34,6 +34,10 @@ FP.defaults = {
 		probe = { enabled = true },                        -- beta diagnostic: records which values are secret and when
 		pvp = { enabled = true, share = true, trackFlag = false, locked = false, scale = 1.0, x = 30, y = 120, point = "LEFT" },
 		rare = { enabled = true, share = true, sound = true, locked = false, scale = 1.0, x = 0, y = -200, point = "TOP" },   -- dungeon rare watch (/fp rare)
+		vendor = { enabled = true, tooltipPrice = true, rewardValues = true },   -- merchant strip, tooltip value, quest reward value (/fp vendor)
+		bar = { shown = true, locked = false, scale = 1.0, x = 0, y = -4, point = "TOP", fps = true },   -- status line (/fp bar)
+		reminders = { enabled = true, buffs = true, durability = 20, ammo = 200 },   -- out-of-combat reminders (/fp remind)
+		trainer = { enabled = true },   -- trainer notes (/fp trainer)
 	},
 	data = {
 		quests = {}, npcs = {}, creatures = {}, objects = {}, items = {},

@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.7.0)
+## What it does (v0.8.0)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
@@ -15,7 +15,17 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Class supplies** (`/fp prep`): an out-of-combat checklist in the PvP HUD. Shows carried drinks/bandages and general bag space. Shaman characters get Enhancement preparation reminders; Hunters retain their audio feedback and get a town preparation reminder. Mage-only gems/reagents stay on Mages. Reminders do not inspect buffs, prescribe a rotation, or claim an imbue is active. Appears briefly on login/zone entry, at a vendor, and out of combat in a battleground. Updates on bag/spell changes; unknown item data stays unavailable.
 - **Dungeon quest checklist:** click **Dungeons** on the next-steps panel, then choose a dungeon or wing. Shows missing pickups, quests in your log, ready turn-ins, completed quests, listed level requirements and prerequisites. Click a quest for its giver/location and chain details. Updates automatically as you quest; filters to your faction/class by default, with a Show all button. `/fp dungeon [name]` is an optional shortcut.
 - **Dungeon rare watch** (`/fp rare`): inside Scarlet Monastery a small HUD answers "is Azshir up?". A rare is recognised the moment anyone in the party targets, mouses over, gets a nameplate for, or has a pet on it (names are secret inside Forever dungeons, so the watch reads the unit's *classification*, which is not). A **Scan** button runs a plain `/targetexact` macro once per click to check what the client has loaded without walking the lair. Sightings and kills are shared with party members running the addon; a raid-warning style alert plus sound fires once per run. Runs are keyed by the instance id carried in loot GUIDs, so the HUD counts runs vs sightings and shows the measured spawn rate. `/fp rare list|add|rm|instance` retarget it at any dungeon rare.
+- **Vendor helper** (`/fp vendor`): at a merchant a small strip under the vendor window shows **Sell N grays · value** and **Repair cost** buttons. One click sells one batch of gray items (best value first) or repairs with your own gold; nothing sells or repairs without the click, nothing in combat, and if Forever ever turns on Blizzard's own Sell All Junk button the strip defers to it. Away from a vendor, item tooltips show the vendor value (and the full-stack value); quest reward buttons show each reward's vendor value, the best-value choice in gold. It never picks a reward.
+- **Status line** (`/fp bar`): level and xp, xp per hour and time to level (rolling hour, seeded from the recorder so a reload keeps it), gold, free general bag slots, worst durability, hearth, ammo for ammo users, fps and world latency. Drag to move, `/fp bar lock`.
+- **Reminders** (`/fp remind`, out of combat only, repeated in chat at most every 10 minutes): low or broken durability, low ammo, bags nearly full, a self-buff you know but do not have (Shaman Lightning Shield, Mage Arcane Intellect and Frost/Ice Armor, Hunter Aspect), a Shaman weapon with no imbue. Buff reads go through Blizzard's secret predicate; in combat the reminder row hides instead of guessing.
+- **Trainer notes** (`/fp trainer`): at a class or profession trainer, what you can learn now, the total cost against your gold and the next level that unlocks something. On a level-up, which recorded trainer teaches something at the new level and what it costs. `/fp trainer 28` asks about a level.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
+
+## Vendor, status line, reminders, trainer notes (v0.8.0)
+
+A survey of the most-installed World of Warcraft: Forever addons on CurseForge (ForeverPlus, ForeverForge, ForeverUI, Leatrix Plus, Questie, Vendor Price, What's Training?) found the features people install first: sell grays, repair, vendor value on tooltips and quest rewards, an info bar with xp/h, buff and consumable reminders, trainer awareness. v0.8.0 adds the information side of all of that and keeps every action behind a player click. There is no auto-accept, auto-turn-in, auto-loot or auto-buy here and there will not be: the addon shows, you play.
+
+Mock-tested only on release; in-game verification pending: the merchant strip's anchor under Forever's Mainline-derived `MerchantFrame`, whether `C_UnitAuras.GetPlayerAuraBySpellID` returns your own buffs out of combat on Forever (the predicate `C_Secrets.ShouldAurasBeSecret` gates the read), the Classic-era spell ids used for the buff/imbue tables, `GetInventoryItemDurability` and `GetRepairAllCost` shapes, and the tooltip hook (`TooltipDataProcessor.AddTooltipPostCall`, present in Forever's UI source). `/fp vendor` and `/fp bar` print which hooks the client accepted.
 
 ## Dungeon quest preparation (v0.7.0)
 
@@ -74,7 +84,7 @@ In-game verification pending (mock-tested only): that `UnitClassification` reall
 
 ## Commands
 
-`/fp help` prints them. `/way 45.4 70.4` points to those coordinates in your current zone; add an optional title, e.g. `/way 45.4 70.4 Quest cave`. `/way` is a shortcut for `/fp way`, including `here`, `list`, `next`, `clear`, and `rm <id>`. Waypoint coordinates always use percentages (0–100); three numeric arguments mean map ID, x%, y% (e.g. `/way 1413 45.4 70.4`). If another addon owns `/way`, use `/fp way` explicitly. Short version: `/fp` panel · `/fp next` · `/fp goto <quest>` · `/way x y [title]` · `/fp way here` · `/fp arrow lock|flip|scale n|reset` · `/fp prof` · `/fp rare` · `/fp status` · `/fp apicheck` · `/fp selftest` · `/fp record on|off`.
+`/fp help` prints them. `/way 45.4 70.4` points to those coordinates in your current zone; add an optional title, e.g. `/way 45.4 70.4 Quest cave`. `/way` is a shortcut for `/fp way`, including `here`, `list`, `next`, `clear`, and `rm <id>`. Waypoint coordinates always use percentages (0–100); three numeric arguments mean map ID, x%, y% (e.g. `/way 1413 45.4 70.4`). If another addon owns `/way`, use `/fp way` explicitly. Short version: `/fp` panel · `/fp vendor` · `/fp bar` · `/fp remind` · `/fp trainer` · `/fp next` · `/fp goto <quest>` · `/way x y [title]` · `/fp way here` · `/fp arrow lock|flip|scale n|reset` · `/fp prof` · `/fp rare` · `/fp status` · `/fp apicheck` · `/fp selftest` · `/fp record on|off`.
 
 ## Getting the data out
 

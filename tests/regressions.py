@@ -1324,6 +1324,196 @@ assert(FP.Prof:Craftable(rec)==nil)
 ''',
 })
 
+# v0.8.0: vendor helper, info bar, trainer notes --------------------------------
+VENDOR_SETUP = r"""
+NUM_TOTAL_EQUIPPED_BAG_SLOTS=4
+M.items[1000]={"Broken Fang",0,5,12}       -- gray, 12c each
+M.items[1001]={"Torn Sack",0,1,350}        -- gray, 3s 50c
+M.items[1002]={"Linen Cloth",1,20,13}      -- white, must never sell
+M.items[1003]={"Soggy Scroll",0,1,0}       -- gray, worthless
+M.EnableBags({[0]={{1000,4},{1002,20},{1001,1},{1003,1}},[1]={},[2]={},[3]={},[4]={}})
+local V=FP.Vendor
+local function chat(pat) for _,l in ipairs(M.Chat()) do if l:find(pat,1,true) then return l end end end
+"""
+CASES.update({
+    "vendor_strip_sells_grays_and_repairs_only_on_click": VENDOR_SETUP + r"""
+assert(not V.frame:IsShown())
+MerchantFrame:Show(); M.FireEvent("MERCHANT_SHOW"); M.RunTimers(1)
+assert(V.frame:IsShown(), "strip opens with the merchant")
+assert(#M.sold==0, "nothing sells without a click")
+local junk=API_JUNK or FP.API.GetJunk()
+assert(#junk.items==2 and junk.total==398, "two gray stacks worth 3s 98c; worthless/white excluded")
+assert(V.sell:GetText():find("Sell 2 grays",1,true) and V.sell:GetText():find("3s 98c",1,true), V.sell:GetText())
+assert(V.sell:IsEnabled())
+assert(V.repair:GetText()=="Gear repaired" and not V.repair:IsEnabled())
+V.sell:GetScript("OnClick")(V.sell); M.RunTimers(1)
+assert(#M.sold==2 and M.sold[1]==1001 and M.sold[2]==1000, "both grays sold, highest value first")
+assert(#M.bags[0]==2 and M.bags[0][1][1]==1002, "white stack untouched")
+assert(V.sell:GetText()=="No gray items" and not V.sell:IsEnabled())
+M.repairCost=1500; M.money=1200; M.FireEvent("UPDATE_INVENTORY_DURABILITY"); M.RunTimers(1)
+assert(V.repair:GetText():find("short",1,true) and not V.repair:IsEnabled(), "cannot afford: disabled")
+M.money=50000; M.FireEvent("PLAYER_MONEY"); M.RunTimers(1)
+assert(V.repair:GetText()=="Repair 15s 0c" and V.repair:IsEnabled())
+assert(not M.repaired, "repair waits for the click")
+V.repair:GetScript("OnClick")(V.repair); M.RunTimers(1)
+assert(M.repaired==1 and chat("Repaired for 15s 0c"))
+M.canRepair=false; M.repairCost=800; M.FireEvent("MERCHANT_UPDATE"); M.RunTimers(1)
+assert(V.repair:GetText():find("Repair elsewhere",1,true) and not V.repair:IsEnabled())
+M.FireEvent("MERCHANT_CLOSED"); MerchantFrame:Hide()
+assert(not V.frame:IsShown() and chat("Sold 2 gray items for 3s 98c"))
+assert(not pcall(C_Container.UseContainerItem,0,1), "mock refuses sells outside a merchant")
+assert(V:SellClicked()==0, "no sale with the merchant closed")
+""",
+    "vendor_strip_refuses_combat_and_defers_to_blizzard_junk_button": VENDOR_SETUP + r"""
+MerchantFrame:Show(); M.FireEvent("MERCHANT_SHOW"); M.RunTimers(1)
+M.combatLockdown=true; M.FireEvent("PLAYER_REGEN_DISABLED")
+assert(V.sell:GetText()=="Sell grays (after combat)" and not V.sell:IsEnabled())
+assert(V:SellClicked()==0 and #M.sold==0, "no sale in combat even if clicked")
+M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(1)
+assert(V.sell:IsEnabled())
+MerchantSellAllJunkButton=M.NewFrame("Button","MerchantSellAllJunkButton")
+M.FireEvent("MERCHANT_UPDATE"); M.RunTimers(1)
+assert(V.sell:GetText():find("Gray value",1,true) and not V.sell:IsEnabled(), "Blizzard's own junk button wins")
+assert(V:SellClicked()==0 and #M.sold==0)
+MerchantSellAllJunkButton=nil
+cmd("vendor off"); assert(not V.frame:IsShown())
+M.FireEvent("MERCHANT_SHOW"); assert(not V.frame:IsShown(), "disabled strip stays hidden")
+cmd("vendor on"); cmd("vendor junk"); assert(chat("2 gray items worth 3s 98c"))
+""",
+    "vendor_tooltip_value_away_from_merchant_only": VENDOR_SETUP + r"""
+assert(V.tooltipHook and #M.tooltipHooks==1)
+local hook=M.tooltipHooks[1].fn
+GameTooltip._item={link="|Hitem:1001:0|h[x]|h",id=1001}; GameTooltip._lines=nil
+hook(GameTooltip,{})
+assert(GameTooltip._lines and GameTooltip._lines[1][1]=="Vendor value" and GameTooltip._lines[1][2]:find("3s 50c",1,true), "value line added")
+GameTooltip._item={link="|Hitem:1000:0|h[x]|h",id=1000}; GameTooltip._lines=nil
+hook(GameTooltip,{})
+assert(GameTooltip._lines[1][2]:find("12c",1,true) and GameTooltip._lines[1][2]:find("stack 60c",1,true), "stack value shown for stackables")
+GameTooltip._item={link="|Hitem:1003:0|h[x]|h",id=1003}; GameTooltip._lines=nil
+hook(GameTooltip,{}); assert(not GameTooltip._lines, "worthless item: no line")
+GameTooltip._item={link="|Hitem:777777:0|h[x]|h",id=777777}; GameTooltip._lines=nil
+hook(GameTooltip,{}); assert(not GameTooltip._lines, "uncached item: no invented price")
+MerchantFrame:Show()
+GameTooltip._item={link="|Hitem:1001:0|h[x]|h",id=1001}; GameTooltip._lines=nil
+hook(GameTooltip,{}); assert(not GameTooltip._lines, "Blizzard prices items at a vendor")
+MerchantFrame:Hide()
+cmd("vendor tooltip off"); GameTooltip._lines=nil; hook(GameTooltip,{}); assert(not GameTooltip._lines)
+local other=M.NewFrame("GameTooltip","SomeOtherTooltip"); other._item={link="|Hitem:1001:0|h[x]|h",id=1001}
+cmd("vendor tooltip on"); hook(other,{}); assert(not other._lines, "only the game tooltips are decorated")
+""",
+    "quest_reward_values_mark_best_choice_without_choosing": VENDOR_SETUP + r"""
+M.items[2001]={"Sturdy Belt",2,1,1500}
+M.items[2002]={"Thin Gloves",2,1,900}
+M.questChoices={2001,2002}
+local buttons=QuestInfoFrame.rewardsFrame.RewardButtons
+for i=1,2 do local b=M.NewFrame("Button"); b.type="choice"; b:SetID(i); buttons[i]=b end
+local fixed=M.NewFrame("Button"); fixed.type="reward"; fixed:SetID(1); buttons[3]=fixed
+M.FireEvent("QUEST_COMPLETE"); M.RunTimers(1)
+assert(V.rewardsShown==2, "two priced choices decorated; the fixed reward is uncached")
+assert(buttons[1].fpValue:GetText():find("ffd100",1,true) and buttons[1].fpValue:GetText():find("15s 0c",1,true), "best choice is gold")
+assert(buttons[2].fpValue:GetText():find("9a9a9a",1,true) and buttons[2].fpValue:GetText():find("9s 0c",1,true), "the other is grey")
+assert(not fixed.fpValue)
+M.items[5555]={"Quilboar Sword",1,1,250}
+M.FireEvent("GET_ITEM_INFO_RECEIVED"); M.RunTimers(1)
+assert(V.rewardsShown==3 and fixed.fpValue:GetText():find("2s 50c",1,true), "cached later -> decorated")
+buttons[2]:Hide(); QuestInfo_ShowRewards(); M.RunTimers(1)
+assert(not buttons[2].fpValue:IsShown(), "hidden button loses its value text")
+cmd("vendor rewards off"); M.FireEvent("QUEST_DETAIL"); M.RunTimers(1)
+assert(#FP.db.errors==0)
+""",
+    "infobar_xp_rate_time_to_level_and_combat_safe_reminders": r"""
+local B=FP.InfoBar
+local function chat(pat) local n=0 for _,l in ipairs(M.Chat()) do if l:find(pat,1,true) then n=n+1 end end return n end
+assert(B.frame:IsShown(), "bar shows by default")
+B:Paint()
+assert(B.text:GetText():find("xp/h —",1,true), "no rate before 2 minutes")
+M.xp=12000; local t0=M.now
+M.now=t0+600; M.xp=13200; M.FireEvent("PLAYER_XP_UPDATE","player")
+M.now=t0+1200; M.xp=14400; M.FireEvent("PLAYER_XP_UPDATE","player")
+B:Paint()
+local rate,gained,elapsed=B:Rate()
+assert(gained==2400 and elapsed==FP.Util.Now()-B.samples[1].t, "window runs from the login seed sample: gained="..tostring(gained).." elapsed="..tostring(elapsed).." expected="..tostring(FP.Util.Now()-B.samples[1].t))
+assert(math.abs(rate-2400/elapsed*3600)<0.001, "rate = gained / elapsed, got "..tostring(rate))
+assert(B.text:GetText():find(tostring(math.floor(rate+0.5)).." xp/h",1,true) and B.text:GetText():find("to level",1,true), B.text:GetText())
+-- level-up carries the remainder into the new level
+M.level=21; M.xp=300; M.FireEvent("PLAYER_LEVEL_UP",21); M.RunTimers(1)
+assert(B.gained==2400+(17000-14400)+300, "xp across the level-up counted once")
+-- reminders
+M.durability={[1]={10,100},[5]={80,100}}
+M.FireEvent("UPDATE_INVENTORY_DURABILITY"); B:Paint()
+assert(B.remind:IsShown() and B.remind:GetText():find("Repair soon: 10%",1,true))
+assert(chat("Repair soon: 10%")==1)
+B:Paint(); B:Paint(); assert(chat("Repair soon: 10%")==1, "chat reminder not repeated within 10 minutes")
+M.now=M.now+700; B:Paint(); assert(chat("Repair soon: 10%")==2, "repeats after the interval")
+-- a known self-buff that is not active, out of combat only
+M.class="SHAMAN"; M.known={[324]=true}; C_SpellBook={IsSpellKnown=function(id) return M.known[id] or false end}
+M.auras={}; B:Paint()
+assert(B.remind:GetText():find("Buff: Lightning Shield",1,true), B.remind:GetText())
+M.auras={[325]=true}; B:Paint()
+assert(not B.remind:GetText():find("Lightning Shield",1,true), "any rank active clears the reminder")
+M.known={}; M.auras={}; B:Paint()
+assert(not B.remind:GetText():find("Lightning Shield",1,true), "unknown spell: no reminder")
+M.known={[324]=true}
+M.inCombat=true; M.combatLockdown=true; M.FireEvent("PLAYER_REGEN_DISABLED"); B:Paint()
+assert(not B.remind:IsShown(), "no reminders (and no aura reads) in combat")
+assert(B.text:GetText():find("dura 10%",1,true), "cached durability still shown in combat")
+M.inCombat=false; M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(1)
+assert(B.remind:IsShown())
+cmd("remind durability 5"); B:Paint(); assert(not B.remind:GetText():find("Repair soon",1,true))
+cmd("remind off"); assert(not B.remind:IsShown())
+cmd("bar hide"); assert(not B.frame:IsShown() and FP.settings.bar.shown==false)
+cmd("bar show"); assert(B.frame:IsShown())
+assert(#FP.db.errors==0)
+""",
+    "infobar_ammo_and_imbue_reminders_are_class_gated": r"""
+local B=FP.InfoBar
+M.usesAmmo=true; M.ammoCount=150; M.invIDs={[0]=2512}
+B:Paint()
+assert(B.text:GetText():find("ammo 150",1,true) and B.remind:GetText():find("Ammo low: 150",1,true))
+M.ammoCount=900; B:Paint(); assert(not B.remind:GetText():find("Ammo low",1,true))
+M.usesAmmo=false; B:Paint(); assert(not B.text:GetText():find("ammo",1,true), "non-ammo class shows no ammo segment")
+M.class="SHAMAN"; M.known={[8017]=true}; C_SpellBook={IsSpellKnown=function(id) return M.known[id] or false end}
+M.invIDs={[16]=2500}; M.imbues={}
+B:Paint(); assert(B.remind:GetText():find("Imbue weapon",1,true), B.remind:GetText())
+M.imbues={[16]={remainingTimeMs=600000,chargesRemaining=0}}; B:Paint()
+assert(not B.remind:GetText():find("Imbue",1,true), "active imbue clears it")
+M.invIDs={}; M.imbues={}; B:Paint(); assert(not B.remind:GetText():find("Imbue",1,true), "no weapon: nothing to imbue")
+C_UnitAuras.GetPlayerAuraBySpellID=function() return M.Secret() end
+M.known={[324]=true}; B:Paint(); assert(not B.remind:GetText():find("Lightning",1,true), "secret aura read: unknown, never 'missing'")
+assert(#FP.db.errors==0)
+""",
+    "trainer_summary_and_level_up_notes_use_recorded_class_trainers": r"""
+local function chat(pat) for _,l in ipairs(M.Chat()) do if l:find(pat,1,true) then return l end end end
+M.class="SHAMAN"; M.level=20
+GetNumTrainerServices=function() return 4 end
+local svc={{"Lightning Shield","available",nil,20,"Rank 3"},{"Ghost Wolf","unavailable",nil,22,""},{"Water Walking","unavailable",nil,28,""},{"Healing Wave","used",nil,18,"Rank 4"}}
+GetTrainerServiceInfo=function(i) local s=svc[i]; return s[1],s[2],s[3],s[4],s[5] end
+GetTrainerServiceCost=function(i) return ({1200,5000,9000,600})[i], false end
+GetTrainerServiceSkillReq=function() return nil,nil,false end
+IsTradeskillTrainer=function() return false end
+M.money=3000
+M.SetUnit("npc",{guid="Creature-0-4379-1-13-3066-00003BB8F2",name="Kardris Dreamseeker",level=40,reaction=5})
+M.FireEvent("TRAINER_SHOW"); M.RunTimers(1)
+local line=chat("Trainer: 1 available now for 12s 0c")
+assert(line and line:find("you can afford all",1,true) and line:find("Lightning Shield (Rank 3) 12s 0c",1,true), tostring(line))
+assert(chat("Next at level 22: Ghost Wolf 50s 0c"))
+assert(FP.data.trainers[3066].class=="SHAMAN", "trainer record carries the visiting class")
+M.FireEvent("TRAINER_UPDATE"); M.RunTimers(2)
+local n=0 for _,l in ipairs(M.Chat()) do if l:find("Trainer: 1 available",1,true) then n=n+1 end end
+assert(n==1, "update with the same list does not reprint")
+M.FireEvent("TRAINER_CLOSED")
+M.level=22; M.FireEvent("PLAYER_LEVEL_UP",22); M.RunTimers(2)
+assert(chat("Level 22: 1 new spell at your class trainer (recorded at Kardris Dreamseeker) — Ghost Wolf 50s 0c"))
+M.level=23; M.FireEvent("PLAYER_LEVEL_UP",23); M.RunTimers(2)
+assert(not chat("Level 23:"), "no recorded spell at 23: silence")
+FP.data.trainers[3066].class="MAGE"
+cmd("trainer 28"); assert(chat("No recorded SHAMAN trainer teaches anything at level 28"))
+FP.data.trainers[3066].class="SHAMAN"
+cmd("trainer 28"); assert(chat("Level 28 at Kardris Dreamseeker: Water Walking 90s 0c"))
+assert(#FP.db.errors==0)
+""",
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

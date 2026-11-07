@@ -719,6 +719,223 @@ function API.GetBindLocation()
 end
 
 -------------------------------------------------------------------------------
+-- Vendor, inventory and status reads (v0.8.0). Information first. The only
+-- actions are player-clicked at an open merchant: sell the gray items, repair.
+-- Nothing here runs without a click; nothing runs in combat.
+-- Source facts (Forever 70862 Blizzard_APIDocumentationGenerated + FrameXML):
+-- C_Item.GetItemInfo 11th return = sellPrice; ContainerItemInfo has quality /
+-- hasNoValue / isLocked / hyperlink; GetRepairAllCost -> cost, canRepair;
+-- GetInventoryItemDurability(slot) -> cur, max; UnitUsesAmmo("player");
+-- GetNetStats -> in, out, latencyHome, latencyWorld; C_UnitAuras.
+-- GetPlayerAuraBySpellID; C_Secrets.ShouldAurasBeSecret; C_PaperDollInfo.
+-- GetTemporaryEnchantmentInfo(slot) -> { remainingTimeMs, chargesRemaining }.
+-------------------------------------------------------------------------------
+function API.GetMoney()
+	if not hasg("GetMoney") then return nil end
+	local ok, m = pcall(GetMoney)
+	m = ok and safe(m) or nil
+	if U.Finite(m) and m >= 0 then return m end
+	return nil
+end
+
+-- sellPrice (copper per unit), max stack, name, quality. nil = not cached yet.
+function API.GetItemValue(itemOrLink)
+	local fn = has(C_Item, "GetItemInfo") and C_Item.GetItemInfo or (hasg("GetItemInfo") and GetItemInfo)
+	if not fn or itemOrLink == nil then return nil end
+	local v = { pcall(fn, itemOrLink) }
+	if not v[1] then return nil end
+	local name, quality, stack, price = safe(v[2]), safe(v[4]), safe(v[9]), safe(v[12])
+	if type(name) ~= "string" or not U.Finite(price) or price < 0 then return nil end
+	return price, (U.Finite(stack) and stack > 0) and stack or 1, name, U.Finite(quality) and quality or nil
+end
+
+function API.MerchantOpen()
+	local f = _G.MerchantFrame
+	return type(f) == "table" and type(f.IsShown) == "function" and f:IsShown() and true or false
+end
+
+-- Blizzard's own "Sell All Junk" button (Mainline MerchantFrame) when Forever enables it.
+function API.BlizzardSellsJunk()
+	local b = _G.MerchantSellAllJunkButton
+	return type(b) == "table" and type(b.IsShown) == "function" and b:IsShown() and true or false
+end
+
+-- Gray (poor-quality) items in the bags that a vendor buys, best value first.
+-- nil = unavailable (combat, missing API); unpriced = uncached items, never "no junk".
+function API.GetJunk()
+	if API.InCombat() then return nil, "Refresh after combat" end
+	if not has(C_Container, "GetContainerNumSlots") or not has(C_Container, "GetContainerItemInfo") then return nil, "Bag reads unavailable" end
+	local lastBag = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+	if not U.Finite(lastBag) or lastBag < 0 or lastBag > 10 then return nil, "Bag layout unavailable" end
+	local poor = (type(Enum) == "table" and type(Enum.ItemQuality) == "table" and Enum.ItemQuality.Poor) or 0
+	local out = { items = {}, total = 0, unpriced = 0 }
+	for bag = 0, lastBag do
+		local ok, slots = pcall(C_Container.GetContainerNumSlots, bag)
+		slots = safe(slots)
+		if not ok or not U.Finite(slots) or slots < 0 or slots > 200 then return nil, "Bag reads unavailable" end
+		for slot = 1, slots do
+			local good, item = pcall(C_Container.GetContainerItemInfo, bag, slot)
+			if not good then return nil, "Bag reads unavailable" end
+			if type(item) == "table" then
+				local quality, noValue, id, count, link, locked = safe(item.quality), safe(item.hasNoValue), safe(item.itemID), safe(item.stackCount), safe(item.hyperlink), safe(item.isLocked)
+				if quality == poor and noValue ~= true and U.Finite(id) and locked ~= true then
+					local price, _, name = API.GetItemValue(link or id)
+					count = (U.Finite(count) and count > 0) and count or 1
+					if price and price > 0 then
+						out.items[#out.items + 1] = { bag = bag, slot = slot, itemID = id, name = name, count = count, value = price * count, link = link }
+						out.total = out.total + price * count
+					elseif not price then
+						out.unpriced = out.unpriced + 1
+						requestPrepItem(id)
+					end
+				end
+			end
+		end
+	end
+	table.sort(out.items, function(a, b) return a.value > b.value end)
+	return out
+end
+
+-- Player-clicked only: sell one bag slot to the open merchant.
+function API.SellSlot(bag, slot)
+	if not API.MerchantOpen() or API.InCombat() or not has(C_Container, "UseContainerItem") then return false end
+	return pcall(C_Container.UseContainerItem, bag, slot) and true or false
+end
+
+-- cost = copper for a full repair, needed = something is damaged, merchantRepairs = this vendor can.
+function API.GetRepairInfo()
+	if not hasg("GetRepairAllCost") then return nil end
+	local ok, cost, needed = pcall(GetRepairAllCost)
+	cost, needed = ok and safe(cost) or nil, ok and safe(needed) or nil
+	if not U.Finite(cost) or cost < 0 then return nil end
+	local can = false
+	if hasg("CanMerchantRepair") and API.MerchantOpen() then
+		local good, c = pcall(CanMerchantRepair)
+		can = good and safe(c) == true
+	end
+	return { cost = cost, needed = needed == true, merchantRepairs = can }
+end
+
+-- Player-clicked only: repair everything at the open merchant with your own money.
+function API.RepairAll()
+	if not hasg("RepairAllItems") or not API.MerchantOpen() or API.InCombat() then return false end
+	return pcall(RepairAllItems, false) and true or false
+end
+
+-- worst = lowest slot fraction, pct = overall fraction, broken = slots at 0. nil = unavailable.
+function API.GetDurability()
+	if not hasg("GetInventoryItemDurability") then return nil end
+	local worst, cur, max, broken, n
+	cur, max, broken, n = 0, 0, 0, 0
+	for slot = 1, 18 do
+		local ok, c, m = pcall(GetInventoryItemDurability, slot)
+		c, m = ok and safe(c) or nil, ok and safe(m) or nil
+		if U.Finite(c) and U.Finite(m) and m > 0 then
+			n, cur, max = n + 1, cur + c, max + m
+			local pct = c / m
+			if not worst or pct < worst then worst = pct end
+			if c == 0 then broken = broken + 1 end
+		end
+	end
+	if n == 0 then return nil end
+	return { worst = worst, pct = cur / max, broken = broken, slots = n }
+end
+
+-- nil = this character does not use ammo (or the API is missing); count nil = unreadable.
+function API.GetAmmo()
+	if not hasg("UnitUsesAmmo") then return nil end
+	local ok, uses = pcall(UnitUsesAmmo, "player")
+	if not ok or safe(uses) ~= true then return nil end
+	local slot = INVSLOT_AMMO or 0
+	local count, id
+	if hasg("GetInventoryItemCount") then local good, c = pcall(GetInventoryItemCount, "player", slot); count = good and safe(c) or nil end
+	if hasg("GetInventoryItemID") then local good, i = pcall(GetInventoryItemID, "player", slot); id = good and safe(i) or nil end
+	return { count = U.Finite(count) and count or nil, itemID = U.Finite(id) and id or nil, name = U.Finite(id) and API.GetItemName(id) or nil }
+end
+
+function API.GetPerformance()
+	local fps, home, world
+	if hasg("GetFramerate") then local ok, f = pcall(GetFramerate); fps = ok and safe(f) or nil end
+	if hasg("GetNetStats") then local ok, _, _, h, w = pcall(GetNetStats); if ok then home, world = safe(h), safe(w) end end
+	return { fps = U.Finite(fps) and fps or nil, home = U.Finite(home) and home or nil, world = U.Finite(world) and world or nil }
+end
+
+-- Own buffs are readable only while Blizzard's predicate says auras are not
+-- secret (out of combat on Forever). true/false, or nil = cannot tell.
+function API.HasPlayerAura(spellIDs)
+	if API.InCombat() or not has(C_UnitAuras, "GetPlayerAuraBySpellID") then return nil end
+	if has(C_Secrets, "ShouldAurasBeSecret") then
+		local ok, secret = pcall(C_Secrets.ShouldAurasBeSecret)
+		if not ok or secret ~= false then return nil end
+	end
+	for _, id in ipairs(spellIDs) do
+		local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
+		if not ok or FP.issecret(aura) then return nil end
+		if aura ~= nil then return true end
+	end
+	return false
+end
+
+-- Temporary weapon enchants (Shaman imbues, oils, poisons). nil = unavailable.
+function API.GetWeaponImbues()
+	if API.InCombat() or not has(C_PaperDollInfo, "GetTemporaryEnchantmentInfo") then return nil end
+	local out = {}
+	for key, slot in pairs({ main = INVSLOT_MAINHAND or 16, off = INVSLOT_OFFHAND or 17 }) do
+		local ok, info = pcall(C_PaperDollInfo.GetTemporaryEnchantmentInfo, slot)
+		if not ok or FP.issecret(info) then return nil end
+		if type(info) == "table" then
+			local ms = safe(info.remainingTimeMs)
+			out[key] = { remaining = U.Finite(ms) and ms / 1000 or nil }
+		end
+		if hasg("GetInventoryItemID") then
+			local good, id = pcall(GetInventoryItemID, "player", slot)
+			out["has_" .. key] = good and U.Finite(safe(id)) or false
+		end
+	end
+	return out
+end
+
+-- Vendor value of the rewards on the open quest dialog (choice and fixed rewards).
+function API.GetQuestRewardValues()
+	local out = {}
+	if not hasg("GetQuestItemLink") then return out end
+	for _, kind in ipairs({ { "choice", "GetNumQuestChoices" }, { "reward", "GetNumQuestRewards" } }) do
+		local n = 0
+		if hasg(kind[2]) then local ok, c = pcall(_G[kind[2]]); n = ok and safe(c) or 0 end
+		for i = 1, (U.Finite(n) and n or 0) do
+			local ok, link = pcall(GetQuestItemLink, kind[1], i)
+			link = ok and safe(link) or nil
+			local price = link and API.GetItemValue(link) or nil
+			local qty = 1
+			if hasg("GetQuestItemInfo") then
+				local good, _, _, q = pcall(GetQuestItemInfo, kind[1], i)
+				q = good and safe(q) or nil
+				if U.Finite(q) and q > 0 then qty = q end
+			end
+			out[#out + 1] = { type = kind[1], index = i, link = link, price = price, count = qty, value = price and price * qty or nil }
+		end
+	end
+	return out
+end
+
+-- Tooltip plumbing (Mainline TooltipDataProcessor / TooltipUtil, present on Forever).
+function API.GetTooltipItem(tooltip)
+	if type(TooltipUtil) == "table" and type(TooltipUtil.GetDisplayedItem) == "function" then
+		local ok, _, link, id = pcall(TooltipUtil.GetDisplayedItem, tooltip)
+		if ok then return safe(link), safe(id) end
+	end
+	return nil
+end
+
+function API.AddTooltipItemHook(fn)
+	if type(TooltipDataProcessor) == "table" and type(TooltipDataProcessor.AddTooltipPostCall) == "function"
+		and type(Enum) == "table" and type(Enum.TooltipDataType) == "table" and Enum.TooltipDataType.Item ~= nil then
+		return pcall(TooltipDataProcessor.AddTooltipPostCall, Enum.TooltipDataType.Item, fn) and true or false
+	end
+	return false
+end
+
+-------------------------------------------------------------------------------
 -- Loot
 -------------------------------------------------------------------------------
 function API.GetLootSlots()

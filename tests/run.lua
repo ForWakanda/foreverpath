@@ -424,5 +424,13 @@ M.RunTimers(2)
 check(not RW.inside and not RW.frame:IsShown() and not RW.scan:IsShown(), "rare hud hides after leaving the instance")
 errorsEmpty("rare watch")
 
+-- v0.8.0: vendor strip is hidden away from a merchant, the info bar paints, trainer notes are quiet
+M.FireEvent("MERCHANT_CLOSED")
+check(not FP.Vendor.frame:IsShown(), "vendor strip hidden without a merchant")
+check(FP.InfoBar.frame:IsShown() and FP.InfoBar.text:GetText():find("Lvl", 1, true), "info bar paints")
+M.RunTimers(3)
+cmd("vendor"); cmd("bar"); cmd("bar"); cmd("remind"); cmd("trainer")
+errorsEmpty("vendor/infobar/trainer")
+
 print("dataset: " .. FP.Recorder:Summary())
 print("ALL CHECKS PASSED")

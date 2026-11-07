@@ -652,6 +652,7 @@ function R:OnTrainer()
 	t.t = U.Now()
 	t.n = n.name
 	t.tradeskill = isTradeskill or nil
+	t.class = API.GetCharInfo().class   -- class trainers are class-specific; lets level-up notes pick the right ones
 	for _, s in ipairs(services) do
 		if s.name then
 			t.services[s.name] = { type = s.type, lvl = s.level, skill = s.skill, rank = s.skillRank, cost = s.cost, line = s.skillLine, item = s.itemID, sub = s.sub }

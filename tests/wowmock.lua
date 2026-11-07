@@ -333,4 +333,71 @@ UnitCastingInfo = function() return nil end
 M.addonSent = {}
 C_ChatInfo = { RegisterAddonMessagePrefix = function() return 0 end, SendAddonMessage = function(prefix, msg) table.insert(M.addonSent, msg); return 0 end, InChatMessagingLockdown = function() return M.lockdown or false end }
 
+
+-------------------------------------------------------------------------------
+-- v0.8.0 vendor / status stubs. Bag functions are installed by M.EnableBags()
+-- so earlier scenarios keep their "bag reads unavailable" behaviour.
+-------------------------------------------------------------------------------
+Enum = Enum or {}
+Enum.ItemQuality = Enum.ItemQuality or { Poor = 0, Common = 1, Uncommon = 2 }
+Enum.TooltipDataType = Enum.TooltipDataType or { Item = 0, Spell = 1, Unit = 2 }
+INVSLOT_AMMO, INVSLOT_MAINHAND, INVSLOT_OFFHAND = 0, 16, 17
+SELL_PRICE = "Sell Price:"
+GetMoney = function() return M.money or 123456 end
+GetRepairAllCost = function() local c = M.repairCost or 0; return c, c > 0 end
+CanMerchantRepair = function() return M.canRepair ~= false end
+RepairAllItems = function() M.repaired = (M.repaired or 0) + 1; M.money = (M.money or 123456) - (M.repairCost or 0); M.repairCost = 0 end
+GetInventoryItemDurability = function(slot) local d = M.durability and M.durability[slot]; if d then return d[1], d[2] end return nil end
+UnitUsesAmmo = function() return M.usesAmmo or false end
+GetInventoryItemCount = function(_, slot) if slot == 0 then return M.ammoCount or 0 end return 1 end
+GetInventoryItemID = function(_, slot) return M.invIDs and M.invIDs[slot] or nil end
+GetFramerate = function() return M.fps or 60 end
+GetNetStats = function() return 0, 0, 40, 55 end
+C_UnitAuras.GetPlayerAuraBySpellID = function(id) if M.auras and M.auras[id] then return { spellId = id } end return nil end
+C_PaperDollInfo = { GetTemporaryEnchantmentInfo = function(slot) return M.imbues and M.imbues[slot] or nil end }
+M.tooltipHooks = {}
+TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn) table.insert(M.tooltipHooks, { kind = kind, fn = fn }) end }
+TooltipUtil = { GetDisplayedItem = function(tt) if tt._item then return "name", tt._item.link, tt._item.id end end }
+function Frame:AddDoubleLine(l, r) self._lines = self._lines or {}; table.insert(self._lines, { l, r }) end
+function Frame:NumLines() return 0 end
+function Frame:GetName() return self._name end
+function Frame:GetStringWidth() return 600 end
+function Frame:Enable() self._enabled = true end
+function Frame:Disable() self._enabled = false end
+function Frame:IsEnabled() return self._enabled ~= false end
+function Frame:SetID(id) self._id = id end
+function Frame:GetID() return self._id or 0 end
+ItemRefTooltip = M.NewFrame("GameTooltip", "ItemRefTooltip")
+MerchantFrame = M.NewFrame("Frame", "MerchantFrame"); MerchantFrame:Hide()
+hooksecurefunc = function(name, fn) local orig = _G[name]; _G[name] = function(...) local r = { orig(...) }; fn(...); return unpack(r) end end
+QuestInfoFrame = { rewardsFrame = { RewardButtons = {} } }
+QuestInfo_ShowRewards = function() end
+M.questChoices = {}
+GetNumQuestChoices = function() return #M.questChoices end
+GetQuestItemLink = function(kind, i) if kind == "choice" and M.questChoices[i] then return "|cff1eff00|Hitem:" .. M.questChoices[i] .. ":0:0:0|h[x]|h|r" end return "|cff1eff00|Hitem:5555:0:0:0|h[Quilboar Sword]|h|r" end
+-- M.items[id] = { name, quality, stack, price, class, sub }; others keep the name-only fallback.
+M.items = {}
+local baseGetItemInfo = C_Item.GetItemInfo
+C_Item.GetItemInfo = function(id)
+	local key = type(id) == "string" and tonumber(id:match("item:(%d+)")) or id
+	local it = M.items[key]
+	if it then return it[1], "link", it[2], 1, 1, "type", "subtype", it[3], "", 123, it[4], it[5] or 15, it[6] or 1 end
+	return baseGetItemInfo(id)
+end
+function M.EnableBags(bags)
+	M.bags = bags
+	M.sold = {}
+	C_Container.GetContainerNumSlots = function(bag) return #(M.bags[bag] or {}) end
+	C_Container.GetContainerItemInfo = function(bag, slot)
+		local i = M.bags[bag] and M.bags[bag][slot]
+		if not i then return nil end
+		local it = M.items[i[1]] or {}
+		return { itemID = i[1], stackCount = i[2], quality = it[2], hasNoValue = i.noValue or false, hyperlink = "|Hitem:" .. i[1] .. ":0|h[x]|h", isLocked = false }
+	end
+	C_Container.UseContainerItem = function(bag, slot)
+		if not MerchantFrame:IsShown() then error("UseContainerItem outside a merchant") end
+		table.insert(M.sold, M.bags[bag][slot][1]); table.remove(M.bags[bag], slot)
+	end
+end
+
 return M
