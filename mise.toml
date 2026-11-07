@@ -1,0 +1,7 @@
+# Lua 5.1 is the dialect WoW embeds; tools/check.sh must run under it.
+[tools]
+lua = "5.1.5"
+
+[env]
+LUA = "lua"
+LUAC = "luac"
