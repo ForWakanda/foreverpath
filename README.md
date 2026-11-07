@@ -103,7 +103,7 @@ Log out or `/reload` first so the client flushes SavedVariables.
 
 ### Contributing
 
-Fork, branch, make one change per commit, run `tools/check.sh`, open a pull request. Say in the PR whether the change was verified in game or only against the mock; nothing here can run the client. Releases are tagged `vX.Y.Z`; the tag builds `ForeverPath.zip` automatically.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Branch, make one change per commit, run `tools/check.sh`, open a pull request; `main` is protected and merges only with the CI check green. Say in the PR whether the change was verified in game or only against the mock; nothing here can run the client. Releases are tagged `vX.Y.Z`; the tag builds `ForeverPath.zip` automatically.
 
 ## Recorder evidence
 
