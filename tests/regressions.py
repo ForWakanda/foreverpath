@@ -41,7 +41,218 @@ local function snapshot(value)
 end
 '''
 
+HUB = r'''
+local H=FP.Hub
+local function page(key) H:Open(key) end
+local function click(id)
+    local b=assert(H.controls[id],id)
+    assert(b:IsEnabled(),id.." is unexpectedly disabled")
+    b:GetScript("OnClick")(b)
+end
+local function check(id,on)
+    local b=assert(H.controls[id]); b:SetChecked(on); click(id)
+end
+local function field(id,text) H.controls[id]:SetText(tostring(text)) end
+local function selectRow(id,n)
+    local b=H.controls[id].rows[n or 1]; assert(b.item); b:GetScript("OnClick")(b)
+end
+'''
+
 CASES = {
+    "hub_all_sections_are_read_only_and_reuse_frames": HUB + r'''
+cmd("way 60 60 Preserve")
+local beforeSettings,beforeData,beforeChar=snapshot(FP.settings),snapshot(FP.data),snapshot(FP.cdb)
+local calls=0
+FP.Party.Send=function() calls=calls+1 end
+FP.Vendor.SellClicked=function() calls=calls+1 end
+FP.Vendor.RepairClicked=function() calls=calls+1 end
+ForeverPath_OnAddonCompartmentClick()
+assert(H.frame:IsShown() and H.selected=="navigation")
+for _,s in ipairs(H.sections) do page(s[1]); assert(H.pages[s[1]].body:GetHeight()>=432) end
+local count=#M.frames
+for _,s in ipairs(H.sections) do page(s[1]) end
+assert(#M.frames==count, "browsing leaks UI frames")
+assert(calls==0 and snapshot(FP.settings)==beforeSettings and snapshot(FP.data)==beforeData)
+assert(snapshot(FP.cdb)==beforeChar, "browsing changed character state")
+cmd(""); assert(not H.frame:IsShown())
+FP.Panel.toolsButton:GetScript("OnClick")(); assert(H.frame:IsShown())
+FP.DungeonPanel:Open(); FP.DungeonPanel.toolsButton:GetScript("OnClick")()
+assert(not FP.DungeonPanel.frame:IsShown() and H.frame:IsShown())
+assert(#FP.db.errors==0)
+''',
+    "hub_quest_selection_search_and_defer_without_slash": HUB + r'''
+addQuest(9001); addQuest(9002)
+page("navigation")
+field("questSearch","9002"); H.controls.questSearch:GetScript("OnTextChanged")()
+assert(#H.controls.quests.items==1)
+selectRow("quests"); click("goQuest")
+assert(active().source.questID==9002 and FP.Planner.pinned)
+field("skipMinutes",5); click("skipQuest")
+assert(FP.Planner.deferred[9002] and active().source.questID==9001)
+click("restoreQuests"); assert(not FP.Planner.deferred[9002])
+click("pause"); assert(not FP.settings.autoNext and active())
+click("resume"); assert(FP.settings.autoNext and FP.settings.arrow.shown)
+assert(#FP.db.errors==0)
+''',
+    "hub_waypoint_validation_pagination_and_planned_removal": HUB + r'''
+page("waypoints")
+field("waypointX",101); field("waypointY",60); click("addWaypoint")
+assert(#FP.Waypoints.list==0 and H.resultText:GetText():find("0 to 100",1,true))
+field("waypointX",45.4); field("waypointY",70.4); field("waypointName","Cave entrance")
+click("addWaypoint")
+assert(math.abs(active().x-.454)<1e-9 and math.abs(active().y-.704)<1e-9 and active().title=="Cave entrance")
+for i=1,12 do FP.Waypoints:Add(1413,.1+i/100,.3,"Place "..i) end
+H:Refresh(); local list=H.controls.waypointList
+list.next:GetScript("OnClick")(); assert(list.page==2 and list.rows[1].item)
+selectRow("waypointList"); local id=H:Selected(list).wp.id
+click("activateWaypoint"); assert(active().id==id)
+click("removeWaypoint"); assert(not FP.Waypoints:Get(id))
+FP.Waypoints:Clear(); addQuest(9001); FP.Planner.paused=nil; FP.Planner:Auto("test")
+H:Refresh(); selectRow("waypointList"); click("removeWaypoint")
+M.RunTimers(9); assert(not active() and FP.Planner.paused, "removed planned waypoint returned")
+assert(#FP.db.errors==0)
+''',
+    "hub_profession_recipe_picker_validates_batch_and_keeps_drafts": HUB + r'''
+M.FireEvent("TRADE_SKILL_SHOW"); M.RunTimers(3)
+C_Item.GetItemCount=function() return 5 end
+page("professions")
+local list=H.controls.recipeList
+for _,item in ipairs(list.items) do if item.key==3839 then list.selected=item.key end end
+H:Refresh(); assert(H:Selected(list))
+field("craftCount",3); click("planCraft")
+assert(FP.Prof.plan.id==3839 and FP.Prof.plan.target==3)
+click("craftMaterials"); assert(H.resultText:GetText():find("7×",1,true))
+field("craftCount","unfinished"); FP:Fire("RECIPES_SCANNED"); M.RunTimers(.3)
+assert(H.controls.craftCount:GetText()=="unfinished", "refresh erased draft input")
+click("planCraft"); assert(FP.Prof.plan.target==3 and H.resultText:GetText():find("Enter craft count",1,true))
+click("clearCraft"); assert(not FP.Prof.plan and #FP.db.errors==0)
+''',
+    "hub_party_copy_import_and_explicit_send": HUB + r'''
+local sent=0
+FP.Party.Send=function() sent=sent+1; return true end
+addQuest(9001)
+page("party"); click("partyCopy")
+assert(sent==0 and H.controls.partyCode:GetText():find("FP1;",1,true))
+field("partyCode","FP1;Friend;HUNTER;20;9001c")
+click("partyImport"); assert(FP.cdb.party.name=="Friend" and sent==0)
+click("duo"); assert(H.resultText:GetText():find("Friend",1,true))
+click("partySync"); assert(sent==1)
+field("partyCode","bad snapshot"); click("partyImport")
+assert(FP.cdb.party.name=="Friend" and H.resultText:GetText():find("doesn't look",1,true))
+assert(#FP.db.errors==0)
+''',
+    "hub_display_town_pvp_controls_reuse_existing_guards": HUB + r'''
+cmd("way 60 60 Preserve")
+local wp=active()
+page("display")
+check("displayworldMapPins",false); check("displayminimapPin",false); check("arrowshown",false)
+assert(not FP.Arrow.frame:IsShown() and not FP.Pins.mini:IsShown() and #WorldMapFrame._pins==0)
+field("arrowScale",150); click("arrowApplyScale"); assert(FP.settings.arrow.scale==1.5)
+field("arrowScale",500); click("arrowApplyScale"); assert(FP.settings.arrow.scale==1.5)
+check("barFPS",false); assert(not FP.settings.bar.fps)
+page("town")
+check("vendorenabled",false); check("vendortooltipPrice",false); check("vendorrewardValues",false)
+field("durabilityThreshold",35); field("ammoThreshold",300); click("applyReminders")
+assert(FP.settings.reminders.durability==35 and FP.settings.reminders.ammo==300)
+field("durabilityThreshold",91); field("ammoThreshold",400); click("applyReminders")
+assert(FP.settings.reminders.durability==35 and FP.settings.reminders.ammo==300, "invalid form partially applied")
+page("pvp"); check("pvpEnabled",false); assert(not FP.settings.pvp.enabled)
+field("flagIndex",2); click("trackFlag"); assert(FP.settings.pvp.flagIndex==2)
+click("untrackFlag"); assert(not FP.settings.pvp.trackFlag)
+assert(active()==wp and #FP.db.errors==0)
+''',
+    "hub_rare_watch_forms_keep_secure_scan_on_existing_hud": HUB + r'''
+page("rare")
+local original=#FP.RareWatch:Watch().rares
+field("rareName","Test Rare"); field("rareID",1234); click("rareAdd")
+assert(#FP.RareWatch:Watch().rares==original+1)
+assert(FP.RareWatch:MacroText():find("/targetexact Test Rare",1,true))
+local list=H.controls.rareList; list.selected=original+1; H:Refresh(); click("rareRemove")
+assert(#FP.RareWatch:Watch().rares==original)
+local scans=FP.RareWatch:Current() and FP.RareWatch:Current().scans
+click("rareScan")
+assert(FP.settings.rare.manual=="show" and FP.settings.rare.enabled)
+assert((FP.RareWatch:Current() and FP.RareWatch:Current().scans)==scans, "opening HUD triggered a scan")
+M.combatLockdown=true
+field("rareName","Combat Rare"); click("rareAdd")
+assert(FP.RareWatch.macroPending, "secure macro update was not deferred")
+assert(#FP.db.errors==0)
+''',
+    "hub_destructive_confirmation_cancel_close_and_exact_action": HUB + r'''
+cmd("way 60 60 Preserve")
+local wp=active()
+page("navigation"); click("clearRoute")
+assert(H.pending and active()==wp)
+H.confirmNo:GetScript("OnClick")(); assert(not H.pending and active()==wp)
+click("clearRoute"); page("tools"); assert(not H.pending and active()==wp)
+click("resetAccount"); assert(H.pending and ForeverPathDB)
+H:Toggle(); assert(not H.pending and ForeverPathDB, "closing left a destructive action armed")
+page("navigation"); click("clearRoute"); H.confirmYes:GetScript("OnClick")()
+assert(not active() and FP.Planner.paused and not H.pending)
+local account=ForeverPathDB
+page("tools"); click("resetCharacter")
+assert(ForeverPathCharDB and ForeverPathDB==account)
+H.confirmYes:GetScript("OnClick")()
+assert(ForeverPathCharDB==nil and ForeverPathDB==account)
+assert(#FP.db.errors==0)
+''',
+    "hub_output_capture_is_bounded_and_restored_after_failure": HUB + r'''
+page("tools")
+local before=#M.Chat()
+click("statusReport")
+assert(#M.Chat()==before and H.resultText:GetText():find("recording:",1,true))
+FP:Print("ordinary chat still works"); assert(#M.Chat()==before+1)
+local ok,lines=FP:CaptureOutput(function()
+    for i=1,250 do FP:Print("line "..i) end
+    error("deliberate test failure")
+end)
+assert(not ok and #lines==200 and not FP.outputSink)
+FP:Print("restored after failure"); assert(#M.Chat()==before+2)
+local ok,lines=FP:CaptureOutput(function()
+    FP:Print("outer")
+    local inner,output=FP:CaptureOutput(function() FP:Print("inner") end)
+    assert(inner and output[1]=="inner")
+    FP:Print("outer again")
+end)
+assert(ok and #lines==2 and lines[2]=="outer again" and not FP.outputSink)
+''',
+    "hub_refresh_is_coalesced_and_closed_window_does_no_work": HUB + r'''
+page("waypoints"); field("waypointName","Draft destination")
+local count=0; local original=H.Refresh
+H.Refresh=function(self) count=count+1; return original(self) end
+for i=1,20 do FP:Fire("WAYPOINTS_CHANGED") end
+M.RunTimers(.3)
+assert(count==1 and H.controls.waypointName:GetText()=="Draft destination")
+H:Toggle(); count=0
+for i=1,20 do FP:Fire("WAYPOINTS_CHANGED") end
+M.RunTimers(.3); assert(count==0)
+assert(#FP.db.errors==0)
+''',
+    "hub_fit_saved_position_and_diagnostic_actions": HUB + r'''
+UIParent:SetSize(1024,600)
+page("tools")
+assert(H.frame:GetScale()<1 and H.frame:GetScale()*690<=576)
+H.frame:SetPoint("TOPLEFT",UIParent,"TOPLEFT",30,-40)
+H.frame:GetScript("OnDragStop")(H.frame)
+assert(FP.settings.hub.point=="TOPLEFT" and FP.settings.hub.x==30 and FP.settings.hub.y==-40)
+for _,id in ipairs({"statusReport","apiCheck","selfTest","probeNow","probeDump","exportInfo","errorReport"}) do click(id) end
+assert(not FP.outputSink and #FP.db.errors==0)
+UIParent:SetSize(1920,1080); M.FireEvent("UI_SCALE_CHANGED")
+assert(H.frame:GetScale()==1)
+''',
+    "hub_supplies_town_and_rare_information_actions": HUB + r'''
+page("town")
+field("prepwater",60); click("applyPrepwater"); assert(FP.cdb.prep.water==60)
+field("prepbandages",15); click("applyPrepbandages"); assert(FP.cdb.prep.bandages==15)
+field("prepreagents",8); click("applyPrepreagents"); assert(FP.cdb.prep.reagents==8)
+click("prepShow"); assert(FP.settings.pvp.manual=="show" and FP.cdb.prep.mode=="show")
+click("prepAuto"); assert(FP.cdb.prep.mode=="auto")
+click("prepHide"); assert(FP.cdb.prep.mode=="hide")
+for _,id in ipairs({"prepReport","junkValue","trainerLookup"}) do click(id) end
+page("rare"); click("rareStatus"); click("rareRuns")
+page("display"); click("audioStatus"); click("audioTest")
+assert(#FP.db.errors==0)
+''',
     "display_settings_normal_panel_entry_preserves_preferences_and_route": r'''
 cmd("way 60 60 Keep my route")
 local wp=active()
@@ -54,6 +265,8 @@ FP.settings.arrow.scale=1.7
 local before=snapshot(FP.settings)
 FP.Panel:Toggle(false)
 ForeverPath_OnAddonCompartmentClick()
+assert(FP.Hub.frame:IsShown())
+FP.Panel:Toggle(true)
 FP.Panel.settingsButton:GetScript("OnClick")()
 local P=FP.Panel
 assert(P.frame:IsShown() and P.displayFrame:IsShown())

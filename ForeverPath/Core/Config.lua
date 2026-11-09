@@ -30,6 +30,7 @@ FP.defaults = {
 		worldMapPins = true,
 		arrow = { shown = true, locked = false, scale = 1.0, flip = false, x = 0, y = 180, point = "CENTER" },
 		panel = { shown = true, locked = false, scale = 1.0, x = -20, y = -160, point = "TOPRIGHT", maxSteps = 10 },
+		hub = { point = "CENTER", x = 0, y = 0 },
 		hunterAudio = { enabled = true, cooldown = 30 },   -- Hunter combat audio feedback (Hunters only)
 		probe = { enabled = true },                        -- beta diagnostic: records which values are secret and when
 		pvp = { enabled = true, share = true, trackFlag = false, locked = false, scale = 1.0, x = 30, y = 120, point = "LEFT" },
@@ -106,5 +107,5 @@ FP:RegisterEvent("PLAYER_LOGIN", function()
 	if not FP.dbReady then return end
 	FP:EnableModules()
 	FP:Fire("ENABLED")
-	FP:Print("v" .. FP.version .. " loaded on build " .. tostring(FP.clientBuild) .. ". " .. FP.GREY .. "/fp for the panel, /fp help for commands.|r")
+	FP:Print("v" .. FP.version .. " loaded on build " .. tostring(FP.clientBuild) .. ". " .. FP.GREY .. "Open ForeverPath from the addon compartment or /fp.|r")
 end)

@@ -7,7 +7,8 @@ local function p(...) FP:Print(...) end
 
 local function help()
 	p("commands:")
-	p("  /fp               toggle the next-steps panel")
+	p("  /fp               open ForeverPath's control window (also: addon compartment)")
+	p("  /fp panel         toggle the compact next-steps panel")
 	p("  /fp next          arrow to the planner's best next step")
 	p("  /fp guide         show/reset arrow and panel, resume automatic guidance")
 	p("  /fp settings      map pins and arrow display controls")
@@ -196,7 +197,8 @@ function C:Handle(msg)
 	msg = U.Trim(msg or "")
 	local cmd, rest = msg:match("^(%S+)%s*(.*)$")
 	cmd = cmd and cmd:lower() or ""
-	if cmd == "" or cmd == "panel" and rest == "" then FP.Panel:Toggle()
+	if cmd == "" or cmd == "home" then FP.Hub:Toggle()
+	elseif cmd == "panel" and rest == "" then FP.Panel:Toggle()
 	elseif cmd == "help" or cmd == "?" then help()
 	elseif cmd == "dungeon" or cmd == "dungeons" then FP.DungeonPanel:Open(rest)
 	elseif cmd == "settings" then FP.Panel:OpenSettings()
@@ -303,6 +305,7 @@ function C:Handle(msg)
 	else
 		p("unknown command '" .. cmd .. "'. /fp help")
 	end
+	FP.Hub:Refresh()
 end
 
 SLASH_FOREVERPATH1 = "/fp"
@@ -318,5 +321,5 @@ SlashCmdList["FOREVERPATHWAY"] = function(msg)
 end
 
 function ForeverPath_OnAddonCompartmentClick()
-	FP.Panel:Toggle()
+	FP.Hub:Toggle()
 end

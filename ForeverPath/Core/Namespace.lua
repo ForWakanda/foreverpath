@@ -23,9 +23,22 @@ local function join(...)
 end
 
 function FP:Print(...)
+	if self.outputSink then self.outputSink(join(...)); return end
 	local frame = DEFAULT_CHAT_FRAME or ChatFrame1
 	local msg = FP.COLOR .. "ForeverPath|r: " .. join(...)
 	if frame and frame.AddMessage then frame:AddMessage(msg) else print(msg) end
+end
+
+-- Synchronous UI actions reuse existing guarded commands without chat spam.
+-- Always restore the previous destination, including when an action throws.
+function FP:CaptureOutput(fn)
+	local previous, lines = self.outputSink, {}
+	self.outputSink = function(line)
+		if #lines < 200 then lines[#lines + 1] = line end
+	end
+	local ok, err = pcall(fn)
+	self.outputSink = previous
+	return ok, lines, err
 end
 
 function FP:Debug(...)
