@@ -42,6 +42,107 @@ end
 '''
 
 CASES = {
+    "display_settings_normal_panel_entry_preserves_preferences_and_route": r'''
+cmd("way 60 60 Keep my route")
+local wp=active()
+FP.settings.worldMapPins=false
+FP.settings.minimapPin=false
+FP.settings.arrow.shown=false
+FP.settings.arrow.locked=true
+FP.settings.arrow.flip=true
+FP.settings.arrow.scale=1.7
+local before=snapshot(FP.settings)
+FP.Panel:Toggle(false)
+ForeverPath_OnAddonCompartmentClick()
+FP.Panel.settingsButton:GetScript("OnClick")()
+local P=FP.Panel
+assert(P.frame:IsShown() and P.displayFrame:IsShown())
+assert(snapshot(FP.settings)==before, "opening settings changed preferences")
+for _,b in ipairs(P.displayChecks) do
+    local settings=b.arrow and FP.settings.arrow or FP.settings
+    assert(b:GetChecked()==settings[b.key])
+end
+assert(P.arrowSize:GetText()=="Arrow size: 170%")
+assert(active()==wp and #FP.Waypoints.list==1)
+local window=P.displayFrame
+P:OpenSettings(); assert(P.displayFrame==window)
+local count=0
+for _,name in ipairs(UISpecialFrames) do if name=="ForeverPathDisplaySettings" then count=count+1 end end
+assert(count==1, "escape registration duplicated on reopen")
+assert(FP.settings==ForeverPathDB.settings and #FP.db.errors==0)
+''',
+    "display_settings_pin_toggles_apply_immediately_and_survive_ticks": r'''
+cmd("way 60 60 Keep my route")
+local P=FP.Panel
+P:OpenSettings()
+local wp=active()
+local function click(i,on)
+    local b=P.displayChecks[i]; b:SetChecked(on); b:GetScript("OnClick")(b)
+end
+click(1,false); click(2,false); click(3,false)
+assert(#WorldMapFrame._pins==0 and not FP.Pins.mini:IsShown() and not FP.Arrow.frame:IsShown())
+M.RunTimers(12)
+assert(#WorldMapFrame._pins==0 and not FP.Pins.mini:IsShown() and not FP.Arrow.frame:IsShown())
+assert(active()==wp and #FP.Waypoints.list==1 and not FP.Planner.paused)
+WorldMapFrame:Hide()
+click(1,true)
+WorldMapFrame:Show(); FP.Pins.provider:RefreshAllData()
+assert(#WorldMapFrame._pins==1)
+click(2,true); click(3,true)
+assert(FP.Pins.mini:IsShown() and FP.Arrow.frame:IsShown())
+assert(active()==wp and FP.db.settings.worldMapPins and FP.db.settings.minimapPin)
+FP.Pos.cache.valid=false
+FP.Pins:UpdateMinimap(FP.Pos.cache)
+assert(not FP.Pins.mini:IsShown() and #FP.db.errors==0)
+''',
+    "display_settings_arrow_lock_flip_size_and_narrow_reset": r'''
+cmd("way 60 60 Manual")
+local P,A=FP.Panel,FP.Arrow
+P:OpenSettings()
+local original=A.tex._rotation
+local lock,flip=P.displayChecks[4],P.displayChecks[5]
+lock:SetChecked(true); lock:GetScript("OnClick")(lock)
+A.frame:GetScript("OnDragStart")(A.frame)
+assert(not A.frame._moving, "locked arrow can still drag")
+lock:SetChecked(false); lock:GetScript("OnClick")(lock)
+A.frame:GetScript("OnDragStart")(A.frame)
+assert(A.frame._moving)
+A.frame:SetPoint("CENTER",UIParent,"CENTER",75,125)
+A.frame:GetScript("OnDragStop")(A.frame)
+assert(FP.settings.arrow.x==75 and FP.settings.arrow.y==125)
+flip:SetChecked(true); flip:GetScript("OnClick")(flip)
+assert(math.abs(A.tex._rotation+original)<0.0001)
+for i=1,40 do P.larger:GetScript("OnClick")() end
+assert(FP.settings.arrow.scale==3 and A.frame:GetScale()==3 and not P.larger:IsEnabled())
+for i=1,40 do P.smaller:GetScript("OnClick")() end
+assert(FP.settings.arrow.scale==0.4 and A.frame:GetScale()==0.4 and not P.smaller:IsEnabled())
+FP.settings.arrow.shown=false
+FP.settings.worldMapPins=false
+local wp=active()
+P.resetArrow:GetScript("OnClick")()
+assert(FP.settings.arrow.x==0 and FP.settings.arrow.y==180 and FP.settings.arrow.scale==1)
+assert(FP.settings.arrow.flip and not FP.settings.arrow.shown and not FP.settings.worldMapPins)
+assert(active()==wp and not A.frame:IsShown() and P.smaller:IsEnabled() and P.larger:IsEnabled())
+assert(P.arrowSize:GetText()=="Arrow size: 100%" and #FP.db.errors==0)
+''',
+    "display_settings_sync_existing_commands_and_saved_false_values": r'''
+cmd("settings")
+local P=FP.Panel
+assert(P.displayFrame:IsShown())
+cmd("arrow hide"); cmd("arrow lock"); cmd("arrow flip"); cmd("arrow scale 1.6")
+assert(not P.displayChecks[3]:GetChecked() and P.displayChecks[4]:GetChecked() and P.displayChecks[5]:GetChecked())
+assert(P.arrowSize:GetText()=="Arrow size: 160%")
+cmd("guide")
+assert(P.displayChecks[3]:GetChecked() and P.arrowSize:GetText()=="Arrow size: 100%")
+P.displayChecks[1]:SetChecked(false); P.displayChecks[1]:GetScript("OnClick")(P.displayChecks[1])
+P.displayChecks[2]:SetChecked(false); P.displayChecks[2]:GetScript("OnClick")(P.displayChecks[2])
+-- Startup fills missing fields, preserving existing false values and arrow choices.
+local saved=FP.Util.Copy(ForeverPathDB)
+local restored=FP.deepDefaults(saved,FP.defaults)
+assert(not restored.settings.worldMapPins and not restored.settings.minimapPin)
+assert(restored.settings.arrow.locked and restored.settings.arrow.flip)
+assert(#FP.db.errors==0)
+''',
     "dungeon_catalog_integrity_and_all_panels": r"""
 local D,P=FP.Dungeons,FP.DungeonPanel
 local before=snapshot(FP.Waypoints.list)
