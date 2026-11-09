@@ -4,11 +4,11 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.8.0)
+## What it does (v0.8.1)
 
 - **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
-- **Map pins**: your waypoints on the world map (click = activate, right-click = remove) and a pin on the minimap edge.
+- **Map pins**: your waypoints on the world map and a pin on the minimap edge. World-map pins sit below WoW's quest markers. Automatic route pins pass mouse input through so quest-area hover and map clicks work normally; manual pins keep click-to-activate and right-click-to-remove controls.
 - **Auto-next**: automatically rechecks the route every three seconds, including with the panel hidden. Arriving waits while you work nearby; completing the step or moving more than about 100 yards away resumes navigation. Nearby alternatives need a meaningful improvement before the arrow switches. Clicking a quest row keeps that selection until completion/arrival; manual waypoints remain yours. `/fp next` skips the arrived step, `/fp auto off` disables automatic selection, and `/fp auto on` resumes after clearing the route. Quest navigation pauses in battlegrounds.
 - **Recorder**: while you play it writes a Forever dataset into SavedVariables — quest givers/enders with positions, offer/turn-in XP per level, objective progress with candidate mob/loot associations, approximate observer sightings, source-attributed observed loot including quest items, vendors, trainers (with skill requirements), flight nodes and edge costs, inn binds, deaths, zone level ranges, XP samples, profession recipes with reagents and difficulty per skill level.
 - **Professions**: open your profession window and the next-steps panel shows three skill-up suggestions, bag-material craft counts and missing materials. `/fp prof` gives the longer list. Handles Forever base professions, delayed recipe loading, bag changes and skill-cap reminders. These are material/skill suggestions, not market-price or guaranteed skill-point estimates. Reopen the profession after changing skill to refresh old suggestions.

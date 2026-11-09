@@ -237,3 +237,14 @@ Unverified in game (mock-tested): strip anchoring under the live `MerchantFrame`
 
 New settings: `vendor { enabled, tooltipPrice, rewardValues }`, `bar { shown, locked, scale, x, y, point, fps }`, `reminders { enabled, buffs, durability, ammo }`, `trainer { enabled }`. Trainer records gain `class` (the visiting class) so level-up notes read only this class's trainers. Regressions: 7 new cases (117 total) + a play-through smoke block.
 
+
+
+## 17. World-map quest hover — v0.8.1 (2026-11-09, Codex)
+
+User report: the ForeverPath pin obscures WoW's quest marker and prevents the quest-area hover outline. Right-click removal lasts only a few seconds. Source confirms two interacting behaviors: our template enables clicks/motion and uses `PIN_FRAME_LEVEL_TOPMOST`; the route planner recreates a removed planned waypoint on its three-second tick.
+
+Repair: all ForeverPath world-map pins use `PIN_FRAME_LEVEL_DEFAULT`, below native quest/offer markers. Planner-created pins (`source.type == "plan"`, including panel-selected steps) are passive: `EnableMouse(false)` disables clicks and hover, and their callbacks cannot remove the route or replace a native tooltip. Manual pins retain activation/removal and tooltip controls. Mouse state is set on every `OnAcquired` so pooled frames can move between manual and planned use. `OnMouseLeave` hides only a tooltip owned by that pin. Arrow, minimap, and automatic route selection remain unchanged.
+
+Verified against Blizzard's Forever UI source mirror `Gethe/wow-ui-source` revision `9dc84f0d3bbae1768ac3405b3716000bd93eda06`, `version.txt` 1.60.1.70862: `Blizzard_MapCanvas/Blizzard_MapCanvas.lua` wires click/motion scripts from the XML template before `OnLoad`, calls `OnAcquired` on each reuse, then refreshes right-button passthrough; `MapCanvas_DataProviderBase.lua` supplies `UseFrameLevelType`; `MapCanvas_PinFrameLevelsManager.lua` and `Blizzard_WorldMap/Blizzard_WorldMap.lua` place native quest/offer layers above DEFAULT. Leave the template mouse-enabled so manual pins retain their initial script bindings; disable input per acquisition.
+
+Four regressions cover repeated planner ticks, passive callbacks/native tooltip ownership, manual activation/removal, and manual/plan/manual reuse. Pre-fix tests reproduced the hover capture and topmost-layer defects. These are source/mock checks, not an in-game hit-test or quest-area visual verification. One `/reload` loads the Lua update; open M and hover a native quest marker through several route ticks for the client check.
