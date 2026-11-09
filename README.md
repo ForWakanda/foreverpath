@@ -1,12 +1,13 @@
 # ForeverPath
 
-Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (release build 1.60.1.70790, interface 16001).
+Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (release build 1.60.1.70862, interface 16001).
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.8.2)
+## What it does (v0.9.0)
 
-- **Next steps panel** (`/fp`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
+- **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
+- **Compact next-steps panel** (`/fp panel`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
 - **Map pins**: your waypoints on the world map and a pin on the minimap edge. World-map pins sit below WoW's quest markers. Automatic route pins pass mouse input through so quest-area hover and map clicks work normally; manual pins keep click-to-activate and right-click-to-remove controls.
 - **Display settings**: click **Settings** beside **Dungeons** in the next-steps panel. Toggle world-map/minimap pins and arrow visibility, lock the arrow's position, reverse its rotation if needed, adjust its size (40–300%), or reset its position and size. Changes apply immediately and save for all characters; hiding a display keeps the route active. `/fp settings` is an optional shortcut.
@@ -21,6 +22,23 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Reminders** (`/fp remind`, out of combat only, repeated in chat at most every 10 minutes): low or broken durability, low ammo, bags nearly full, a self-buff you know but do not have (Shaman Lightning Shield, Mage Arcane Intellect and Frost/Ice Armor, Hunter Aspect), a Shaman weapon with no imbue. Buff reads go through Blizzard's secret predicate; in combat the reminder row hides instead of guessing.
 - **Trainer notes** (`/fp trainer`): at a class or profession trainer, what you can learn now, the total cost against your gold and the next level that unlocks something. On a level-up, which recorded trainer teaches something at the new level and what it costs. `/fp trainer 28` asks about a level.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
+
+## Using the control window (v0.9.0)
+
+Open ForeverPath from the addon compartment, or click **Open tools** on the compact quest panel. Choose a section on the left. The compact overlay continues to guide you while the main window is closed.
+
+- **Navigation:** search/select a quest destination, resume or pause automatic selection, defer a crowded quest, or find pickups. Pause keeps the current destination; Clear route removes waypoints and pauses guidance.
+- **Waypoints:** select destinations by name, activate/remove them, save your current position, or enter percentage coordinates with an optional map ID.
+- **Professions:** open your profession once, select a learned recipe by name, enter a batch size, and view needed materials. This does not craft items.
+- **Party:** compare quest progress, explicitly send your snapshot, or copy/paste a snapshot without typing a command.
+- **Supplies & town:** set stocking targets, manage vendor values and reminders, and look up recorded trainer notes. Selling/repairing stays on the merchant window with its existing click buttons.
+- **PvP / Rare watch:** HUD controls, flag-slot tracking, reports, watched-instance/rare editing and run history. Scan remains a separate click on the existing secure rare HUD; opening tools never targets anything.
+- **Display:** map pins, arrow, compact panel, status line, and Hunter audio controls. The main window saves its dragged position and scales down to fit smaller screens.
+- **Diagnostics:** status, API checks, self-test, recording and errors. Data resets have a separate confirmation that is canceled when you leave the section or close the window.
+
+Long sections and results scroll separately. Lists are paginated, typed drafts survive refreshes, and browsing does not change your preferences or route. The Dungeon quests button opens the existing checklist; **All tools** returns to the control window. The smaller display-settings dialog remains available from the compact panel.
+
+Validated with source checks and the mock harness; actual client layout, scrolling and mouse behavior still require in-game verification. Run `/reload` to load the update.
 
 ## Vendor, status line, reminders, trainer notes (v0.8.0)
 
@@ -77,7 +95,7 @@ In-game verification pending (mock-tested only): that `UnitClassification` reall
 2. Open your WoW folder, usually `D:\World of Warcraft\_forever_\Interface\AddOns\`. If `AddOns` does not exist yet, create it.
 3. Extract the zip there. You should end up with `...\AddOns\ForeverPath\ForeverPath.toc` (a `ForeverPath` folder directly inside `AddOns`, not a folder inside a folder).
 4. Start the game. If it was already running, close it completely and start it again (the client only picks up new addon files at startup). On the character screen, click **AddOns** and make sure ForeverPath is ticked.
-5. In game, type `/fp` for the panel and `/fp help` for the commands.
+5. In game, open ForeverPath from the addon compartment, or type `/fp` for the control window. `/fp panel` toggles the compact quest overlay; `/fp help` lists optional shortcuts.
 
 **Updating:** delete the old `ForeverPath` folder, extract the new zip, restart the client. Your settings and recorded data live in `WTF\` and survive updates.
 

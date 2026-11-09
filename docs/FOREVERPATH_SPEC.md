@@ -259,3 +259,30 @@ Arrow size changes in 10-percentage-point steps, clamped to the existing 40–30
 UI primitives checked against the existing Forever 70862 source revision `9dc84f0d3bbae1768ac3405b3716000bd93eda06`: `Blizzard_SharedXML/Shared/Button/CheckButtonTemplates.xml` defines UICheckButtonTemplate; `SimpleCheckboxAPIDocumentation.lua` defines GetChecked/SetChecked boolean state. No new gameplay API reads bypass the adapter.
 
 Four additional regressions cover normal addon-compartment/panel access without commands, preserving preferences on open, immediate visibility and recurring-tick behavior, manual route retention, lock/drag/flip/size/reset, existing command synchronization, and startup default filling retaining saved false values. Mock UI tests do not establish real client layout or input behavior. One `/reload` loads this update; normal in-game Settings use is the remaining client check.
+
+
+## 19. Unified control window — v0.9.0 (2026-11-09, Codex)
+
+The addon compartment, compact panel's Open tools button, and `/fp` now open `UI/Hub.lua`, a draggable sidebar window. `/fp panel` retains the compact next-steps overlay; all other slash handlers remain available. The old small Settings dialog stays available, while the Display page exposes the same preferences in the main window. The dungeon checklist remains a dedicated existing window with All tools navigation back.
+
+| Section | Click-driven coverage |
+| --- | --- |
+| Navigation | Resume/pause selection, next suggestion, pickup search, restore guidance layout, quest search/list/select, clear route, timed defer/restore |
+| Waypoints | Named paginated list, activate/remove/next, current-location save, validated percentage coordinates and optional map ID |
+| Professions | Learned recipe-name picker, validated batch count, materials, clear batch, skill-up report |
+| Party | Quest comparison, explicit snapshot send, editable copy/import field |
+| Supplies & town | Class prep enable/mode/stock targets, vendor options/value report, reminder enable/buff/thresholds, trainer notes/level lookup |
+| PvP | Enable/mode/lock/scale/reset, flag slot tracking/off, status/spell reports, confirmed session clear |
+| Rare watch | Enable/mode/lock/scale/reset/share/sound, open existing secure Scan HUD, status/runs, confirmed absent/new-run recording, instance/name/ID watch list editing |
+| Display | Map/minimap toggles; arrow visibility/lock/flip/scale/reset; compact panel/status-line visibility/lock/scale/reset; FPS; Hunter audio enable/sample/status |
+| Diagnostics | Record/debug/probe toggles, status/API checks/self-test/probe samples/export location/error viewer, confirmed rare history/character/account resets |
+
+Merchant sell/repair actions stay on the merchant window so item/value context is visible. The rare Scan action only shows the existing protected HUD, never invokes targeting; inside the watched instance it closes the main window so the Scan button is accessible. Dungeon browsing and route/display changes do not imply client or economic/mechanic proof.
+
+`FP:CaptureOutput(fn)` scopes synchronous Print output for GUI actions, caps at 200 lines and restores the previous destination even on errors/nested capture. Existing guarded module commands supply behavior; output appears in a separate scrollable result pane and ordinary/asynchronous chat remains unchanged. Form validation reports in the results area, never dispatches invalid numbers, and never partially applies a paired reminder form. Destructive callbacks are not invoked until confirmation; cancel, section changes, closing, or another action clears the pending callback. Account reset wording explicitly includes settings, matching the existing command's whole-account-DB behavior.
+
+Pages are built lazily once. Live lists/checkboxes update only for the visible window via coalesced events; refresh never rebuilds edit boxes or overwrites draft text. Recipe names replace the need to know recipe IDs; quest search uses literal text. Seven-row lists are paginated and selection is revalidated against current items before action. Removing a planned waypoint pauses selection so it is not recreated on the next tick. Main-window position is stored in `settings.hub`; UIParent dimensions set a fitting scale (up to 100%), recalculated on open/scale/display events. All actions are player initiated; no new gameplay API reads outside Adapter.
+
+Validation: 12 new GUI/capture regressions plus the 125 existing regressions (137 total), 18 self-tests, mock play-through, Lua/XML/TOC checks. Tests cover every page opening without settings/route/data mutation or sends/sales, frame reuse, normal entry points and dungeon return, quest selection/defer, waypoint validation/pagination/removal, recipe planning and drafts, explicit party send/import, settings, rare secure deferral, cancel/confirm scopes, capture restoration/bounds, coalescing/closed-window inactivity, screen fit/position, and diagnostic actions. An initial decimal-coordinate assertion used exact floating equality and was corrected to a 1e-9 tolerance; no code defect was masked.
+
+Client boundary: latest pre-change saved data still v0.8.0/build 70862; v0.8.1 map hover, v0.8.2 display dialog and v0.9.0 main-window visual behavior require actual client observation. Lua primitives/templates reuse the verified Forever source revision `9dc84f0d3bbae1768ac3405b3716000bd93eda06`. No generated images/media or paid dependencies.

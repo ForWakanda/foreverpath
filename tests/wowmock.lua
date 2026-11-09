@@ -21,13 +21,19 @@ Frame.__index = function(t, k)
 	return nil
 end
 function Frame:Show() self._shown = true end
-function Frame:Hide() self._shown = false end
+function Frame:Hide()
+	local shown=self._shown; self._shown = false
+	if shown and self._scripts.OnHide then self._scripts.OnHide(self) end
+end
 function Frame:IsShown() return self._shown and true or false end
 function Frame:SetSize(w, h) self._w, self._h = w, h end
 function Frame:SetScale(scale) self._scale = scale end
 function Frame:GetScale() return self._scale or 1 end
 function Frame:SetChecked(checked) self._checked = checked and true or false end
 function Frame:GetChecked() return self._checked or false end
+function Frame:SetMaxLetters(n) self._maxLetters = n end
+function Frame:SetFocus() self._focused = true end
+function Frame:ClearFocus() self._focused = false end
 function Frame:StartMoving() self._moving = true end
 function Frame:StopMovingOrSizing() self._moving = false end
 function Frame:SetWidth(w) self._w = w end

@@ -53,6 +53,12 @@ function Panel:OnInit()
 	settings:SetPoint("LEFT", dungeons, "RIGHT", 6, 0)
 	settings:SetText("Settings")
 	settings:SetScript("OnClick", function() self:OpenSettings() end)
+	local tools = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	self.toolsButton = tools
+	tools:SetSize(100, 20)
+	tools:SetPoint("LEFT", settings, "RIGHT", 6, 0)
+	tools:SetText("Open tools")
+	tools:SetScript("OnClick", function() FP.Hub:Open() end)
 
 	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	self.status = status
@@ -224,6 +230,7 @@ function Panel:ApplyDisplaySettings()
 	FP.Pins:OnWaypointsChanged()
 	FP.Pins:UpdateMinimap(FP.Pos:Refresh(true))
 	self:RefreshSettings()
+	FP:Fire("DISPLAY_SETTINGS_CHANGED")
 end
 
 function Panel:ResizeArrow(delta)
