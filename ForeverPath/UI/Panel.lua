@@ -6,6 +6,7 @@ local Panel = FP:NewModule("Panel")
 
 local ROW_HEIGHT = 16
 local WIDTH = 360
+local CONTENT_TOP = 72
 
 local function savePosition(frame)
 	local s = FP.settings.panel
@@ -42,13 +43,20 @@ function Panel:OnInit()
 	local dungeons = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
 	self.dungeons = dungeons
 	dungeons:SetSize(78, 20)
-	dungeons:SetPoint("TOPRIGHT", -28, -5)
+	dungeons:SetPoint("TOPLEFT", 10, -27)
 	dungeons:SetText("Dungeons")
 	dungeons:SetScript("OnClick", function() FP.DungeonPanel:Open() end)
 
+	local settings = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+	self.settingsButton = settings
+	settings:SetSize(78, 20)
+	settings:SetPoint("LEFT", dungeons, "RIGHT", 6, 0)
+	settings:SetText("Settings")
+	settings:SetScript("OnClick", function() self:OpenSettings() end)
+
 	local status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	self.status = status
-	status:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+	status:SetPoint("TOPLEFT", 10, -53)
 	status:SetWidth(WIDTH - 20)
 	status:SetJustifyH("LEFT")
 
@@ -56,7 +64,7 @@ function Panel:OnInit()
 	for i = 1, FP.settings.panel.maxSteps or 10 do
 		local row = CreateFrame("Button", nil, f)
 		row:SetSize(WIDTH - 20, ROW_HEIGHT)
-		row:SetPoint("TOPLEFT", 10, -40 - (i - 1) * ROW_HEIGHT)
+		row:SetPoint("TOPLEFT", 10, -CONTENT_TOP - (i - 1) * ROW_HEIGHT)
 		local hl = row:CreateTexture(nil, "HIGHLIGHT")
 		hl:SetAllPoints()
 		hl:SetColorTexture(1, 1, 1, 0.08)
@@ -186,5 +194,117 @@ function Panel:Refresh(positionOnly)
 	local hearth = bind and ("Hearth: " .. tostring(bind) .. (cd > 0 and (" (" .. U.FormatTime(cd) .. ")") or " (ready)")) or ""
 	local batch = FP.Prof:PlanLines()
 	self.footer:SetText(FP.Prof:Summary() .. "\n" .. table.concat(FP.Prof:Guidance(3), "\n") .. (#batch > 0 and ("\n" .. table.concat(batch, "\n")) or "") .. (hearth ~= "" and ("\n" .. hearth) or ""))
-	self.frame:SetHeight(40 + n * ROW_HEIGHT + self.footer:GetStringHeight() + 20)
+	self.frame:SetHeight(CONTENT_TOP + n * ROW_HEIGHT + self.footer:GetStringHeight() + 20)
+end
+
+-------------------------------------------------------------------------------
+-- Display preferences. Built on first open; writes the existing account settings.
+-------------------------------------------------------------------------------
+function Panel:OpenSettings()
+	if not self.displayFrame then self:CreateSettings() end
+	self:RefreshSettings()
+	self.displayFrame:Show()
+end
+
+function Panel:RefreshSettings()
+	if not self.displayFrame then return end
+	for _, check in ipairs(self.displayChecks) do
+		local settings = check.arrow and FP.settings.arrow or FP.settings
+		check:SetChecked(settings[check.key] == true)
+	end
+	local scale = FP.settings.arrow.scale or 1
+	self.arrowSize:SetText(string.format("Arrow size: %d%%", math.floor(scale * 100 + 0.5)))
+	if scale <= 0.4 then self.smaller:Disable() else self.smaller:Enable() end
+	if scale >= 3 then self.larger:Disable() else self.larger:Enable() end
+end
+
+function Panel:ApplyDisplaySettings()
+	FP.Arrow:ApplySettings()
+	FP.Arrow:Refresh()
+	FP.Pins:OnWaypointsChanged()
+	FP.Pins:UpdateMinimap(FP.Pos:Refresh(true))
+	self:RefreshSettings()
+end
+
+function Panel:ResizeArrow(delta)
+	local scale = FP.settings.arrow.scale
+	if not U.Finite(scale) then scale = 1 end
+	FP.settings.arrow.scale = math.max(0.4, math.min(3, math.floor((scale + delta) * 10 + 0.5) / 10))
+	self:ApplyDisplaySettings()
+end
+
+function Panel:CreateSettings()
+	local f = CreateFrame("Frame", "ForeverPathDisplaySettings", UIParent, "BackdropTemplate")
+	self.displayFrame = f
+	f:SetSize(400, 410)
+	f:SetPoint("CENTER", UIParent, "CENTER", -250, -20)
+	f:SetFrameStrata("DIALOG")
+	f:SetClampedToScreen(true)
+	f:SetMovable(true)
+	f:EnableMouse(true)
+	f:RegisterForDrag("LeftButton")
+	f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
+	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
+	f:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+	f:SetBackdropColor(0.05, 0.05, 0.08, 0.97)
+	f:SetBackdropBorderColor(0.37, 0.84, 1, 0.8)
+	if UISpecialFrames then table.insert(UISpecialFrames, "ForeverPathDisplaySettings") end
+	local function label(text, y, font)
+		local l = f:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
+		l:SetPoint("TOPLEFT", 16, y)
+		l:SetWidth(368)
+		l:SetJustifyH("LEFT")
+		l:SetText(text)
+		return l
+	end
+	local function button(text, x, y, width, fn)
+		local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+		b:SetSize(width, 22)
+		b:SetPoint("TOPLEFT", x, y)
+		b:SetText(text)
+		b:SetScript("OnClick", fn)
+		return b
+	end
+	label("ForeverPath - Display settings", -14, "GameFontNormalLarge")
+	label("Changes apply immediately and save for all characters.", -40)
+	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+	close:SetPoint("TOPRIGHT", 2, 2)
+	close:SetScript("OnClick", function() f:Hide() end)
+	self.displayChecks = {}
+	local function check(text, key, arrow, y)
+		local b = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
+		b:SetSize(24, 24)
+		b:SetPoint("TOPLEFT", 16, y)
+		b:SetHitRectInsets(0, -336, 0, 0) -- the label is clickable too
+		b.key, b.arrow = key, arrow
+		local l = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		l:SetPoint("LEFT", b, "RIGHT", 4, 0)
+		l:SetText(text)
+		b:SetScript("OnClick", function(btn)
+			local settings = btn.arrow and FP.settings.arrow or FP.settings
+			settings[btn.key] = btn:GetChecked() == true
+			self:ApplyDisplaySettings()
+		end)
+		table.insert(self.displayChecks, b)
+	end
+	label("Map pins", -68, "GameFontNormal")
+	check("Show ForeverPath world-map pins", "worldMapPins", false, -86)
+	check("Show ForeverPath minimap pin", "minimapPin", false, -113)
+	label("WoW's quest markers stay visible and interactive.", -143)
+	label("Navigation arrow", -174, "GameFontNormal")
+	check("Show arrow", "shown", true, -192)
+	check("Lock arrow position", "locked", true, -219)
+	check("Reverse arrow rotation", "flip", true, -246)
+	label("Unlock to drag the arrow. Reverse only if it points the wrong way.", -276)
+	self.arrowSize = label("", -312, "GameFontHighlight")
+	self.arrowSize:SetWidth(230)
+	self.smaller = button("-", 284, -306, 42, function() self:ResizeArrow(-0.1) end)
+	self.larger = button("+", 332, -306, 42, function() self:ResizeArrow(0.1) end)
+	self.resetArrow = button("Reset arrow position & size", 16, -345, 238, function()
+		FP.Arrow:ResetPosition()
+		self:ApplyDisplaySettings()
+	end)
+	button("Done", 284, -345, 90, function() f:Hide() end)
+	label("Hiding pins or the arrow keeps your route active.", -382)
+	f:Hide()
 end

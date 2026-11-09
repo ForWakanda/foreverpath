@@ -14,7 +14,7 @@ local Frame = {}
 for _, method in ipairs({ "ClearAllPoints", "SetFrameStrata", "SetFrameLevel", "SetMovable", "SetClampedToScreen",
 	"EnableMouse", "RegisterForDrag", "StartMoving", "StopMovingOrSizing", "SetJustifyH", "SetScale",
 	"SetAllPoints", "SetOwner", "AddLine", "SetBackdropColor", "SetBackdropBorderColor", "SetColorTexture",
-	"SetWordWrap", "SetAutoFocus" }) do Frame[method] = noop end
+	"SetWordWrap", "SetAutoFocus", "SetHitRectInsets" }) do Frame[method] = noop end
 Frame.__index = function(t, k)
 	local v = rawget(Frame, k)
 	if v ~= nil then return v end
@@ -24,6 +24,12 @@ function Frame:Show() self._shown = true end
 function Frame:Hide() self._shown = false end
 function Frame:IsShown() return self._shown and true or false end
 function Frame:SetSize(w, h) self._w, self._h = w, h end
+function Frame:SetScale(scale) self._scale = scale end
+function Frame:GetScale() return self._scale or 1 end
+function Frame:SetChecked(checked) self._checked = checked and true or false end
+function Frame:GetChecked() return self._checked or false end
+function Frame:StartMoving() self._moving = true end
+function Frame:StopMovingOrSizing() self._moving = false end
 function Frame:SetWidth(w) self._w = w end
 function Frame:SetScrollChild(child) self._scrollChild = child end
 function Frame:SetVerticalScroll(y) self._scrollY = y end
@@ -81,6 +87,7 @@ end
 -- Globals
 -------------------------------------------------------------------------------
 UIParent = M.NewFrame("Frame", "UIParent")
+UISpecialFrames = {}
 Minimap = M.NewFrame("Frame", "Minimap"); Minimap._w = 140
 GameTooltip = M.NewFrame("GameTooltip", "GameTooltip")
 GameTooltip.IsOwned = function() return false end
