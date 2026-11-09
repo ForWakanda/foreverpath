@@ -625,6 +625,74 @@ assert(not pin:ShouldMouseButtonBePassthrough("RightButton") and #pin._passthrou
 pin:OnClick("RightButton")
 assert(not active())
 ''',
+    "planned_map_pins_leave_native_quest_mouse_input_alone": r'''
+addQuest(9001)
+FP.Planner:Tick()
+for i=1,4 do
+    M.RunTimers(3)
+    FP.Pins.provider:RefreshAllData()
+    local pin=assert(WorldMapFrame._pins[1])
+    assert(pin.wp.source.type=="plan")
+    assert(not pin:IsMouseMotionEnabled(), "planned pin blocks quest hover")
+    assert(not pin:IsMouseClickEnabled(), "planned pin blocks quest click")
+    assert(pin:ShouldMouseButtonBePassthrough("RightButton"), "planned pin consumes map zoom-out")
+    assert(pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT", "pin still covers native quest markers")
+    local id=active().id
+    pin:OnClick("RightButton")
+    assert(active() and active().id==id, "passive pin removed the route")
+    assert(FP.Arrow.frame:IsShown(), "map fix stopped arrow guidance")
+end
+assert(#FP.db.errors==0)
+''',
+    "map_pin_pool_reuse_restores_manual_mouse_controls": r'''
+cmd("way 60 60 Manual")
+local manual=active()
+FP.Pins.provider:RefreshAllData()
+local pin=assert(WorldMapFrame._pins[1])
+local plan={id=999,mapID=1413,x=0.6,y=0.6,title="Quest",source={type="plan",questID=9001}}
+for i=1,3 do
+    pin:OnAcquired(plan,true)
+    pin:CheckMouseButtonPassthrough("RightButton")
+    assert(not pin:IsMouseMotionEnabled() and not pin:IsMouseClickEnabled())
+    assert(#pin._passthrough==1)
+    pin:OnAcquired(manual,true)
+    pin:CheckMouseButtonPassthrough("RightButton")
+    assert(pin:IsMouseMotionEnabled() and pin:IsMouseClickEnabled(), "pooled manual pin stayed passive")
+    assert(#pin._passthrough==0)
+end
+local other=FP.Waypoints:Add(1413,0.7,0.7,"Other")
+assert(active()==other)
+pin:OnClick("LeftButton")
+assert(active()==manual)
+pin:OnClick("RightButton")
+assert(not FP.Waypoints:Get(manual.id) and active()==other)
+''',
+    "manual_map_pins_stay_below_native_quest_markers": r'''
+cmd("way 60 60 Test")
+FP.Pins.provider:RefreshAllData()
+local pin=assert(WorldMapFrame._pins[1])
+assert(pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT", "manual pin still covers native quest markers")
+assert(pin:IsMouseMotionEnabled() and pin:IsMouseClickEnabled())
+''',
+    "map_pin_callbacks_do_not_replace_or_hide_native_tooltips": r'''
+addQuest(9001); FP.Planner:Tick(); FP.Pins.provider:RefreshAllData()
+local pin=assert(WorldMapFrame._pins[1])
+local owner="native quest"
+local hides=0
+GameTooltip.SetOwner=function(_,frame) owner=frame end
+GameTooltip.IsOwned=function(_,frame) return owner==frame end
+GameTooltip.Hide=function() hides=hides+1 end
+pin:OnMouseEnter(); pin:OnMouseLeave()
+assert(owner=="native quest" and hides==0, "passive callback interfered with quest tooltip")
+pin:OnAcquired({id=123,mapID=1413,x=0.6,y=0.6,title="Manual"},true)
+pin:OnMouseEnter()
+assert(owner==pin)
+pin:OnMouseLeave()
+assert(hides==1, "manual pin did not dismiss its own tooltip")
+owner="native quest"
+pin:OnMouseLeave()
+assert(hides==1, "late leave callback hid another pin's tooltip")
+''',
     "way_shortcut_decimal_coordinates_and_manual_priority": r'''
 assert(SLASH_FOREVERPATHWAY1 == "/way")
 SlashCmdList.FOREVERPATHWAY("45.4 70.4")

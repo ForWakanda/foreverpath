@@ -41,8 +41,9 @@ function Frame:GetScript(name) return self._scripts[name] end
 function Frame:RegisterEvent(ev) self._events[ev] = true end
 function Frame:RegisterUnitEvent(ev, ...) self._events[ev] = true; self._unitEvents = self._unitEvents or {}; self._unitEvents[ev] = { ... } end
 function Frame:UnregisterEvent(ev) self._events[ev] = nil end
-function Frame:IsMouseClickEnabled() return true end
-function Frame:IsMouseMotionEnabled() return true end
+function Frame:EnableMouse(enabled) self._mouseClick, self._mouseMotion = enabled, enabled end
+function Frame:IsMouseClickEnabled() return self._mouseClick ~= false end
+function Frame:IsMouseMotionEnabled() return self._mouseMotion ~= false end
 function Frame:SetTexture(path) self._texture = path; return true end
 function Frame:GetTexture() return self._texture end
 function Frame:SetAtlas(name) self._atlas = name end
@@ -154,7 +155,7 @@ CreateFromMixins = function(...)
 end
 MapCanvasPinMixin = {
 	SetPosition = function(self, x, y) self._px, self._py = x, y end,
-	UseFrameLevelType = noop, SetScalingLimits = noop,
+	UseFrameLevelType = function(self, level) self.pinFrameLevelType = level end, SetScalingLimits = noop,
 	ShouldMouseButtonBePassthrough = function(_, button) return button == "RightButton" end,
 	CheckMouseButtonPassthrough = function(self, button)
 		if self:ShouldMouseButtonBePassthrough(button) then self:SetPassThroughButtons(button)

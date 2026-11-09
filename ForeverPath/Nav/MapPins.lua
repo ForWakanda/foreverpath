@@ -22,16 +22,22 @@ end
 ForeverPathMapPinMixin = {}
 
 function ForeverPathMapPinMixin:ShouldMouseButtonBePassthrough(button)
-	return false -- both left activation and right removal belong to this pin
+	return self.passive == true -- only manual pins own activation/removal
 end
 
 function ForeverPathMapPinMixin:OnLoad()
-	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_TOPMOST") end
+	-- Native quest markers must win both drawing and hit testing on overlap.
+	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_DEFAULT") end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1.0, 1.2) end
 end
 
 function ForeverPathMapPinMixin:OnAcquired(wp, isActive)
 	self.wp = wp
+	-- Planner pins are refreshed/recreated automatically. They are guidance,
+	-- not removable manual waypoints: let native quest hover/clicks through.
+	-- Reset on every acquisition because Blizzard pools these frames.
+	self.passive = wp.source ~= nil and wp.source.type == "plan"
+	self:EnableMouse(not self.passive)
 	if isActive and atlasExists(PIN_ATLAS_ACTIVE) then
 		self.Icon:SetAtlas(PIN_ATLAS_ACTIVE, false)
 	elseif atlasExists(PIN_ATLAS) then
@@ -44,6 +50,7 @@ function ForeverPathMapPinMixin:OnAcquired(wp, isActive)
 end
 
 function ForeverPathMapPinMixin:OnMouseEnter()
+	if self.passive or not self.wp then return end
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	GameTooltip:AddLine("ForeverPath: " .. tostring(self.wp.title), 1, 0.82, 0)
 	if self.wp.desc then GameTooltip:AddLine(tostring(self.wp.desc), 1, 1, 1, true) end
@@ -54,11 +61,12 @@ function ForeverPathMapPinMixin:OnMouseEnter()
 end
 
 function ForeverPathMapPinMixin:OnMouseLeave()
-	GameTooltip:Hide()
+	if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
 end
 
 -- MapCanvasMixin routes OnMouseUp(button, upInside) -> OnClick(button) for us.
 function ForeverPathMapPinMixin:OnClick(button)
+	if self.passive or not self.wp then return end
 	if button == "RightButton" then
 		FP.Waypoints:Remove(self.wp.id)
 	else
