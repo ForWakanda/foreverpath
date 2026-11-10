@@ -11,6 +11,7 @@ BOOT = r'''
 package.path = "./tests/?.lua;" .. package.path
 local M = require("wowmock")
 local FP = {}
+if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,probe={enabled=true}}} end
 for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     line = line:gsub("\r", "")
     if line:match("%.lua$") then

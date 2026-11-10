@@ -171,3 +171,39 @@ local names={};for _,n in ipairs(UISpecialFrames) do names[n]=true end
 assert(names.HearthAndHustleDungeons and names.HearthAndHustleExport)
 ''',
 })
+
+REVIEW_CASES.update({
+"review_fresh_defaults_opt_out_and_observations_are_bounded": r'''
+assert(FP.defaults.settings.record==false and FP.defaults.settings.probe.enabled==false)
+local records={old={last=1},new={last=5},middle={last=3}}
+FP.Util.TrimRecords(records,2);assert(not records.old and records.new and records.middle)
+for i=1,510 do FP.data.pvp.players["Player"..i]={last=i} end
+FP.Recorder:TrimData();assert(FP.Util.Count(FP.data.pvp.players)==500 and not FP.data.pvp.players.Player1)
+''',
+"review_trainer_keeps_multiple_ranks_and_recipe_scans_deduplicate": r'''
+M.SetUnit("npc",{guid="Creature-0-4379-1-13-3066-00003BB8D2",name="Trainer",level=60})
+FP.API.GetTrainerServices=function() return {
+ {name="Lightning Bolt",sub="Rank 1",level=1,cost=10},
+ {name="Lightning Bolt",sub="Rank 2",level=4,cost=100}} end
+FP.Recorder:OnTrainer()
+assert(FP.Util.Count(FP.data.trainers[3066].services)==2)
+assert(#FP.Trainer:NotesForLevel(4)==1 and FP.Trainer:NotesForLevel(4)[1].list[1].name=="Lightning Bolt")
+M.FireEvent("TRADE_SKILL_SHOW");M.RunTimers(3)
+local count=FP.db.meta.counters.recipes
+local calls=0;local original=FP.API.GetRecipeReagents
+FP.API.GetRecipeReagents=function(...) calls=calls+1;return original(...) end
+M.FireEvent("TRADE_SKILL_LIST_UPDATE");M.RunTimers(1)
+assert(FP.db.meta.counters.recipes==count and calls==0)
+M.FireEvent("TRADE_SKILL_CLOSE");M.FireEvent("TRADE_SKILL_SHOW");M.RunTimers(3)
+assert(calls>0 and FP.db.meta.counters.recipes==count)
+''',
+})
+
+REVIEW_CASES["review_probe_off_stops_event_telemetry"] = r'''
+FP.settings.probe.enabled=false
+local before=snapshot(FP.db.probe)
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","cast",123)
+M.FireEvent("UNIT_AURA","target",{})
+M.FireEvent("PLAYER_TARGET_CHANGED");M.RunTimers(1)
+assert(snapshot(FP.db.probe)==before)
+'''

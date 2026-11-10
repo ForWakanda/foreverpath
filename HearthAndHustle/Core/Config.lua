@@ -21,7 +21,7 @@ FP.deepDefaults = deepDefaults
 FP.defaults = {
 	settings = {
 		debug = false,
-		record = true,
+		record = false,
 		recordQuestText = false,     -- long quest descriptions are opt-in
 		autoNext = true,             -- when a waypoint is done, arrow moves to the next planned step
 		nearestFirst = true,
@@ -35,7 +35,7 @@ FP.defaults = {
 		arrow = { shown = true, locked = false, scale = 1.0, flip = false, x = 0, y = 180, point = "CENTER" },
 		panel = { shown = true, locked = false, scale = 1.0, x = -20, y = -160, point = "TOPRIGHT", maxSteps = 10 },
 		hub = { point = "CENTER", x = 0, y = 0 },
-		probe = { enabled = true },                        -- beta diagnostic: records which values are secret and when
+		probe = { enabled = false },                        -- beta diagnostic: records which values are secret and when
 		pvp = { enabled = true, share = true, trackFlag = false, locked = false, scale = 1.0, x = 30, y = 120, point = "LEFT" },
 		rare = { enabled = true, share = true, sound = true, locked = false, scale = 1.0, x = 0, y = -200, point = "TOP" },   -- dungeon rare watch (/hh rare)
 		vendor = { enabled = true, tooltipPrice = true, rewardValues = true },   -- merchant strip, tooltip value, quest reward value (/hh vendor)

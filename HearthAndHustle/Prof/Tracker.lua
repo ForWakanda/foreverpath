@@ -11,6 +11,7 @@ T.DIFF_NAMES, T.DIFF_COLORS = DIFF_NAMES, DIFF_COLORS
 local queue = {}
 local queueRunning = false
 local generation = 0
+local recipeCache={}
 
 function T:OnEnable()
 	self:Snapshot()
@@ -20,12 +21,12 @@ function T:OnEnable()
 	local function skillChanged()
 		FP.Throttle("prof-snap", 1, function() T:Snapshot(); if not T.windowClosed then T:ScanRecipes() end end)
 	end
-	FP:RegisterEvent("TRADE_SKILL_CLOSE", function() generation = generation + 1; queue = {}; self.windowClosed = true end)
+	FP:RegisterEvent("TRADE_SKILL_CLOSE", function() generation = generation + 1; queue = {}; self.windowClosed = true;recipeCache={} end)
 	FP:On("RECORDING_CHANGED", function() generation = generation + 1; queue = {}; self:Snapshot(); self:ScanRecipes() end)
 	FP:RegisterEvent("SKILL_LINES_CHANGED", skillChanged)
 	FP:RegisterEvent("CHAT_MSG_SKILL", skillChanged)
 	FP:RegisterEvent("TRADE_SKILL_SHOW", function() self.windowClosed = false; refresh() end)
-	FP:RegisterEvent("TRADE_SKILL_DATA_SOURCE_CHANGING", function() generation = generation + 1; queue = {}; self.open = nil end)
+	FP:RegisterEvent("TRADE_SKILL_DATA_SOURCE_CHANGING", function() generation = generation + 1; queue = {}; self.open = nil;recipeCache={} end)
 	for _, event in ipairs({ "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_NAME_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED" }) do
 		FP:RegisterEvent(event, refresh)
 	end
@@ -67,7 +68,7 @@ local function saveRecipe(job)
 	local saved = FP.data.recipes[info.professionID] or { r = {} }
 	FP.data.recipes[info.professionID] = saved
 	saved.n, saved.parent, saved.pn = info.professionName, info.parentProfessionID, info.parentProfessionName
-	saved.skill, saved.max, saved.t = info.skillLevel, info.maxSkillLevel, U.Now()
+	saved.skill, saved.max = info.skillLevel, info.maxSkillLevel
 	local old = saved.r[job.id]
 	local entry = U.Copy(r)
 	-- Preserve previous evidence if a later schema lookup is temporarily unavailable.
@@ -75,6 +76,8 @@ local function saveRecipe(job)
 	entry.diff = old and U.Copy(old.diff or {}) or {}
 	if r.cur ~= nil then entry.diff[tostring(info.skillLevel or 0)] = r.cur end
 	entry.learned = nil -- learned state is character-specific, never an account-wide claim
+	if U.Equal(old,entry) then return end
+	saved.t=U.Now()
 	saved.r[job.id] = entry
 	for itemID in pairs(r.reag or {}) do
 		FP.data.items[itemID] = FP.data.items[itemID] or {}
@@ -97,10 +100,12 @@ local function pumpQueue()
 			local job = table.remove(queue, 1)
 			n = n + 1
 			if job.generation == generation and open and open.professionID == job.info.professionID then
+				local metadata=U.Copy(job.rec)
 				local schematic = API.GetRecipeReagents(job.id)
 				if schematic then
 					job.rec.reag, job.rec.out = schematic.reagents, schematic.outputItemID
 					job.rec.qmin, job.rec.qmax = schematic.qtyMin, schematic.qtyMax
+     recipeCache[tostring(job.info.professionID)..":"..job.id]={meta=metadata,skill=job.info.skillLevel,rec=U.Copy(job.rec),epoch=job.epoch}
 				end
 				saveRecipe(job)
 			end
@@ -133,11 +138,13 @@ function T:ScanRecipes(attempt)
 		local ri = API.GetRecipeInfo(id)
 		if ri and ri.recipeID and ri.learned then
 			local r = { n = ri.name, ups = ri.numSkillUps, cat = ri.categoryID, icon = ri.icon, cur = ri.relativeDifficulty, disabled = ri.disabled, canSkillUp = ri.canSkillUp }
-			self.open.recipes[#self.open.recipes + 1] = { id = id, rec = r, diff = ri.relativeDifficulty, name = ri.name }
-			queue[#queue + 1] = { id = id, rec = r, info = info, epoch = FP.recordEpoch, generation = generation }
+			local cached=recipeCache[tostring(info.professionID)..":"..id]
+   if cached and cached.skill==info.skillLevel and cached.epoch==FP.recordEpoch and U.Equal(cached.meta,r) then r=U.Copy(cached.rec)
+   else queue[#queue+1]={id=id,rec=r,info=info,epoch=FP.recordEpoch,generation=generation} end
+   self.open.recipes[#self.open.recipes+1]={id=id,rec=r,diff=ri.relativeDifficulty,name=ri.name}
 		end
 	end
-	if #queue > 0 then pumpQueue() else retry(); FP:Fire("RECIPES_SCANNED") end
+	if #queue>0 then pumpQueue() else if #self.open.recipes==0 then retry() end;FP:Fire("RECIPES_SCANNED") end
 end
 
 -- Craftable count from bags for a recipe record with reagents.

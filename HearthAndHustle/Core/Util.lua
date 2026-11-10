@@ -82,6 +82,26 @@ function U.Copy(t)
 	return o
 end
 
+function U.Equal(a,b)
+ if type(a)~=type(b) then return false end
+ if type(a)~="table" then return a==b end
+ for k,v in pairs(a) do if not U.Equal(v,b[k]) then return false end end
+ for k in pairs(b) do if a[k]==nil then return false end end
+ return true
+end
+
+-- Bound optional observations by retaining the most recently seen records.
+function U.TrimRecords(records,limit)
+ if U.Count(records)<=limit then return end
+ local keys={}
+ for k,v in pairs(records) do
+  local t=type(v)=="table" and (v.last or v.t or v.first) or v
+  keys[#keys+1]={key=k,t=U.Finite(t) and t or 0}
+ end
+ table.sort(keys,function(a,b) if a.t~=b.t then return a.t>b.t end return tostring(a.key)<tostring(b.key) end)
+ for i=limit+1,#keys do records[keys[i].key]=nil end
+end
+
 function U.Finite(n)
 	return type(n) == "number" and n == n and n > -math.huge and n < math.huge
 end
