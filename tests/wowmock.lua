@@ -96,7 +96,8 @@ UIParent = M.NewFrame("Frame", "UIParent")
 UISpecialFrames = {}
 Minimap = M.NewFrame("Frame", "Minimap"); Minimap._w = 140
 GameTooltip = M.NewFrame("GameTooltip", "GameTooltip")
-GameTooltip.IsOwned = function() return false end
+GameTooltip.SetOwner = function(self, owner) self._owner = owner end
+GameTooltip.IsOwned = function(self, owner) return self._owner == owner end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, msg)
 	msg = tostring(msg):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
 	M.chat = M.chat or {}
@@ -184,11 +185,14 @@ WorldMapFrame._providers = {}
 WorldMapFrame._pins = {}
 WorldMapFrame.AddDataProvider = function(self, p) p:OnAdded(self); table.insert(self._providers, p) end
 WorldMapFrame.GetMapID = function() return M.mapID end
-WorldMapFrame.RemoveAllPinsByTemplate = function(self) self._pins = {} end
+WorldMapFrame.RemoveAllPinsByTemplate = function(self, template)
+	for i=#self._pins,1,-1 do if self._pins[i]._pinTemplate == template then table.remove(self._pins,i) end end
+end
 WorldMapFrame.AcquirePin = function(self, template, ...)
 	local pin = M.NewFrame("Frame", nil, self, template)
 	pin.Icon = M.NewFrame("Texture")
-	for k, v in pairs(ForeverPathMapPinMixin) do pin[k] = v end
+	pin._pinTemplate = template
+	for k, v in pairs(template == "ForeverPathObjectivePinTemplate" and ForeverPathObjectivePinMixin or ForeverPathMapPinMixin) do pin[k] = v end
 	pin:OnLoad()
 	pin:OnAcquired(...)
 	pin:CheckMouseButtonPassthrough("RightButton")

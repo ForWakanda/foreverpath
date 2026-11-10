@@ -1896,6 +1896,145 @@ assert(#FP.db.errors==0)
 """,
 })
 
+OBJECTIVES = r'''
+local sourceCalls=0
+local data={
+ Quest={[9101]={objectives={{{11}},{{21}},{{31}}}},[9102]={objectives={nil,nil,{{32}}}}},
+ Npc={ [11]={name="Cave Spider",spawns={[15]={{32,23},{32.1,23.1},{33,24},{-1,-1},{101,20}}}},
+       [12]={name="Hidden Spider",spawns={[15]={{34,25}},[17]={{60,60}}}},
+       [13]={name="Quartermaster",spawns={[15]={{40,40}}}} },
+ Object={[21]={name="Ancient Crate",spawns={[15]={{35,26}}}}},
+ Item={[31]={name="Venom Sac",npcDrops={12},objectDrops={21},vendors={13}},
+       [32]={name="Lost Key",itemDrops={33}},[33]={name="Container",itemDrops={32},npcDrops={11}}}
+}
+LibQuestieDB={flavor={expansion="Forever"},readMode="baked",RequireContract=function(v)return v==1 end,
+ Support={Get=function()return {private={areaIdToUiMapId="return {[15]=1445,[17]=1413}"}}end}}
+for _,kind in ipairs({"Quest","Npc","Object","Item"}) do
+ local k=kind
+ LibQuestieDB[k]={Get=function(id,key) sourceCalls=sourceCalls+1; return data[k][id] and data[k][id][key] end}
+end
+local function objective(text,kind,done) return {text=text,type=kind,finished=done or false,numFulfilled=0,numRequired=3} end
+local q={questID=9101,title="Three objectives",objectives={
+ objective("Venom Sac: 0/3","item"),objective("Cave Spider slain: 0/3","monster"),objective("Ancient Crate: 0/3","object")}}
+M.AddQuest(q)
+local Q=FP.QuestObjectives
+Q:Refresh(true)
+'''
+
+CASES.update({
+"quest_locations_match_live_order_and_item_sources": OBJECTIVES+r'''
+assert(Q.matched==3 and Q.missing==0)
+assert(Q.groups[1].name=="Venom Sac" and Q.groups[2].name=="Cave Spider")
+local roles={};for _,p in ipairs(Q.groups[1].points)do roles[p.role]=true end
+assert(roles.drop and roles.object and roles.vendor)
+assert(#Q.groups[2].points==3, "invalid/sentinel spawns accepted")
+assert(#Q:WorldPins(1445)>0 and #Q:WorldPins(1413)==1)
+q.objectives[1].finished=true;Q:Refresh()
+assert(Q.matched==2 and Q.groups[1].name=="Cave Spider", "completion used database order")
+M.complete[9101]=true;Q:Refresh();assert(#Q.groups==0)
+''',
+"quest_locations_unknown_wording_and_ambiguous_sources_fail_closed": OBJECTIVES+r'''
+q.objectives[1].text="Different item: 0/3"
+q.objectives[2].text="Cave Spider Matriarch slain: 0/3"
+q.objectives[3].type="event";Q:Refresh(true)
+assert(Q.matched==0 and Q.missing==3)
+local refs={{kind="Item",name="Same"},{kind="Item",name="Same"}}
+assert(not Q:Match(objective("Same: 0/3","item"),refs))
+assert(Q:Match(objective("Saco de veneno: 0/3","item"),{{kind="Item",name="Saco de veneno"}}))
+assert(not Q:Match(objective("Saco de veneno: 0/3","monster"),{{kind="Item",name="Saco de veneno"}}))
+''',
+"quest_locations_dependency_missing_wrong_flavor_and_read_errors": OBJECTIVES+r'''
+LibQuestieDB.flavor.expansion="Classic";Q:Refresh();assert(#Q.groups==0 and Q.status:find("Forever database",1,true))
+LibQuestieDB.flavor.expansion="Forever";LibQuestieDB.RequireContract=function() error("provider failure") end
+Q:Refresh(true);assert(#Q.groups==0)
+LibQuestieDB.RequireContract=function()return true end
+LibQuestieDB.Npc.Get=function()error("bad read")end
+Q:Refresh(true);assert(#Q.groups==0 and #FP.db.errors==0)
+LibQuestieDB=nil;Q:Refresh();assert(#Q.groups==0 and Q.status:find("install/enable",1,true))
+addQuest(9001);FP.Planner:Build();assert(#FP.Planner.steps>0, "missing provider broke normal routing")
+''',
+"quest_locations_container_cycle_and_map_validation": OBJECTIVES+r'''
+M.AddQuest({questID=9102,title="Container",objectives={objective("Lost Key: 0/3","item")}})
+Q:Refresh(true);assert(Q.matched==4)
+local refs=FP.API.GetQuestReference(9102);assert(#refs[1].points==3)
+local old=FP.API.GetMapInfo
+FP.API.GetMapInfo=function(id)if id==1445 then return {mapType=4} end return old(id) end
+refs=FP.API.GetQuestReference(9102);assert(#refs[1].points==0, "dungeon frames accepted")
+''',
+"quest_locations_cached_and_refreshed_after_abandon": OBJECTIVES+r'''
+local calls=sourceCalls;Q:Refresh();Q:Refresh();assert(sourceCalls==calls)
+FP.Planner:Build();assert(sourceCalls==calls, "planner repeatedly decodes provider")
+for i=#M.quests,1,-1 do if M.quests[i].questID==9101 then table.remove(M.quests,i)end end
+Q:Refresh();assert(#Q.groups==0 and not Q.references[9101])
+''',
+"quest_locations_world_marker_hover_click_and_native_priority": OBJECTIVES+r'''
+M.mapID=1445;FP.Pos:Refresh(true)
+FP.Pins.provider:RefreshAllData()
+local pin
+for _,p in ipairs(WorldMapFrame._pins)do if p._pinTemplate=="ForeverPathObjectivePinTemplate"then pin=p;break end end
+assert(pin and pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT" and pin:IsMouseClickEnabled())
+pin:OnMouseEnter();assert(GameTooltip:IsOwned(pin))
+pin:OnClick("RightButton");assert(not active())
+pin:OnClick("LeftButton");assert(active().source.type=="quest-location")
+local wp=active();FP.Planner:Auto("test");assert(active()==wp)
+M.complete[9101]=true;Q:Refresh();assert(not active())
+''',
+"quest_locations_nearest_guidance_fallback_preserves_native": OBJECTIVES+r'''
+M.mapID=1445;M.px=.34;M.py=.25;FP.Pos:Refresh(true)
+FP.Planner:Build()
+local m,x,y,how=FP.Planner:ResolveObjective(9101,1)
+assert(m==1445 and how:find("known source:",1,true))
+q.waypoint={1445,.5,.5}
+m,x,y,how=FP.Planner:ResolveObjective(9101,1)
+assert(x==.5 and how=="waypoint", "database overrode native navigation")
+''',
+"quest_locations_world_budget_fairness_and_selection": OBJECTIVES+r'''
+local points={};for i=1,500 do points[i]={mapID=1445,x=(i%100)/100,y=math.floor(i/100)/10,name="Many",entityID=11,role="kill"}end
+Q.groups={{questID=9101,objIndex=1,name="Many",points=points},
+ {questID=9102,objIndex=1,name="One",points={{mapID=1445,x=.995,y=.995,name="One",entityID=12,role="kill"}}}}
+Q.worldCache={};local pins=Q:WorldPins(1445);assert(#pins==350)
+local found=false;for _,p in ipairs(pins)do for _,e in ipairs(p.entries)do if e.group.questID==9102 then found=true end end end
+assert(found,"large objective starved another quest")
+FP.settings.questSelectedOnly=true;C_SuperTrack={GetSuperTrackedQuestID=function()return 9102 end}
+assert(#Q:WorldPins(1445)==1)
+C_SuperTrack.GetSuperTrackedQuestID=function()return 0 end
+assert(#Q:WorldPins(1445)==0)
+''',
+"quest_locations_minimap_nearby_only_rotation_pool_and_settings": OBJECTIVES+r'''
+M.mapID=1445;M.px=.34;M.py=.25;FP.Pos:Refresh(true)
+FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+local pool=FP.Pins.objectiveMini;assert(#pool>0 and #pool<=40)
+for _,f in ipairs(pool)do if f:IsShown()then assert(f.point.d<=FP.API.GetMinimapViewRadius())end end
+local count=#pool
+FP.Pins.lastObjectiveMini=nil;FP.API.IsMinimapRotating=function()return true end
+FP.Pos.cache.facing=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache);assert(#pool==count)
+FP.settings.questMinimapPins=false;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+for _,f in ipairs(pool)do assert(not f:IsShown())end
+FP.settings.questWorldPins=false;FP.Pins.provider:RefreshAllData();assert(#WorldMapFrame._pins==0)
+assert(#FP.db.errors==0)
+''',
+"quest_locations_gui_controls_and_diagnostics": OBJECTIVES+HUB+r'''
+page("display");check("displayquestSelectedOnly",true);check("displayquestWorldPins",false);check("displayquestMinimapPins",false)
+assert(FP.settings.questSelectedOnly and not FP.settings.questWorldPins and not FP.settings.questMinimapPins)
+page("navigation");assert(Q:Summary():find("3 unfinished",1,true))
+assert(FP.db.questLocations.matched==3 and FP.db.questLocations.version==FP.version)
+assert(#FP.db.errors==0)
+''',
+})
+
+CASES["quest_locations_automatic_log_lifecycle_and_late_provider"] = OBJECTIVES+r'''
+local provider=LibQuestieDB
+LibQuestieDB=nil;Q:Refresh();assert(#Q.groups==0)
+LibQuestieDB=provider;M.Tick(1)
+assert(Q.matched==3,"late provider did not recover automatically")
+M.AddQuest({questID=9102,title="Container",objectives={objective("Lost Key: 0/3","item")}})
+M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(4);M.RunTimers(2);assert(Q.matched==4)
+q.objectives[1].finished=true;M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(4);M.RunTimers(2)
+assert(Q.matched==3,"completion did not refresh automatically")
+M.RemoveQuest(9101);M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(4);M.RunTimers(2)
+assert(Q.matched==1 and not Q.references[9101])
+'''
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

@@ -21,4 +21,10 @@
 			</Layer>
 		</Layers>
 	</Frame>
+	<Frame name="ForeverPathObjectivePinTemplate" enableMouse="true" enableMouseClicks="true" mixin="ForeverPathObjectivePinMixin" virtual="true">
+		<Size x="12" y="12"/>
+		<Layers><Layer level="ARTWORK"><Texture parentKey="Icon" file="Interface\AddOns\ForeverPath\Media\pin">
+			<Size x="12" y="12"/><Anchors><Anchor point="CENTER"/></Anchors>
+		</Texture></Layer></Layers>
+	</Frame>
 </Ui>

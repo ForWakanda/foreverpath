@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.9.0)
+## What it does (v0.10.0)
 
 - **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
 - **Compact next-steps panel** (`/fp panel`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
@@ -22,6 +22,14 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Reminders** (`/fp remind`, out of combat only, repeated in chat at most every 10 minutes): low or broken durability, low ammo, bags nearly full, a self-buff you know but do not have (Shaman Lightning Shield, Mage Arcane Intellect and Frost/Ice Armor, Hunter Aspect), a Shaman weapon with no imbue. Buff reads go through Blizzard's secret predicate; in combat the reminder row hides instead of guessing.
 - **Trainer notes** (`/fp trainer`): at a class or profession trainer, what you can learn now, the total cost against your gold and the next level that unlocks something. On a level-up, which recorded trainer teaches something at the new level and what it costs. `/fp trainer 28` asks about a level.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
+
+## Quest source maps (v0.10.0)
+
+ForeverPath can now show **known creature and object locations for unfinished quest objectives** on the world map and nearby sources on the minimap, including item drops, container sources, and vendors. Hover a small orange marker for the quest, progress, and source; click it to guide there. Completed objectives disappear automatically. Display settings let you hide either layer or show only the client-selected quest. Navigation shows coverage and database status.
+
+This feature reads the standalone [QuestieDB Forever addon](https://github.com/Questie/QuestieDB/releases/tag/v1.0.13), version 1.0.13 tested. **Questie's interface is not required.** Install its `QuestieDB` folder beside `ForeverPath`, restart WoW, and enable both. On this development machine, `python3 tools/install-questiedb.py` installs the checksum-pinned, unmodified data addon and preserves any different existing installation. ForeverPath's other tools continue working without it; source locations will report that the database is missing.
+
+These are possible spawn/source locations, not live tracking of stealthed enemies or guaranteed drops. Objective text is matched to the live quest log rather than assuming database row order. Unmatched text, unsupported event/kill-credit/spell objectives, and dungeon floor/sentinel positions stay unmapped. Outdoor markers are grouped for readability (350 world-map / 40 nearby minimap frames); the nearest-source fallback uses the full matched point list. Live Blizzard directions and recorded areas remain preferred for automatic guidance. QuestieDB's Forever data includes converted coordinates and corrections, but does not cover every new quest.
 
 ## Using the control window (v0.9.0)
 

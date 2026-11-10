@@ -23,3 +23,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+Optional external data provider (not vendored in ForeverPath): QuestieDB
+https://github.com/Questie/QuestieDB
+Tested package: v1.0.13, QuestieDB-1.0.13-Forever.zip
+SHA-256: f07c6cb18a723c8fba824038ffaaf5de23ab5c8ecd1d9235b122f06a59666f0c
+Producer revision: 0f7d8adc92b28ac6594f4ad8745257f4d9784edf
+
+ForeverPath reads this separately installed addon's public API. Its data and
+implementation are not included in ForeverPath's MIT license. The unmodified
+upstream distribution contains its own LICENSE.md and gpl-3.0.md; preserve them.
+QuestieDB is a Questie team project; ForeverPath is an independent consumer.
