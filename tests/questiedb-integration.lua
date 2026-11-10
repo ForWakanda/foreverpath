@@ -171,3 +171,20 @@ M.instance={type="party"};M.FireEvent("ZONE_CHANGED_NEW_AREA");M.RunTimers(.5)
 assert(not FP.Waypoints:GetActive() and not FP.DungeonPanel.entranceButton:IsEnabled())
 assert(#FP.db.errors==0,"dungeon integration stored errors")
 print("PASS packaged dungeon checklist: 30/35 entrances, converted Stratholme, pickup/turn-in contacts, entry cleanup; zero stored mock errors")
+
+-- Gear source lookup uses the installed provider's item->reward quest relation.
+local sources=FP.API.GetGearQuestSources(6504) -- Wingblade
+local fang
+for _,q in ipairs(sources) do if q.id==914 then fang=q end end
+assert(fang and fang.name=="Leaders of the Fang", "Wingblade reward source missing")
+local oldChar=FP.API.GetCharInfo
+FP.API.GetCharInfo=function() return {name="Gear fixture",class="HUNTER",level=30} end
+H:Open("gear")
+FP.GearPanel.filter={slot="MAIN",source="Quest",query="6504",level=30,unknown=true}
+H:Refresh()
+assert(#H.controls.gearItems.items==1 and H.controls.gearItems.items[1].key==6504)
+assert(#FP.GearPanel.questSources>0 and H.controls.gearQuestSource:IsEnabled())
+assert(FP.GearPanel.details:GetText():find("Leaders of the Fang",1,true))
+FP.API.GetCharInfo=oldChar
+assert(#FP.db.errors==0)
+print("PASS packaged gear: Wingblade -> Leaders of the Fang, filtered gear UI, source details; zero stored mock errors")

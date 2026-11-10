@@ -54,6 +54,7 @@ FP.defaults = {
 }
 
 FP.charDefaults = {
+	gear = { weights = {}, wishlist = {} },
 	prep = { enabled = true, mode = "auto", food = 20, water = 40, bandages = 10, reagents = 5, supplies = {} },
 	waypoints = {},
 	activeId = nil,

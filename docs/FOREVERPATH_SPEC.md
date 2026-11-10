@@ -366,3 +366,37 @@ User intent: the addon is a useful general addon for any class, no longer a beta
 - Town tools now has a paginated supply report independent of HUD visibility, food/drink/bandage/Mage reagent targets, carried/tracked item picker, item-link/ID input, save/remove personal target controls. Up to20 personal items, targets1–200,0 removes; validated inputs, per-character persistence, unknown counts preserved, draft fields retained. Runtime names cached, no item use/purchase/target/cast. Personal counts use equipped bags only. All supply snapshots and reads pause in combat; editing a target does not read inventory.
 - Audit: planner/source maps/chains/dungeons are class-neutral except intentional live faction/class eligibility filtering. Rewards compare raw stats/current equipment/usability without mage/hunter weighting. Professions, trainer records and party messages use the actual character/roster. PvP own-action estimates have an explicit cross-class spell table, not player-class gating. Legacy personal names in self-tests are fixtures, not runtime recipient defaults. InfoBar's optional specialized buff list remains mage/shaman/hunter-only; repair/bags/ammo apply where relevant. No blanket claim of every class-specific spell/rotation being covered.
 - Verification includes all nine fresh mock logins with legacy sound-enabled settings and existing character targets, class-appropriate supplies, trainer filtering, dungeon class filter, native quest routing, combat pause/resume; custom targets/cache/bank boundaries, GUI without PvP, and proof that hunter actions/retired commands play no sounds or ship sound files. Actual client evidence remains savedv0.9.0/build70862 before change.
+
+
+## Gear explorer and GUI discovery — v0.16.0 (2026-11-10, Codex)
+
+Home now defaults to Overview: six cards for Navigation, Best in slot, Rewards,
+Chains, Dungeons and Supplies. Sidebar adds a first-class dungeon page; spacing
+keeps all 14 sections clear of the compact-panel and map-settings shortcuts.
+The gear page has slot chips, role/source controls, name/ID/source search, level
+filter, a paged list and independent scrolling comparison pane. A modal edits
+weights atomically; cancel/navigation/close discards unsaved edits. Profile,
+custom weights and wishlist persist per character; browsing/filtering does not
+write route, quest tracking or character state.
+
+7,982 normalized factual Forever records from the pinned cache revision in
+Data/GearCatalog.lua. tools/import-gear-catalog.py regenerates deterministically;
+no Classic fallback or copied BiS rankings. Reference data stays immutable. Scores
+use explicit authored starting weights for all nine class families and expose
+all weights. They omit proc/set/cap/weapon-speed interactions and are labeled
+estimates. Unknown required levels stay unknown, with an explicit include filter.
+Class armor/weapon/relic filters are reference compatibility rules; training,
+reputation/race/unique restrictions and current obtainability are not certified.
+
+API: reverified Blizzard Forever source 70888 / 4cd0ab7. Existing guarded
+GetRewardItem/GetRewardEquipment adapters supply live stat comparisons. Item
+requests remain bounded (128 IDs per session) and events refresh only the visible
+page. No full-catalog live API scan. New GetGearQuestSources adapter consumes
+QuestieDB Item.Get(id, "questRewards"), then guarded Quest chain records; deduped,
+bounded and read-only. Missing provider/data never blocks offline gear browsing.
+Two-hand/per-hand scores do not emit swap deltas. Spell damage/healing supports
+combined and separate API keys without double-counting the healer preset.
+
+Installed/mock evidence is not client proof. Reload and check real tooltips,
+scrolling, equipment refresh, quest sources, source navigation, persisted weights
+and wishlist; pull SavedVariables after normal flush. No new media or dependency.
