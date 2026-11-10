@@ -242,7 +242,7 @@ assert(active().source.questID==9002 and FP.Planner.pinned)
 field("skipMinutes",5); click("skipQuest")
 assert(FP.Planner.deferred[9002] and active().source.questID==9001)
 click("restoreQuests"); assert(not FP.Planner.deferred[9002])
-click("pause"); assert(not FP.settings.autoNext and active())
+click("pause"); assert(FP.Planner.paused and FP.settings.autoNext and active())
 click("resume"); assert(FP.settings.autoNext and FP.settings.arrow.shown)
 assert(#FP.db.errors==0)
 ''',
@@ -319,7 +319,7 @@ local original=#FP.RareWatch:Watch().rares
 field("rareName","Test Rare"); field("rareID",1234); click("rareAdd")
 assert(#FP.RareWatch:Watch().rares==original+1)
 assert(FP.RareWatch:MacroText():find("/targetexact Test Rare",1,true))
-local list=H.controls.rareList; list.selected=original+1; H:Refresh(); click("rareRemove")
+local list=H.controls.rareList; list.selected=tostring(FP.RareWatch:Watch().rares[original+1].id or "")..":"..FP.RareWatch:Watch().rares[original+1].name; H:Refresh(); click("rareRemove")
 assert(#FP.RareWatch:Watch().rares==original)
 local scans=FP.RareWatch:Current() and FP.RareWatch:Current().scans
 click("rareScan")
@@ -397,7 +397,7 @@ page("town")
 field("prepwater",60); click("applyPrepwater"); assert(FP.cdb.prep.water==60)
 field("prepbandages",15); click("applyPrepbandages"); assert(FP.cdb.prep.bandages==15)
 field("prepreagents",8); click("applyPrepreagents"); assert(FP.cdb.prep.reagents==8)
-click("prepShow"); assert(FP.settings.pvp.manual=="show" and FP.cdb.prep.mode=="show")
+local pvpManual=FP.settings.pvp.manual;click("prepShow"); assert(FP.settings.pvp.manual==pvpManual and FP.cdb.prep.mode=="show")
 click("prepAuto"); assert(FP.cdb.prep.mode=="auto")
 click("prepHide"); assert(FP.cdb.prep.mode=="hide")
 for _,id in ipairs({"prepReport","junkValue","trainerLookup"}) do click(id) end
@@ -1531,7 +1531,7 @@ inv,why=FP.API.GetPrepInventory(); assert(not inv and why:find("unavailable",1,t
 ''',
     "mage_prep_does_not_override_pvp_hide_or_off": PREP_SETUP + r'''
 cmd("pvp hide"); cmd("prep show"); M.RunTimers(2)
-assert(not FP.PvP.frame:IsShown() and FP.settings.pvp.manual=="hide")
+assert(FP.PvP.frame:IsShown() and FP.settings.pvp.manual=="hide")
 cmd("pvp off"); cmd("prep on"); M.RunTimers(2)
 assert(not FP.PvP.frame:IsShown() and not FP.settings.pvp.enabled)
 cmd("pvp on"); cmd("pvp auto"); M.RunTimers(2)

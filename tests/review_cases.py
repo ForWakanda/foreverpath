@@ -140,3 +140,34 @@ assert(P:Dungeons(row("Temple of Atal'Hakkar"))[1].key=="sunken-temple")
 assert(#P:Dungeons(row("Unmapped dungeon"))==0)
 ''',
 })
+
+REVIEW_CASES.update({
+"review_resume_releases_manual_route_without_deleting_saved_places": r'''
+local q=addQuest(9001);cmd("way 20 20 Saved place");local manual=active()
+FP.Hub:Open("navigation");FP.Hub.controls.resume:GetScript("OnClick")()
+assert(manual.suspended and FP.Waypoints:Get(manual.id)==manual and active().source.questID==9001)
+FP.Waypoints:SetActive(manual.id);assert(active()==manual and not manual.suspended)
+FP.Hub.controls.pause:GetScript("OnClick")();assert(FP.Planner.paused and FP.settings.autoNext)
+''',
+"review_utf8_settings_refresh_and_panel_anchor": r'''
+assert(FP.Util.Truncate("éclair猫",4)=="écl…")
+assert(FP.Util.Truncate("猫猫猫",2)=="猫…")
+FP.Hub:Open("town");local field=FP.Hub.controls.prepfood
+assert(not field:HasFocus())
+FP.cdb.prep.food=55;FP.Hub:Refresh();assert(field:GetText()=="55")
+field:SetText("61");FP.cdb.prep.food=56;FP.Hub:Refresh();assert(field:GetText()=="61","draft lost")
+local f=FP.Panel.frame;f._left,f._top=200,800
+UIParent:SetHeight(1080);FP.Panel:ApplySettings()
+assert(FP.settings.panel.point=="TOPLEFT" and FP.settings.panel.x==200 and FP.settings.panel.y==-280)
+f:SetHeight(300);assert(FP.settings.panel.y==-280)
+''',
+"review_checklist_does_not_enable_pvp_and_windows_close_with_escape": r'''
+FP.settings.pvp.enabled=false;FP.settings.pvp.manual="hide"
+FP.Hub:Open("town");FP.Hub.controls.prepShow:GetScript("OnClick")();M.RunTimers(1)
+assert(not FP.settings.pvp.enabled and FP.settings.pvp.manual=="hide" and FP.PvP.frame:IsShown())
+FP.Hub.controls.prepHide:GetScript("OnClick")();M.RunTimers(1);assert(not FP.PvP.frame:IsShown())
+cmd("partyexport")
+local names={};for _,n in ipairs(UISpecialFrames) do names[n]=true end
+assert(names.HearthAndHustleDungeons and names.HearthAndHustleExport)
+''',
+})

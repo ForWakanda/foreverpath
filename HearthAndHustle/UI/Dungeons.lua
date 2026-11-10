@@ -22,7 +22,8 @@ function P:OnInit()
     self.list, self.dungeonPage, self.questPage = D:List(), 1, 1
     local f = CreateFrame("Frame", "HearthAndHustleDungeons", UIParent, "BackdropTemplate")
     self.frame = f
-    f:SetSize(820, 620); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG")
+    if UISpecialFrames then table.insert(UISpecialFrames,"HearthAndHustleDungeons") end
+    f:SetSize(820, 620); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG");f:SetToplevel(true)
     f:SetClampedToScreen(true); f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
     f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)

@@ -7,6 +7,14 @@ local U, API = FP.Util, FP.API
 local P = FP:NewModule("Planner")
 
 P.steps = {}
+function P.SortSteps(steps)
+ table.sort(steps,function(a,b)
+  if a.score~=b.score then return a.score<b.score end
+  if a.title~=b.title then return tostring(a.title)<tostring(b.title) end
+  if a.questID~=b.questID then return (a.questID or 0)<(b.questID or 0) end
+  return (a.objIndex or 0)<(b.objIndex or 0)
+ end)
+end
 -- Arrival is a navigation state, independent of the displayed waypoint.
 local function sameStep(a, b)
 	return a and b and a.questID == b.questID and a.kind == b.kind and a.objIndex == b.objIndex
@@ -216,12 +224,7 @@ function P:Build()
 		s.score = s.score - math.min(s.cluster, 3) * 60
 		if s.deferred then s.score = s.score + 2e9 end
 	end
-	table.sort(steps, function(a, b)
-		if a.score ~= b.score then return a.score < b.score end
-		if a.title ~= b.title then return tostring(a.title) < tostring(b.title) end
-		if a.questID ~= b.questID then return a.questID < b.questID end
-		return (a.objIndex or 0) < (b.objIndex or 0)
-	end)
+	self.SortSteps(steps)
 	-- hearth hint: several turn-ins near the bind point and hearth ready
 	local bind = FP.cdb.bind
 	if bind and bind.m and bind.x and API.HasHearthstone() then

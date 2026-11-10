@@ -168,6 +168,11 @@ end
 
 function U.Truncate(s, n)
 	s = tostring(s or "")
-	if #s <= n then return s end
-	return s:sub(1, n - 1) .. "…"
+	local ends={}
+ for i=1,#s do
+  local b=s:byte(i)
+  if b<128 or b>=192 then ends[#ends+1]=i end
+ end
+ if #ends<=n then return s end
+ return s:sub(1,(ends[math.max(1,n)] or 1)-1).."…"
 end

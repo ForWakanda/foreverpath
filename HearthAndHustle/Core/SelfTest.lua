@@ -92,7 +92,7 @@ function T:Cases()
 			{ kind = "turnin", score = 600 - 250, title = "a" },
 			{ kind = "objective", score = 1e9, title = "c" },
 		}
-		table.sort(steps, function(x, y) if x.score ~= y.score then return x.score < y.score end return x.title < y.title end)
+		FP.Planner.SortSteps(steps)
 		assert(steps[1].kind == "turnin" and steps[3].title == "c")
 	end)
 	return cases

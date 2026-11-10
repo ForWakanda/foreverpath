@@ -143,7 +143,7 @@ function P:Weights(H)
   self.weightFields={}
   for i,s in ipairs(G.stats) do
    text(f,20,-62-(i-1)*29,240):SetText(s[2])
-   local e=CreateFrame("EditBox",nil,f,"InputBoxTemplate");e:SetSize(120,24);e:SetPoint("TOPLEFT",280,-56-(i-1)*29);e:SetAutoFocus(false);e:SetMaxLetters(8)
+   local e=CreateFrame("EditBox",nil,f,"InputBoxTemplate");e:SetSize(120,24);e:SetPoint("TOPLEFT",280,-56-(i-1)*29);e:SetAutoFocus(false);e:ClearFocus();e:SetMaxLetters(8)
    e:SetScript("OnEscapePressed",function() f:Hide() end);self.weightFields[s[1]]=e
   end
   local function button(label,x,fn)

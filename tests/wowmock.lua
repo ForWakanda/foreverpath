@@ -29,6 +29,11 @@ function Frame:IsShown() return self._shown and true or false end
 function Frame:SetSize(w, h) self._w, self._h = w, h end
 function Frame:SetScale(scale) self._scale = scale end
 function Frame:GetScale() return self._scale or 1 end
+function Frame:GetEffectiveScale() return self:GetScale()*(self._parent and self._parent:GetEffectiveScale() or 1) end
+function Frame:GetLeft() return self._left end
+function Frame:GetTop() return self._top end
+function Frame:HasFocus() return self._focused or false end
+function Frame:SetToplevel(v) self._toplevel=v end
 function Frame:SetChecked(checked) self._checked = checked and true or false end
 function Frame:GetChecked() return self._checked or false end
 function Frame:SetMaxLetters(n) self._maxLetters = n end
