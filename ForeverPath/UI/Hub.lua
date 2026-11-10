@@ -116,6 +116,7 @@ function H:Select(key)
 	if not section then return end
 	self:CancelConfirm()
 	if not self.pages[key] then self:BuildPage(key) end
+	if key=="town" then FP.ClassPrep:RequestRefresh() end
 	for k,p in pairs(self.pages) do
 		if k==key then p.scroll:Show() else
 			for _,field in ipairs(p.fields) do field:ClearFocus() end
@@ -328,18 +329,47 @@ function H:BuildPage(key)
 	elseif key=="town" then
 		self:Section(p,"Class supplies")
 		self:Check(p,"prepEnabled","Enable preparation checklist",function() return FP.cdb.prep.enabled end,function(v) command("prep "..onoff(v)) end)
-		self:Text(p,"",function() return "Checklist display: "..FP.cdb.prep.mode..". Supplies appear inside the PvP HUD; enable that HUD if hidden." end)
+		self:Text(p,"",function() return FP.ClassPrep:ClassLabel().." supplies. Overlay: "..FP.cdb.prep.mode..". Carried counts are also shown below, independently of the PvP HUD." end)
+		self:List(p,"supplySummary",function()
+			if API.InCombat() or FP.ClassPrep.combat then return {{key="status",text="Supply checks resume after combat."}} end
+			if not FP.cdb.prep.enabled then return {{key="status",text="Preparation checklist disabled."}} end
+			local rows={}
+			for i,row in ipairs(FP.ClassPrep.rows or {{text="Reading bag supplies…"}}) do rows[#rows+1]={key=row.key or i,text=row.text} end
+			return rows
+		end,function(row)return row.text end)
 		self:Actions(p,{
 			{"prepShow","Show checklist",function() command("pvp on"); command("pvp show"); command("prep show") end},
 			{"prepAuto","Automatic checklist",function() command("prep auto") end},
 			{"prepHide","Hide checklist",function() command("prep hide") end},
 		})
-		for _,entry in ipairs({{"water","Drink target"},{"bandages","Bandage target"},{"reagents","Reagent target"}}) do
+		for _,entry in ipairs({{"food","Food target"},{"water","Drink target (mana classes)"},{"bandages","Bandage target"},{"reagents","Mage reagent target"}}) do
 			local key,name=entry[1],entry[2]
 			local field=self:Field(p,"prep"..key,name,FP.cdb.prep[key])
 			self:Actions(p,{{"applyPrep"..key,"Save "..name:lower(),function() local n=self:Number(field,name,0,200,true); if n then command("prep "..key.." "..n) end end}})
 		end
 		self:Actions(p,{{"prepReport","Check carried supplies",function() command("prep") end}})
+		self:Section(p,"Personal supplies")
+		self:Text(p,"Choose a carried or tracked item below, or paste an item link/ID. Set a target to track reagents, poisons, pet supplies or other items for this character. These are your stocking targets; they do not claim the item is required or usable.")
+		local item=self:Field(p,"supplyItem","Item link or ID","")
+		local target=self:Field(p,"supplyTarget","Carried target (0 removes)",5)
+		self:Actions(p,{{"saveSupply","Save personal supply",function()
+			local n=self:Number(target,"target",0,200,true)
+			if n then local _,message=FP.ClassPrep:SetSupply(U.Trim(item:GetText()),n);FP:Print(message) end
+		end}})
+		local supplies=self:List(p,"personalSupplies",function() return FP.ClassPrep:Supplies(true) end,function(row)
+			return row.name.." (#"..row.id..") — "..(row.count~=nil and row.count.." carried" or "count unavailable")..(row.goal>0 and " / target "..row.goal or "")
+		end)
+		for _,button in ipairs(supplies.rows) do
+			button:SetScript("OnClick",function(btn)
+				if btn.item then
+					supplies.selected=btn.item.key;item:SetText(tostring(btn.item.id));target:SetText(tostring(btn.item.goal>0 and btn.item.goal or 5));self:Refresh()
+				end
+			end)
+		end
+		self:Actions(p,{{"removeSupply","Stop tracking selected item",function()
+			local row=self:Selected(supplies)
+			if row then local _,message=FP.ClassPrep:SetSupply(row.id,0);FP:Print(message) end
+		end,enabled=function() local row=self:Selected(supplies);return row and row.goal>0 end}})
 		self:Section(p,"Vendor helper")
 		for _,entry in ipairs({{"enabled","Show vendor helper",""},{"tooltipPrice","Vendor values in tooltips","tooltip "},{"rewardValues","Vendor values on quest rewards","rewards "}}) do
 			local key,text,sub=entry[1],entry[2],entry[3]
@@ -439,9 +469,6 @@ function H:BuildPage(key)
 			})
 		end
 		self:Check(p,"barFPS","Show FPS and latency",function() return FP.settings.bar.fps end,function(v) command("bar fps "..onoff(v)) end)
-		self:Section(p,"Hunter audio")
-		self:Check(p,"hunterAudio","Enable Hunter sound cues",function() return FP.settings.hunterAudio.enabled end,function(v) command("audio "..onoff(v)) end)
-		self:Actions(p,{{"audioTest","Play sample sounds",function() command("audio test") end},{"audioStatus","Audio status",function() command("audio") end}})
 	elseif key=="tools" then
 		self:Text(p,"",function() return "Recorded: "..FP.Recorder:Summary().."\nStored errors: "..#(FP.db.errors or {}) end)
 		self:Check(p,"recording","Record observations",function() return FP.settings.record end,function(v) command("record "..onoff(v)) end)

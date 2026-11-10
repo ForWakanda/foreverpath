@@ -250,7 +250,7 @@ click("prepAuto"); assert(FP.cdb.prep.mode=="auto")
 click("prepHide"); assert(FP.cdb.prep.mode=="hide")
 for _,id in ipairs({"prepReport","junkValue","trainerLookup"}) do click(id) end
 page("rare"); click("rareStatus"); click("rareRuns")
-page("display"); click("audioStatus"); click("audioTest")
+page("display"); assert(not H.controls.audioStatus and not H.controls.audioTest and not H.controls.hunterAudio)
 assert(#FP.db.errors==0)
 ''',
     "display_settings_normal_panel_entry_preserves_preferences_and_route": r'''
@@ -1291,9 +1291,9 @@ C_Item.GetItemInfo=function(id)
 end
 C_Item.GetItemSpell=function(id) return id==4540 and "Nourriture" or "Boisson", 430 end
 local function prepRow(key)
-    for _,r in ipairs(FP.MagePrep.rows or {}) do if r.key==key then return r end end
+    for _,r in ipairs(FP.ClassPrep.rows or {}) do if r.key==key then return r end end
 end
-FP.MagePrep:Refresh()
+FP.ClassPrep:Refresh()
 '''
 CASES.update({
     "mage_prep_counts_bags_excludes_food_potions_and_overlevel_drinks": PREP_SETUP + r'''
@@ -1316,36 +1316,36 @@ assert(snapshot(FP.data)==before)
     "mage_prep_unknown_api_cache_and_spell_state_do_not_report_zero": PREP_SETUP + r'''
 local original=C_Item.GetItemInfo
 C_Item.GetItemInfo=function(id) if id==159 then return nil end return original(id) end
-FP.MagePrep:Refresh(); assert(prepRow("water").count==nil and prepRow("water").missing==nil)
+FP.ClassPrep:Refresh(); assert(prepRow("water").count==nil and prepRow("water").missing==nil)
 C_Item.GetItemInfo=original; M.FireEvent("GET_ITEM_INFO_RECEIVED",159,true); M.RunTimers(1)
 assert(prepRow("water").count==22)
-C_SpellBook.IsSpellKnown=nil; FP.MagePrep:Refresh()
+C_SpellBook.IsSpellKnown=nil; FP.ClassPrep:Refresh()
 assert(not prepRow("gem:5514") and not prepRow("reagent:17031"))
-assert(table.concat((function() local t={} for _,r in ipairs(FP.MagePrep.rows) do t[#t+1]=r.text end return t end)(), " "):find("spells unavailable",1,true))
-C_Container.GetContainerNumSlots=nil; FP.MagePrep:Refresh()
-assert(#FP.MagePrep.rows==1 and not prepRow("water"))
+assert(table.concat((function() local t={} for _,r in ipairs(FP.ClassPrep.rows) do t[#t+1]=r.text end return t end)(), " "):find("spells unavailable",1,true))
+C_Container.GetContainerNumSlots=nil; FP.ClassPrep:Refresh()
+assert(#FP.ClassPrep.rows==1 and not prepRow("water"))
 ''',
     "mage_prep_never_scans_inventory_or_spells_during_combat": PREP_SETUP + r'''
 M.FireEvent("PLAYER_REGEN_DISABLED")
 C_Container.GetContainerNumSlots=function() error("combat bag read") end
 C_SpellBook.IsSpellKnown=function() error("combat spell read") end
 M.FireEvent("BAG_UPDATE_DELAYED"); M.RunTimers(2)
-FP.MagePrep:Refresh(); cmd("prep")
-assert(#FP.MagePrep:Lines()==0)
+FP.ClassPrep:Refresh(); cmd("prep")
+assert(#FP.ClassPrep:Lines()==0)
 assert(M.Chat()[#M.Chat()]:find("after combat",1,true))
 ''',
     "mage_prep_auto_visibility_and_user_controls": PREP_SETUP + r'''
-FP.MagePrep.untilTime=0; FP.MagePrep.bg=false
-assert(#FP.MagePrep:Lines()==0)
-M.FireEvent("MERCHANT_SHOW"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
-M.FireEvent("MERCHANT_CLOSED"); assert(#FP.MagePrep:Lines()==0)
-M.bg=true; M.FireEvent("ZONE_CHANGED_NEW_AREA"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
-M.bg=false; M.FireEvent("ZONE_CHANGED_NEW_AREA"); M.RunTimers(25); assert(#FP.MagePrep:Lines()==0)
-cmd("prep show"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
-cmd("prep hide"); assert(#FP.MagePrep:Lines()==0)
-cmd("prep auto"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
-cmd("prep off"); assert(#FP.MagePrep:Lines()==0)
-cmd("prep on"); M.RunTimers(1); assert(#FP.MagePrep:Lines()>0)
+FP.ClassPrep.untilTime=0; FP.ClassPrep.bg=false
+assert(#FP.ClassPrep:Lines()==0)
+M.FireEvent("MERCHANT_SHOW"); M.RunTimers(1); assert(#FP.ClassPrep:Lines()>0)
+M.FireEvent("MERCHANT_CLOSED"); assert(#FP.ClassPrep:Lines()==0)
+M.bg=true; M.FireEvent("ZONE_CHANGED_NEW_AREA"); M.RunTimers(1); assert(#FP.ClassPrep:Lines()>0)
+M.bg=false; M.FireEvent("ZONE_CHANGED_NEW_AREA"); M.RunTimers(25); assert(#FP.ClassPrep:Lines()==0)
+cmd("prep show"); M.RunTimers(1); assert(#FP.ClassPrep:Lines()>0)
+cmd("prep hide"); assert(#FP.ClassPrep:Lines()==0)
+cmd("prep auto"); M.RunTimers(1); assert(#FP.ClassPrep:Lines()>0)
+cmd("prep off"); assert(#FP.ClassPrep:Lines()==0)
+cmd("prep on"); M.RunTimers(1); assert(#FP.ClassPrep:Lines()>0)
 ''',
     "mage_prep_goals_are_validated_and_character_specific": PREP_SETUP + r'''
 cmd("prep water 60"); M.RunTimers(1)
@@ -1355,12 +1355,11 @@ assert(FP.cdb.prep.water==60)
 cmd("prep bandages 0"); M.RunTimers(1); assert(not prepRow("bandages"))
 assert(not FP.settings.prep and FP.charDefaults.prep.water==40)
 ''',
-    "class_prep_unsupported_class_is_inert": PREP_SETUP + r'''
-M.class="WARRIOR"; FP.MagePrep.isMage=false
-C_Container.GetContainerNumSlots=function() error("Unsupported class inventory scanned") end
-FP.MagePrep:Refresh(); cmd("prep")
-assert(#FP.MagePrep:Lines()==0)
-assert(M.Chat()[#M.Chat()]:find("for Mages",1,true))
+    "class_prep_warrior_has_food_and_bandages_without_mage_supplies": PREP_SETUP + r'''
+M.class="WARRIOR";FP.ClassPrep:Refresh();cmd("prep show");M.RunTimers(1)
+assert(#FP.ClassPrep:Lines()>0)
+assert(prepRow("food").count==99 and prepRow("bandages").count==5)
+assert(not prepRow("water") and not prepRow("gem:5514") and not prepRow("reagent:17031"))
 ''',
     "mage_prep_probe_retains_real_counts_and_lookup_state": PREP_SETUP + r'''
 cmd("apicheck")
@@ -1601,13 +1600,14 @@ assert(RW:Current().key == "182500" and RW:Current().kills[6489] == 1 and #FP.db
 CASES.update({
     "shaman_supplies_no_mage_gems_and_hunter_preserved": PREP_SETUP + r'''
 M.class="SHAMAN"
-FP.MagePrep:Refresh()
+FP.ClassPrep:Refresh()
 assert(prepRow("water").count==22 and not prepRow("gem:5514") and not prepRow("reagent:17031"))
-assert(FP.MagePrep.rows[#FP.MagePrep.rows-2].text:find("Enhancement",1,true))
-cmd("prep show"); assert(#FP.MagePrep:Lines()>0)
-M.class="HUNTER"; FP.MagePrep:Refresh()
+assert(FP.ClassPrep.rows[#FP.ClassPrep.rows].text:find("chosen weapon imbue",1,true))
+assert(not FP.ClassPrep:Summary():find("Enhancement",1,true) and not FP.ClassPrep:Summary():find("Duo:",1,true))
+cmd("prep show"); assert(#FP.ClassPrep:Lines()>0)
+M.class="HUNTER"; FP.ClassPrep:Refresh()
 assert(prepRow("water") and not prepRow("gem:5514"))
-assert(FP.MagePrep.rows[#FP.MagePrep.rows].text:find("pet supplies",1,true))
+assert(FP.ClassPrep.rows[#FP.ClassPrep.rows].text:find("pet supplies",1,true))
 ''',
     "bag_space_excludes_specialty_bags_and_preserves_unknown": r'''
 NUM_TOTAL_EQUIPPED_BAG_SLOTS=2
@@ -2630,6 +2630,116 @@ assert(FP.Dungeons:GuideQuest(1486) and active().source.kind=="turnin")
 })
 
 
+
+CASES.update({
+"class_supplies_food_drink_level_and_cache_boundaries": PREP_SETUP+r'''
+assert(prepRow("food").count==99 and prepRow("water").count==22)
+local old=C_Item.GetItemInfo
+C_Item.GetItemInfo=function(id)if id==4540 then return "Bread","link",1,1,50,"type","subtype",20,"",123,0,0,5 end return old(id)end
+FP.ClassPrep:Refresh();assert(prepRow("food").count==0 and prepRow("water").count==22)
+C_Item.GetItemInfo=function(id)if id==4540 then return nil end return old(id)end
+FP.ClassPrep:Refresh();assert(prepRow("food").count==nil and prepRow("food").missing==nil)
+C_Item.GetItemInfo=old;C_Item.GetItemSpell=function(id)if id==4540 then return nil end return "Boisson"end
+FP.ClassPrep:Refresh();assert(prepRow("food").count==nil)
+''',
+"class_supplies_personal_counts_and_bank_exclusion": PREP_SETUP+r'''
+M.class="ROGUE"
+local P=FP.ClassPrep
+assert(P:SetSupply(17031,12));P:Refresh()
+assert(prepRow("supply:17031").count==2 and prepRow("supply:17031").missing==10)
+assert(not prepRow("water") and not prepRow("reagent:17031"))
+M.bags[5]={{17031,15}};M.FireEvent("BAG_UPDATE_DELAYED");M.RunTimers(1)
+assert(prepRow("supply:17031").missing==0)
+assert(P:SetSupply(159,100));P:Refresh();assert(prepRow("supply:159").count==12)
+assert(P:SetSupply(17031,0));M.RunTimers(1);assert(not prepRow("supply:17031"))
+''',
+"class_supplies_personal_validation_cap_and_character_storage":PREP_SETUP+r'''
+local P=FP.ClassPrep
+assert(P:SetSupply("|cffffffff|Hitem:17031:0|h[Rune]|h|r",9))
+assert(FP.cdb.prep.supplies[17031]==9 and not FP.settings.supplies)
+local before=snapshot(FP.cdb.prep)
+for _,v in ipairs({"bad",-1,0,1.5,math.huge})do assert(not P:SetSupply(v,5))end
+for _,v in ipairs({-1,201,1.5,math.huge})do assert(not P:SetSupply(17031,v))end
+assert(snapshot(FP.cdb.prep)==before)
+for i=1,19 do assert(P:SetSupply(i,5))end
+assert(not P:SetSupply(999,5) and P:SetSupply(17031,10))
+assert(P:SetSupply(1,0) and P:SetSupply(999,5))
+local old=FP.cdb
+FP.cdb=FP.deepDefaults({},FP.charDefaults);assert(not next(FP.cdb.prep.supplies))
+FP.cdb=old;assert(FP.cdb.prep.supplies[17031]==10)
+''',
+"class_supplies_personal_unknown_inventory_and_combat":PREP_SETUP+r'''
+local P=FP.ClassPrep
+assert(P:SetSupply(17031,10));P:Refresh()
+C_Container.GetContainerNumSlots=function()error("unavailable")end
+P:Refresh();assert(prepRow("supply:17031").count==nil and prepRow("supply:17031").missing==nil)
+M.inCombat=true;M.FireEvent("PLAYER_REGEN_DISABLED")
+C_Item.GetItemInfo=function()error("item read in combat")end
+C_Item.RequestLoadItemDataByID=function()error("item load in combat")end
+assert(P:SetSupply(999,5));P:Refresh();P:Supplies(true)
+assert(#P:Lines()==0 and P:Summary():find("after combat",1,true))
+''',
+"class_supplies_unknown_class_keeps_generic_tools":PREP_SETUP+r'''
+M.class="FUTURE_CLASS"
+FP.ClassPrep:Refresh();cmd("prep show");M.RunTimers(1)
+assert(FP.ClassPrep:ClassLabel()=="Character" and #FP.ClassPrep:Lines()>0)
+assert(prepRow("food") and prepRow("bandages") and prepRow("bags"))
+assert(not prepRow("water") and not prepRow("gem:5514"))
+''',
+"class_supplies_food_target_validation_and_druid_mana":PREP_SETUP+r'''
+M.class="DRUID";UnitPowerType=function()return 1,"RAGE"end
+cmd("prep food 33");M.RunTimers(1);assert(prepRow("food").goal==33 and prepRow("water"))
+cmd("prep food -1");cmd("prep food 201");assert(FP.cdb.prep.food==33)
+cmd("prep food 0");M.RunTimers(1);assert(not prepRow("food"))
+''',
+"class_supplies_town_picker_and_counts_ignore_hidden_pvp":PREP_SETUP+HUB+r'''
+M.class="PRIEST";FP.settings.pvp.enabled=false;FP.settings.pvp.manual="hide"
+page("town");M.RunTimers(1)
+assert(#H.controls.supplySummary.items>0 and not FP.PvP.frame:IsShown())
+local list=H.controls.personalSupplies
+local row
+for _,b in ipairs(list.rows)do if b.item and b.item.id==159 then row=b;break end end
+assert(row);row:GetScript("OnClick")(row)
+assert(H.controls.supplyItem:GetText()=="159")
+field("supplyTarget",25);click("saveSupply");M.RunTimers(1);H:Refresh()
+assert(FP.cdb.prep.supplies[159]==25 and prepRow("supply:159").missing==13)
+assert(not FP.PvP.frame:IsShown(),"opening town enabled PvP")
+click("removeSupply");M.RunTimers(1);assert(not FP.cdb.prep.supplies[159])
+field("supplyItem",17031);field("supplyTarget",8);click("saveSupply");M.RunTimers(1)
+assert(FP.cdb.prep.supplies[17031]==8)
+field("supplyItem",159);page("display");page("town");assert(H.controls.supplyItem:GetText()=="159","draft overwritten")
+M.inCombat=true;M.FireEvent("PLAYER_REGEN_DISABLED");M.RunTimers(.3);H:Refresh()
+assert(H.controls.supplySummary.items[1].text:find("after combat",1,true))
+''',
+"retired_hunter_audio_assets_and_action_events_stay_silent":HUB+r'''
+assert(not FP.HunterAudio and not FP.settings.hunterAudio)
+assert(not io.open("ForeverPath/Modules/HunterAudioFeedback.lua","rb"))
+for i=1,10 do assert(not io.open(string.format("ForeverPath/Sounds/Hunter/hunter_feedback_%02d.ogg",i),"rb"))end
+M.class="HUNTER";local count=#M.sounds
+for _,id in ipairs({2643,136,1510})do
+ M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","Cast-"..id,id)
+ M.FireEvent("UNIT_SPELLCAST_CHANNEL_START","player","Cast-"..id,id)
+end
+cmd("audio on");cmd("audio test");assert(#M.sounds==count)
+page("display");assert(not H.controls.hunterAudio and not H.controls.audioTest)
+assert(FP.settings.rare.sound,"legitimate rare alert preference removed")
+''',
+})
+
+
+CASES["class_supplies_failed_item_names_request_once_and_recover"] = PREP_SETUP+r'''
+local calls=0
+local old=C_Item.GetItemInfo
+C_Item.GetItemInfo=function(id)if id==999999 then return nil end return old(id)end
+C_Item.RequestLoadItemDataByID=function(id)if id==999999 then calls=calls+1 end end
+assert(FP.ClassPrep:SetSupply(999999,5))
+for i=1,5 do FP.ClassPrep:Refresh();FP.ClassPrep:Supplies(true);M.FireEvent("GET_ITEM_INFO_RECEIVED",999999,false);M.RunTimers(.4)end
+assert(calls==1,"failed item load request loop")
+assert(prepRow("supply:999999").count==0 and prepRow("supply:999999").text:find("Item #999999",1,true))
+C_Item.GetItemInfo=old;M.FireEvent("GET_ITEM_INFO_RECEIVED",999999,true);M.RunTimers(.4)
+assert(prepRow("supply:999999").text:find("Item 999999",1,true))
+'''
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
@@ -2639,16 +2749,26 @@ for name, body in CASES.items():
         print("  " + result.stderr.splitlines()[0])
 
 # Fresh release logins exercise module registration with each actual launch class.
-for player_class in ("SHAMAN", "HUNTER"):
+for player_class in ("SHAMAN", "HUNTER", "MAGE", "WARRIOR", "ROGUE", "PRIEST", "WARLOCK", "DRUID", "PALADIN"):
     boot = BOOT.replace('local FP = {}', 'M.class = "' + player_class + '"\nGetBuildInfo = function() return "1.60.1", "70790", "Nov 4 2026", 16001 end\nlocal FP = {}')
+    boot = boot.replace('local FP = {}', 'ForeverPathDB={settings={hunterAudio={enabled=true,cooldown=1}}}\nForeverPathCharDB={prep={water=35,food=14,supplies={[17031]=9}}}\nlocal FP = {}')
     body = PREP_SETUP + r'''
+assert(not FP.HunterAudio and not FP.settings.hunterAudio)
+assert(FP.cdb.prep.food==14 and FP.cdb.prep.water==35 and FP.cdb.prep.supplies[17031]==9)
+assert(prepRow("food") and prepRow("bandages") and prepRow("supply:17031"))
+assert((prepRow("water")~=nil)==(M.class~="WARRIOR" and M.class~="ROGUE"))
+FP.data.trainers={[1]={n="My trainer",class=M.class,services={Spell={lvl=31,cost=100}}},[2]={n="Other trainer",class="OTHER",services={Other={lvl=31,cost=100}}}}
+assert(#FP.Trainer:NotesForLevel(31)==1)
+assert(not FP.Dungeons:Restriction({classes={M.class}},FP.API.GetCharInfo()))
+addQuest(9001);FP.Planner:Auto("all classes");assert(active() and active().source.questID==9001)
 cmd("prep show"); M.RunTimers(1)
-assert(FP.clientBuild=="70790" and #FP.MagePrep:Lines()>0)
-assert(not prepRow("gem:5514") and not prepRow("reagent:17031"))
+assert(FP.clientBuild=="70790" and #FP.ClassPrep:Lines()>0)
+assert((prepRow("gem:5514")~=nil)==(M.class=="MAGE"))
+assert((prepRow("reagent:17031")~=nil)==(M.class=="MAGE"))
 assert(FP.PvP.frame:IsShown())
-M.FireEvent("PLAYER_REGEN_DISABLED"); assert(#FP.MagePrep:Lines()==0)
+M.FireEvent("PLAYER_REGEN_DISABLED"); assert(#FP.ClassPrep:Lines()==0)
 M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(1)
-assert(#FP.MagePrep:Lines()>0 and #FP.db.errors==0)
+assert(#FP.ClassPrep:Lines()>0 and #FP.db.errors==0)
 '''
     result = subprocess.run([LUA, "-"], input=boot + body, text=True, capture_output=True)
     print(("FAIL " if result.returncode else "PASS ") + "fresh_70790_" + player_class.lower())
@@ -2698,5 +2818,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 6} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13} preflight regressions")
 raise SystemExit(1 if failed else 0)

@@ -928,10 +928,21 @@ local function requestPrepItem(id)
 	pcall(C_Item.RequestLoadItemDataByID, id)
 end
 
+function API.GetPrepItemName(id)
+	if API.InCombat() or not U.Finite(id) or id<=0 then return nil end
+	local fn=has(C_Item,"GetItemInfo") and C_Item.GetItemInfo or (hasg("GetItemInfo") and GetItemInfo)
+	if not fn then return nil end
+	local ok,name=pcall(fn,id)
+	name=ok and safe(name) or nil
+	if type(name)=="string" then return name end
+	requestPrepItem(id) -- one request; a failed item load must not retrigger forever
+	return nil
+end
+
 function API.GetPrepInventory()
 	if API.InCombat() then return nil, "Refresh after combat" end
 	if not has(C_Container, "GetContainerNumSlots") or not has(C_Container, "GetContainerItemInfo") then return nil, "Bag counts unavailable" end
-	local out = { counts = {}, water = 0, bandages = 0, waterKnown = true, bandagesKnown = true }
+	local out = { counts = {}, names = {}, water = 0, food = 0, bandages = 0, waterKnown = true, foodKnown = true, bandagesKnown = true }
 	local lastBag = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
 	if not U.Finite(lastBag) or lastBag < 0 or lastBag > 10 then return nil, "Bag layout unavailable" end
 	for bag = 0, lastBag do
@@ -951,28 +962,35 @@ function API.GetPrepInventory()
 	end
 	local itemInfo = has(C_Item, "GetItemInfo") and C_Item.GetItemInfo or (hasg("GetItemInfo") and GetItemInfo)
 	local itemSpell = has(C_Item, "GetItemSpell") and C_Item.GetItemSpell or (hasg("GetItemSpell") and GetItemSpell)
-	local drinkName
+	local drinkName,foodName
 	if itemSpell then
 		local ok, name = pcall(itemSpell, 159) -- Refreshing Spring Water: localized Drink effect
 		drinkName = ok and safe(name) or nil
+		ok,name=pcall(itemSpell,4540) -- Tough Hunk of Bread: localized Food effect
+		foodName=ok and safe(name) or nil
 	end
 	if type(drinkName) ~= "string" then out.waterKnown = false; requestPrepItem(159) end
+	if type(foodName) ~= "string" then out.foodKnown = false; requestPrepItem(4540) end
 	local level = API.PlayerLevel()
 	for id, count in pairs(out.counts) do
 		local v = itemInfo and { pcall(itemInfo, id) } or {}
 		local name, minLevel, class, subclass = safe(v[2]), safe(v[6]), safe(v[13]), safe(v[14])
+		if type(name)=="string" then out.names[id]=name end
 		if not v[1] or type(name) ~= "string" or not U.Finite(class) or not U.Finite(subclass) then
-			out.waterKnown, out.bandagesKnown = false, false
+			out.waterKnown, out.foodKnown, out.bandagesKnown = false, false, false
 			requestPrepItem(id)
 		elseif class == 0 and subclass == 7 then -- ItemClass.Consumable / ItemConsumableSubclass.Bandage
 			out.bandages = out.bandages + count -- carried stock, not a First Aid/cooldown usability claim
 		elseif class == 0 and subclass == 5 then -- Fooddrink: food and mana potions must not count as water
 			local ok, effect
 			if itemSpell then ok, effect = pcall(itemSpell, id); effect = safe(effect) end
-			if not ok or type(effect) ~= "string" then out.waterKnown = false; requestPrepItem(id)
+			if not ok or type(effect) ~= "string" then out.waterKnown,out.foodKnown = false,false; requestPrepItem(id)
 			elseif effect == drinkName then
 				if not U.Finite(level) or not U.Finite(minLevel) then out.waterKnown = false
 				elseif minLevel <= level then out.water = out.water + count end
+			elseif effect == foodName then
+				if not U.Finite(level) or not U.Finite(minLevel) then out.foodKnown=false
+				elseif minLevel<=level then out.food=out.food+count end
 			end
 		end
 	end
@@ -1587,7 +1605,7 @@ function API.Check()
 		"GetNumTrainerServices", "GetTrainerServiceInfo", "GetTrainerServiceSkillReq", "GetTrainerServiceCost",
 		"NumTaxiNodes", "TaxiNodeName", "TaxiNodePosition", "TaxiNodeCost", "GetTaxiMapID", "GetBindLocation",
 		"GetProfessions", "GetProfessionInfo", "UnitXP", "UnitXPMax", "GetXPExhaustion", "GetServerTime", "CreateVector2D",
-		"GetNumAvailableQuests", "GetAvailableQuestInfo", "GetNumActiveQuests", "GetActiveQuestID", "issecretvalue", "PlaySoundFile",
+		"GetNumAvailableQuests", "GetAvailableQuestInfo", "GetNumActiveQuests", "GetActiveQuestID", "issecretvalue",
 		"UnitUsesAmmo", "UnitClassification", "GetInstanceInfo", "PlaySound" }) do g(n) end -- UnitUsesAmmo: new in 70170
 	for _, pair in ipairs({
 		{ "C_Map", "GetBestMapForUnit" }, { "C_Map", "GetPlayerMapPosition" }, { "C_Map", "GetWorldPosFromMapPos" }, { "C_Map", "GetMapInfo" },
