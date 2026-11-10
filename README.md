@@ -4,9 +4,9 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.11.0)
+## What it does (v0.12.0)
 
-- **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
+- **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Quest rewards, Quest chains, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
 - **Compact next-steps panel** (`/fp panel`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
 - **Arrow** (TomTom-style): rotates with your facing, shows distance and a rough ETA, goes green when you're lined up. Right-click cycles waypoints, shift-right-click clears. `/fp arrow flip` if it ever points the wrong way.
 - **Map pins**: your waypoints on the world map and a pin on the minimap edge. World-map pins sit below WoW's quest markers. Automatic route pins pass mouse input through so quest-area hover and map clicks work normally; manual pins keep click-to-activate and right-click-to-remove controls.
@@ -22,6 +22,16 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Reminders** (`/fp remind`, out of combat only, repeated in chat at most every 10 minutes): low or broken durability, low ammo, bags nearly full, a self-buff you know but do not have (Shaman Lightning Shield, Mage Arcane Intellect and Frost/Ice Armor, Hunter Aspect), a Shaman weapon with no imbue. Buff reads go through Blizzard's secret predicate; in combat the reminder row hides instead of guessing.
 - **Trainer notes** (`/fp trainer`): at a class or profession trainer, what you can learn now, the total cost against your gold and the next level that unlocks something. On a level-up, which recorded trainer teaches something at the new level and what it costs. `/fp trainer 28` asks about a level.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
+
+## Quest reward comparisons (v0.12.0)
+
+Open **ForeverPath → Quest rewards**, or click **Compare rewards** beneath a quest offer/turn-in. The page follows either the quest selected in Blizzard's quest log or the open quest dialog; the two buttons choose the source. It never selects or claims a reward.
+
+- Choice items and guaranteed items are listed separately, with stack vendor value, quest money and XP. Highest vendor value includes ties and appears only when all choice prices are known.
+- Select a reward to see numeric stats alongside equipped gear, with gains and losses. Rings/trinkets show each slot; two-handed weapons compare against both equipped hands together. Hover a reward for its full tooltip.
+- Equipment changes and arriving item data refresh the open page. Missing data stays unavailable, and comparisons pause in combat. Weapon effects, enchants, set bonuses and procs are not fully represented by numeric stats; there is no automatic upgrade score.
+
+This version is source-checked and mock-tested; client layout, tooltips and reward reads await in-game verification. Event objectives and dungeon routing remain the next roadmap items.
 
 ## Quest chains and prerequisites (v0.11.0)
 

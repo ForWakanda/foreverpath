@@ -7,6 +7,7 @@ local H = FP:NewModule("Hub")
 local W = 600
 local SECTIONS = {
 	{"navigation", "Navigation", "Choose your next quest or resume your route."},
+	{"rewards", "Quest rewards", "Compare reward items, equipped gear, and vendor values."},
 	{"chains", "Quest chains", "Explore prerequisites, optional lead-ins, and what comes next."},
 	{"waypoints", "Waypoints", "Save places, enter coordinates, and manage your destinations."},
 	{"professions", "Professions", "Choose a learned recipe and plan the materials for a batch."},
@@ -79,9 +80,9 @@ function H:Create()
 		local key = section[1]
 		self.nav[key] = button(f,section[2],16,-82-(i-1)*34,142,function() self:Select(key) end)
 	end
-	button(f,"Compact panel",16,-415,142,function() FP.Panel:Toggle() end)
-	button(f,"Dungeon quests",16,-447,142,function() f:Hide(); FP.DungeonPanel:Open() end)
-	label(f,"Choose a section.\nChanges save automatically.\n\nDrag the title area to move this window.",20,-493,134)
+	button(f,"Compact panel",16,-465,142,function() FP.Panel:Toggle() end)
+	button(f,"Dungeon quests",16,-497,142,function() f:Hide(); FP.DungeonPanel:Open() end)
+	label(f,"Choose a section.\nChanges save automatically.\n\nDrag the title area to move this window.",20,-539,134)
 	button(f,"Recenter window",16,-620,142,function()
 		s.point,s.x,s.y="CENTER",0,0; f:ClearAllPoints(); f:SetPoint("CENTER"); self:FitWindow()
 	end)
@@ -208,7 +209,9 @@ end
 
 function H:BuildPage(key)
 	local p=self:NewPage(key)
-	if key=="chains" then
+	if key=="rewards" then
+		FP.RewardPanel:Build(self,p)
+	elseif key=="chains" then
 		FP.ChainPanel:Build(self,p)
 	elseif key=="navigation" then
 		self:Text(p,"",function()
