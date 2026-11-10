@@ -390,59 +390,120 @@ local function referenceZones(db)
 end
 
 function API.GetQuestReference(questID)
-	if not API.QuestDatabaseStatus() then return nil end
+	if not U.Finite(questID) or questID<=0 or questID~=math.floor(questID) or not API.QuestDatabaseStatus() then return nil end
 	local ok, result = pcall(function()
 		local db, groups = LibQuestieDB, {}
 		local maps = referenceZones(db)
 		if not maps then return nil end
 		local function get(kind, id, field) return db[kind].Get(id, field) end
 		local objectives = get("Quest", questID, "objectives")
+		if objectives==nil then objectives={} end
 		if type(objectives) ~= "table" then return nil end
-		local function source(group, kind, id, role)
-			if type(id) ~= "number" or id <= 0 then return end
-			local name, spawns = get(kind, id, "name"), get(kind, id, "spawns")
-			if type(name) ~= "string" or type(spawns) ~= "table" then return end
+		local function validID(id) return U.Finite(id) and id>0 and id==math.floor(id) end
+		local function coordinates(group, spawns, name, id, role)
+			if type(spawns)~="table" then return end
 			for area, coords in pairs(spawns) do
-				local mapID = maps[area]
-				local info = mapID and API.GetMapInfo(mapID)
-				-- Outdoor zone frames only. Dungeon sentinels/retired floor maps
-				-- are not coordinates, and are deliberately not guessed here.
-				if info and info.mapType == 3 then
-					for _, xy in ipairs(coords) do
-						local x, y = xy[1], xy[2]
-						if U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID, x/100, y/100) then
-							group.points[#group.points+1] = {mapID=mapID, x=x/100, y=y/100, name=name, entityID=id, role=role}
+				local mapID=maps[area]
+				local info=mapID and API.GetMapInfo(mapID)
+				-- Provider coordinates are already Forever coordinates. Dungeon
+				-- sentinels/floors remain excluded; never apply Era conversion twice.
+				if info and info.mapType==3 and type(coords)=="table" then
+					for i,xy in ipairs(coords) do
+						if i>4096 or #group.points>=4096 then break end
+						local x,y=type(xy)=="table" and xy[1],type(xy)=="table" and xy[2]
+						if U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
+							group.points[#group.points+1]={mapID=mapID,x=x/100,y=y/100,name=name,entityID=id,role=role}
 						end
 					end
 				end
 			end
 		end
-		local function itemSources(group, id, visited, depth)
-			if visited[id] or depth > 3 then return end
-			visited[id] = true
-			for _, spec in ipairs({{"npcDrops","Npc","drop"}, {"objectDrops","Object","object"}, {"vendors","Npc","vendor"}}) do
-				for _, entityID in ipairs(get("Item", id, spec[1]) or {}) do source(group, spec[2], entityID, spec[3]) end
-			end
-			for _, container in ipairs(get("Item", id, "itemDrops") or {}) do itemSources(group, container, visited, depth+1) end
+		local function source(group,kind,id,role)
+			if not validID(id) then return end
+			local name=get(kind,id,"name")
+			if type(name)=="string" then coordinates(group,get(kind,id,"spawns"),name,id,role) end
 		end
-		for index, kind in ipairs({"Npc", "Object", "Item"}) do
-			for _, row in ipairs(objectives[index] or {}) do
-				local name = get(kind, row[1], "name")
-				if type(name) == "string" then
-					local group = {kind=kind, id=row[1], name=name, text=row[2], points={}}
-					if kind == "Item" then itemSources(group, row[1], {}, 0)
-					else source(group, kind, row[1], kind == "Npc" and "kill" or "object") end
-					table.sort(group.points, function(a,b)
-						if a.mapID ~= b.mapID then return a.mapID < b.mapID end
-						if a.x ~= b.x then return a.x < b.x end
-						if a.y ~= b.y then return a.y < b.y end
-						if a.entityID ~= b.entityID then return a.entityID < b.entityID end
-						return a.role < b.role
-					end)
-					groups[#groups+1] = group
+		local function itemSources(group,id,visited,depth)
+			if not validID(id) or visited[id] or depth>3 then return end
+			visited[id]=true
+			for _,spec in ipairs({{"npcDrops","Npc","drop"},{"objectDrops","Object","object"},{"vendors","Npc","vendor"}}) do
+				local ids=get("Item",id,spec[1])
+				if type(ids)=="table" then for i,entityID in ipairs(ids) do
+					if i>256 then break end;source(group,spec[2],entityID,spec[3])
+				end end
+			end
+			local containers=get("Item",id,"itemDrops")
+			if type(containers)=="table" then for i,container in ipairs(containers) do
+				if i>256 then break end;itemSources(group,container,visited,depth+1)
+			end end
+		end
+		local function append(group)
+			table.sort(group.points,function(a,b)
+				if a.mapID~=b.mapID then return a.mapID<b.mapID end
+				if a.x~=b.x then return a.x<b.x end
+				if a.y~=b.y then return a.y<b.y end
+				if a.entityID~=b.entityID then return a.entityID<b.entityID end
+				return a.role<b.role
+			end)
+			groups[#groups+1]=group
+		end
+		for index,kind in ipairs({"Npc","Object","Item"}) do
+			if type(objectives[index])=="table" then for i,row in ipairs(objectives[index]) do
+				if i>64 then break end
+				if type(row)=="table" and validID(row[1]) then
+					local name=get(kind,row[1],"name")
+					if type(name)=="string" then
+						local group={kind=kind,id=row[1],key=kind..":"..i..":"..row[1],name=name,text=type(row[2])=="string" and row[2] or nil,points={}}
+						if kind=="Item" then itemSources(group,row[1],{},0)
+						else source(group,kind,row[1],kind=="Npc" and "kill" or "object") end
+						append(group)
+					end
 				end
-			end
+			end end
 		end
+		-- Multiple creatures can grant one shared quest credit. Root IDs are
+		-- labels, sometimes invisible credit dummies, not additional spawn lists.
+		if type(objectives[5])=="table" then for i,row in ipairs(objectives[5]) do
+			if i>64 then break end
+			if type(row)=="table" and type(row[1])=="table" and validID(row[2]) then
+				local name=get("Npc",row[2],"name")
+				if type(name)~="string" then name=nil end
+				local text=type(row[3])=="string" and row[3]~="" and row[3] or nil
+				local group={kind="Credit",id=row[2],key="Credit:"..i..":"..row[2],name=text or name or "Quest-credit targets",text=text,points={}}
+				for j,id in ipairs(row[1]) do if j>256 then break end;source(group,"Npc",id,"credit") end
+				append(group)
+			end
+		end end
+		-- triggerEnd is a completion area, not an escort starting point or path.
+		local trigger=get("Quest",questID,"triggerEnd")
+		if type(trigger)=="table" and type(trigger[1])=="string" and trigger[1]~="" then
+			local group={kind="Event",id=questID,key="Event",name=trigger[1],text=trigger[1],points={}}
+			coordinates(group,trigger[2],trigger[1],questID,"event")
+			append(group)
+		end
+		-- Only unbound extra notes (index 0) can be shown without assuming the
+		-- provider's ordering matches the client's objective ordering. They are
+		-- quest-level hints, never completed-objective counts or auto-route inputs.
+		local extras=get("Quest",questID,"extraObjectives")
+		if type(extras)=="table" then for i,row in ipairs(extras) do
+			if i>64 then break end
+			if type(row)=="table" and row[4]==0 and type(row[3])=="string" and row[3]~="" then
+				local group={kind="Hint",id=questID,key="Hint:"..i,name=row[3],text=row[3],points={}}
+				if row[5]==nil then coordinates(group,row[1],row[3],questID,"hint")
+				elseif type(row[5])=="table" then
+					-- Provider references supersede custom coordinates when present.
+					for j,ref in ipairs(row[5]) do
+						if j>256 then break end
+						if type(ref)=="table" then
+							if ref[1]=="monster" then source(group,"Npc",ref[2],"hint")
+							elseif ref[1]=="object" then source(group,"Object",ref[2],"hint")
+							elseif ref[1]=="item" then itemSources(group,ref[2],{},0) end
+						end
+					end
+				end
+				append(group)
+			end
+		end end
 		return groups
 	end)
 	if ok then return result end

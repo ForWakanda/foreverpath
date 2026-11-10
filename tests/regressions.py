@@ -2368,6 +2368,139 @@ GetQuestLogChoiceInfo=function()return "Huge",nil,1e300,2,true end
 local s=rewards();assert(s.items[1].value==nil and not s.items[2].bestVendor)
 '''
 
+EVENTS=OBJECTIVES+r'''
+data.Quest[9101].triggerEnd={"Explore the ruined tower",{[15]={{45,55},{-1,-1},{120,50}},[17]={{40,40}}}}
+q.objectives={objective("Explore the ruined tower","event"),objective("Cave Spider slain: 0/3","monster")}
+Q:Refresh(true)
+local function eventPin(kind)
+ for _,pin in ipairs(Q:WorldPins(1445))do for _,entry in ipairs(pin.entries)do if entry.group.kind==kind then return pin end end end
+end
+'''
+CASES.update({
+"events_trigger_coordinates_and_progress_match":EVENTS+r'''
+assert(Q.matched==2 and Q.events==1 and Q.hints==0 and Q.missing==0)
+assert(Q.groups[1].kind=="Event" and #Q.groups[1].points==2 and Q.groups[1].points[1].mapID==1413)
+local pin=eventPin("Event");assert(pin and pin.x==.45 and pin.y==.55)
+local owner=CreateFrame("Frame");Q:Tooltip(pin,owner)
+assert(GameTooltip:IsOwned(owner))
+assert(Q:Guide(pin) and active().title:find("Event:",1,true))
+assert(active().desc:find("Arrival alone",1,true) and active().source.objIndex==1)
+q.objectives[1].finished=true;Q:Refresh();assert(Q.events==0 and not active())
+''',
+"events_type_singleton_counts_finished_rows_and_rejects_ambiguity":EVENTS+r'''
+q.objectives[1].text="Localized event wording";Q:Refresh();assert(Q.events==1)
+q.objectives[3]=objective("Other event","event",true);Q:Refresh();assert(Q.events==0)
+q.objectives[1].text="Explore the ruined tower";Q:Refresh();assert(Q.events==1)
+q.objectives[3].text=q.objectives[1].text;Q:Refresh();assert(Q.events==0)
+q.objectives[3]=nil;q.objectives[1].type="spell";Q:Refresh();assert(Q.events==0)
+''',
+"events_empty_or_unknown_live_progress_not_invented":EVENTS+r'''
+q.objectives={};Q:Refresh();assert(Q.matched==0 and #Q.groups==0)
+q.objectives={objective("Explore the ruined tower","event")};q.objectives[1].finished=nil
+Q:Refresh();assert(Q.events==0 and Q.missing==1)
+q.objectives[1].finished=false;Q:Refresh();assert(Q.events==1)
+''',
+"events_no_ordinary_objectives_table_required":EVENTS+r'''
+data.Quest[9101].objectives=nil;q.objectives={objective("Explore the ruined tower","event")}
+Q:Refresh(true);assert(Q.events==1 and Q.missing==0)
+local old=FP.API.GetMapInfo
+FP.API.GetMapInfo=function()return {mapType=4}end
+Q:Refresh(true);assert(Q.events==0 and Q.missing==1)
+FP.API.GetMapInfo=old;data.Quest[9101].triggerEnd[2]={[15]={{-1,-1},{"bad",55},{},{45,55}}}
+Q:Refresh(true);assert(Q.events==1 and #Q.groups[1].points==1)
+''',
+"events_credit_targets_use_members_not_root_dummy":OBJECTIVES+r'''
+data.Npc[99]={name="Invisible credit dummy",spawns={[15]={{99,99}}}}
+data.Quest[9101].objectives={[5]={{{11,12},99,"Creatures freed",17}}}
+q.objectives={objective("Creatures freed: 0/3","monster")};Q:Refresh(true)
+assert(Q.events==1 and Q.groups[1].kind=="Credit" and #Q.groups[1].points==5)
+for _,p in ipairs(Q.groups[1].points) do assert(p.entityID~=99 and p.role=="credit") end
+q.objectives[1].text="Different credit text: 0/3";Q:Refresh();assert(Q.events==1)
+q.objectives[2]=objective("Other creature slain","monster",true);Q:Refresh();assert(Q.events==0)
+q.objectives[1].text="Creatures freed: 0/3";Q:Refresh();assert(Q.events==1)
+data.Quest[9101].objectives[1]={{11}};q.objectives[1].text="Different credit text";q.objectives[2]=nil
+Q:Refresh(true);assert(Q.events==0)
+''',
+"events_credit_and_ordinary_matching_ambiguity":OBJECTIVES+r'''
+data.Quest[9101].objectives={[1]={{11}},[5]={{{12},11,nil,0}}}
+q.objectives={objective("Cave Spider slain: 0/3","monster")};Q:Refresh(true)
+assert(Q.matched==0 and Q.missing==1)
+''',
+"events_quest_hints_are_separate_and_never_auto_route":EVENTS+r'''
+data.Quest[9101].extraObjectives={
+ {{[15]={{46,56}}},4,"Use the brazier",0},
+ {nil,4,"Talk to the scout",0,{{"monster",13}}},
+ {nil,4,"Indexed hint not safely bound",1,{{"object",21}}},
+}
+Q:Refresh(true);assert(Q.events==1 and Q.hints==2 and Q.matched==2)
+local g;for _,row in ipairs(Q.groups)do if row.kind=="Hint"then g=row;break end end
+assert(g and not g.objIndex)
+local saved=Q.groups;Q.groups={g};assert(not Q:Nearest(9101,1) and not Q:Nearest(9101,nil));Q.groups=saved
+local pin=eventPin("Hint");assert(Q:Guide(pin) and active().title:find("Hint:",1,true))
+assert(active().desc:find("individual objective progress is not tracked",1,true))
+q.objectives[1].finished=true;Q:Refresh();assert(active() and Q.hints==2)
+M.complete[9101]=true;Q:Refresh();assert(not active() and #Q.groups==0)
+''',
+"events_hint_references_and_custom_coordinates_do_not_mix":EVENTS+r'''
+data.Quest[9101].extraObjectives={
+ {{[15]={{99,99}}},4,"Open the crate",0,{{"object",21}}},
+ {nil,4,"Obtain the key",0,{{"item",32}}},
+}
+Q:Refresh(true);assert(Q.hints==2)
+for _,g in ipairs(Q.groups)do if g.kind=="Hint"then for _,p in ipairs(g.points)do assert(p.x~=.99)end end end
+local last=Q.groups[#Q.groups];assert(#last.points==3 and last.points[1].entityID==11)
+''',
+"events_hint_display_toggle_and_selected_quest_filter":EVENTS+HUB+r'''
+data.Quest[9101].extraObjectives={{{[15]={{46,56}}},4,"Use the brazier",0}}
+Q:Refresh(true);assert(eventPin("Hint"))
+page("display");check("displayquestEventHints",false);assert(not eventPin("Hint") and eventPin("Event"))
+check("displayquestEventHints",true);assert(eventPin("Hint"))
+FP.settings.questSelectedOnly=true;C_SuperTrack={GetSuperTrackedQuestID=function()return 9102 end}
+assert(#Q:WorldPins(1445)==0)
+page("navigation");assert(Q:Summary():find("1 event/credit objectives; 1 quest hints",1,true))
+assert(FP.db.questLocations.events==1 and FP.db.questLocations.hints==1)
+''',
+"events_clicked_objective_follows_reordering_and_cleans_up":EVENTS+r'''
+assert(Q:Guide(eventPin("Event")))
+local wp=active();q.objectives[1],q.objectives[2]=q.objectives[2],q.objectives[1]
+Q:Refresh();assert(active()==wp and wp.source.objIndex==2)
+q.objectives[1].finished=true;Q:Refresh();assert(active()==wp)
+q.objectives[2].finished=true;Q:Refresh();assert(not active())
+''',
+"events_stale_pin_click_rejects_completed_or_missing_target":EVENTS+r'''
+local pin=eventPin("Event");q.objectives[1].finished=true
+assert(Q:Guide(pin)==false and not active())
+q.objectives[1].finished=false;Q:Refresh();pin=eventPin("Event")
+M.quests={};assert(Q:Guide(pin)==false and #Q.groups==0)
+''',
+"events_native_navigation_wins_and_manual_route_survives_refresh":EVENTS+r'''
+M.mapID=1445;M.px=.45;M.py=.55;FP.Pos:Refresh(true)
+local m,x,y,how=FP.Planner:ResolveObjective(9101,1)
+assert(m==1445 and x==.45 and how:find("event completion area:",1,true))
+q.waypoint={1445,.2,.3};m,x,y,how=FP.Planner:ResolveObjective(9101,1);assert(x==.2 and how=="waypoint")
+cmd("way 60 60 My manual waypoint");local wp=active()
+q.objectives[1].finished=true;Q:Refresh();assert(active()==wp)
+''',
+"events_minimap_and_automatic_lifecycle_without_commands":EVENTS+r'''
+M.mapID=1445;M.px=.45;M.py=.55;FP.Pos:Refresh(true)
+FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+local found=false
+for _,f in ipairs(FP.Pins.objectiveMini)do if f:IsShown()then for _,e in ipairs(f.point.entries)do if e.group.kind=="Event"then found=true end end end end
+assert(found)
+q.objectives[1].finished=true;M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(1);M.RunTimers(1)
+assert(Q.events==0)
+assert(#FP.db.errors==0)
+''',
+"events_malformed_reference_data_is_bounded_and_protected":EVENTS+r'''
+data.Quest[9101].triggerEnd={"Explore the ruined tower",{[15]={false,{}, {45,55}, {0/0,1}}}}
+data.Quest[9101].extraObjectives={{nil,4,"Unknown binding",nil},false,{nil,4,"Bad refs",0,{false}}}
+Q:Refresh(true);assert(Q.events==1 and Q.hints==0)
+data.Quest[9101].triggerEnd={"Explore the ruined tower",{[15]={{M.Secret(),55}}}}
+Q:Refresh(true);assert(Q.events==0 and #FP.db.errors==0)
+assert(not FP.API.GetQuestReference(nil))
+''',
+})
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
