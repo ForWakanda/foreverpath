@@ -2501,6 +2501,135 @@ assert(not FP.API.GetQuestReference(nil))
 ''',
 })
 
+
+DUNGEON_ROUTES=OBJECTIVES+r'''
+local support={private={areaIdToUiMapId="return {[15]=1445,[17]=1413,[718]=9999,[10014]=9998}",dungeons={
+ [718]={"Wailing Caverns",{10014},17,{{17,46,36.5},{15,40,50}}},
+ [2017]={"Stratholme",nil,17,{{17,26.52,10.36},{15,41.45,17.74}}},
+ [2437]={"Ragefire Chasm",nil,17,{{17,52.6,49}}},
+ [1583]={"Blackrock Spire",nil,17,{{17,34.8,85.3},{15,29.4,38.3}}},
+}}}
+LibQuestieDB.Support.Get=function()return support end
+M.mapID=1413;M.px=.4;M.py=.4;FP.Pos:Refresh(true)
+'''
+CASES.update({
+"dungeon_entrances_authored_aliases_and_native_outdoor_maps":DUNGEON_ROUTES+r'''
+local a=FP.API.GetDungeonEntrances(718);local b=FP.API.GetDungeonEntrances(10014)
+assert(#a==2 and #b==2 and a[1].mapID==1413 and a[1].x==.46 and a[1].entrance)
+assert(b[1].areaID==718 and a[1]~=b[1])
+a[1].x=.9;assert(FP.API.GetDungeonEntrances(718)[1].x==.46,"provider data mutated")
+assert(#FP.API.GetDungeonEntrances(99999)==0)
+assert(#FP.Dungeons:Entrances("the-drowned-city")==0)
+assert(FP.Dungeons:Entrances("stratholme-service-gate")[1].entranceIndex==2)
+assert(FP.Dungeons:Entrances("stratholme-main-gate")[1].entranceIndex==1)
+''',
+"dungeon_sentinels_resolve_before_retired_floor_lookup":DUNGEON_ROUTES+r'''
+data.Npc[11].spawns={[10014]={{-1,-1},{-1,-1},{25,30}},[718]={{20,20}},[15]={{30,40}}}
+local refs=FP.API.GetQuestReference(9101);local pts=refs[1].points
+assert(#pts==3,"duplicated sentinel or legacy floor accepted")
+local entrances=0
+for _,p in ipairs(pts)do assert(p.mapID~=9998 and p.mapID~=9999);if p.entrance then entrances=entrances+1;assert(p.dungeonName=="Wailing Caverns" and p.entityID==11 and p.role=="entrance")end end
+assert(entrances==2)
+''',
+"dungeon_missing_malformed_entrances_never_invent_points":DUNGEON_ROUTES+r'''
+data.Npc[11].spawns={[10014]={{-1,-1}}}
+support.private.dungeons[718][4]={{17,101,20},{999999,30,40},false,{17,-1,-1}}
+assert(#FP.API.GetDungeonEntrances(718)==0 and #FP.API.GetQuestReference(9101)[1].points==0)
+support.private.dungeons[718]=false;assert(#FP.API.GetDungeonEntrances(10014)==0)
+support.private.dungeons=nil;assert(#FP.API.GetDungeonEntrances(718)==0)
+LibQuestieDB.Support.Get=function()error("provider unavailable")end
+assert(#FP.API.GetDungeonEntrances(718)==0)
+LibQuestieDB=nil;assert(#FP.API.GetDungeonEntrances(718)==0)
+''',
+"dungeon_outdoor_entrance_map_must_be_native_zone":DUNGEON_ROUTES+r'''
+local old=FP.API.GetMapInfo
+FP.API.GetMapInfo=function(id)if id==1413 then return {mapType=4} end return old(id)end
+local p=FP.API.GetDungeonEntrances(718);assert(#p==1 and p[1].mapID==1445)
+''',
+"dungeon_objective_fallback_labels_click_and_native_priority":DUNGEON_ROUTES+r'''
+data.Npc[11].spawns={[10014]={{-1,-1}}};Q:Refresh(true)
+local m,x,y,how,entrance=FP.Planner:ResolveObjective(9101,2)
+assert(m==1413 and entrance and how:find("dungeon entrance",1,true))
+local pin
+for _,p in ipairs(Q:WorldPins(1413))do for _,e in ipairs(p.entries)do if e.point.entrance and e.group.objIndex==2 then pin=p end end end
+assert(pin and Q:Guide(pin))
+assert(active().source.entrance and active().title:find("Entrance:",1,true))
+Q:Tooltip(pin,UIParent)
+q.waypoint={1445,.2,.3}
+local m,x,y,how,entrance=FP.Planner:ResolveObjective(9101,2)
+assert(m==1445 and how=="waypoint" and not entrance)
+''',
+"dungeon_entry_cleans_only_entrance_routes_and_blocks_new_ones":DUNGEON_ROUTES+r'''
+FP.Waypoints:Clear()
+local keep=FP.Waypoints:Add(1413,.8,.8,"Meeting place")
+assert(FP.Dungeons:GuideEntrance("wailing-caverns",2))
+data.Npc[11].spawns={[10014]={{-1,-1}}};Q:Refresh(true)
+local pin
+for _,p in ipairs(Q:WorldPins(1413))do for _,e in ipairs(p.entries)do if e.point.entrance and e.group.objIndex==2 then pin=p end end end
+assert(pin and Q:Guide(pin))
+FP.Planner.waiting={entrance=true}
+M.instance={type="party"};M.FireEvent("ZONE_CHANGED_NEW_AREA")
+assert(#FP.Waypoints.list==1 and active()==keep and not FP.Planner.waiting)
+assert(not FP.Dungeons:GuideEntrance("wailing-caverns",1))
+assert(not Q:Guide(pin) and not Q:Nearest(9101,2))
+M.instance=nil;assert(Q:Nearest(9101,2))
+''',
+"dungeon_planner_arrival_never_completes_objective":DUNGEON_ROUTES+r'''
+FP.Waypoints:Clear();FP.Planner.paused=nil
+q.objectives={objective("Cave Spider slain: 0/3","monster")}
+data.Npc[11].spawns={[10014]={{-1,-1}}};Q:Refresh(true)
+local step=FP.Planner:Build()[1];assert(step.entrance)
+FP.Planner:Go(step);assert(active().source.entrance and active().title:find("Entrance:",1,true))
+local wp=active();FP:Fire("WAYPOINT_ARRIVED",wp)
+assert(FP.Planner.waiting.entrance and not q.objectives[1].finished)
+M.instance={type="party"};M.FireEvent("PLAYER_ENTERING_WORLD");FP.Planner:Auto("instance")
+assert(not active() and not FP.Planner.waiting)
+assert(not FP.Planner:Go(step),"stale entrance step accepted inside instance")
+''',
+"dungeon_contacts_pickup_and_ender_separate_native_turnin_wins":DUNGEON_ROUTES+r'''
+data.Quest[1486]={name="Deviate Hides",startedBy={{13}},finishedBy={{11}}}
+data.Npc[11].spawns={[10014]={{-1,-1}}}
+assert(FP.API.GetQuestChainStarters(1486)[1].id==13)
+local ends=FP.API.GetQuestEnders(1486);assert(ends[1].id==11 and ends[1].points[1].entrance)
+local quest=addQuest(1486,true);quest.waypoint=nil
+local m,x,y,how,entrance=FP.Planner:ResolveTurnIn(1486)
+assert(m==1413 and entrance and how:find("dungeon entrance",1,true))
+quest.waypoint={1413,.8,.9};assert(select(4,FP.Planner:ResolveTurnIn(1486))=="waypoint")
+quest.waypoint=nil;M.instance={type="party"};assert(FP.Planner:ResolveTurnIn(1486)==nil)
+''',
+"dungeon_pickup_inside_instance_is_entrance_and_clears_on_entry":DUNGEON_ROUTES+r'''
+data.Quest[1486]={name="Deviate Hides",startedBy={{11}}}
+data.Npc[11].spawns={[10014]={{-1,-1}}}
+assert(FP.Dungeons:GuideQuest(1486));assert(active().source.type=="chain-pickup" and active().source.entrance)
+assert(table.concat(FP.QuestChains:Details(1486,FP.QuestChains:Context()),"\n"):find("giver inside",1,true))
+M.instance={type="party"};M.FireEvent("ZONE_CHANGED_NEW_AREA");assert(not active())
+assert(not FP.QuestChains:GuidePickup(1486))
+''',
+"dungeon_panel_browsing_route_selection_and_chain_link":DUNGEON_ROUTES+r'''
+local P=FP.DungeonPanel
+FP.Waypoints:Clear();local keep=FP.Waypoints:Add(1413,.8,.8,"Meeting")
+P:Open("wailing-caverns");assert(active()==keep and P.entranceButton:IsEnabled())
+P.entranceNext:GetScript("OnClick")();assert(P.entranceIndex==2 and active()==keep)
+P.entranceButton:GetScript("OnClick")();assert(active().mapID==1445 and active().source.type=="dungeon-entrance")
+P:Select("the-drowned-city");assert(not P.entranceButton:IsEnabled() and not P.guideQuest:IsEnabled() and not P.viewChain:IsEnabled())
+assert(P.entranceText:GetText():find("unavailable",1,true))
+P:Select("wailing-caverns");P.selectedQuest=1486;P:RefreshDetails();assert(P.guideQuest:IsEnabled())
+P.viewChain:GetScript("OnClick")();assert(not P.frame:IsShown() and FP.Hub.selected=="chains")
+''',
+"dungeon_quest_guidance_rechecks_state_and_never_hijacks_on_failure":DUNGEON_ROUTES+r'''
+local keep=FP.Waypoints:Add(1413,.8,.8,"Meeting")
+assert(not FP.Dungeons:GuideQuest(123456) and active()==keep)
+C_QuestLog.IsQuestFlaggedCompleted=function(id)return id==1486 end
+assert(not FP.Dungeons:GuideQuest(1486) and active()==keep)
+C_QuestLog.IsQuestFlaggedCompleted=function()return false end
+local q=addQuest(1486,true);FP.DungeonPanel:Open("wailing-caverns")
+FP.DungeonPanel.selectedQuest=1486;FP.DungeonPanel:RefreshDetails()
+assert(FP.DungeonPanel.guideQuest:GetText()=="Guide turn-in")
+assert(FP.Dungeons:GuideQuest(1486) and active().source.kind=="turnin")
+''',
+})
+
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

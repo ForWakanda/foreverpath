@@ -133,7 +133,7 @@ function Q:Nearest(questID, index)
 		if group.kind~="Hint" and group.questID == questID and group.objIndex == index then
 			for _, p in ipairs(group.points) do
 				local d = FP.Pos:DistanceTo(p)
-				if d and (not distance or d < distance) then best, distance = p, d end
+				if (not p.entrance or not API.InInstance()) and d and (not distance or d < distance) then best, distance = p, d end
 			end
 		end
 	end
@@ -161,14 +161,17 @@ function Q:Guide(pin)
 	end
 	if not entry then return false end
 	local g,p=entry.group,entry.point
+	if p.entrance and API.InInstance() then return false end
 	local note="Known location; search nearby. Spawns and drops are not guaranteed."
 	if g.kind=="Event" then note="Event completion area; follow the quest instructions. Arrival alone does not complete an event or escort."
 	elseif g.kind=="Credit" then note="Possible quest-credit targets; follow the quest instructions for the required action."
 	elseif g.kind=="Hint" then note="Quest-level hint; individual objective progress is not tracked for this marker." end
+	if p.entrance then note="Outdoor entrance to "..p.dungeonName.."; continue inside following the quest instructions. Interior paths are not mapped." end
 	FP.Waypoints:RemoveBySource("quest-location")
 	local title=g.kind=="Event" and ("Event: "..g.name) or ((g.kind=="Hint" and "Hint: " or "")..p.name.." — "..g.name)
+	if p.entrance then title="Entrance: "..p.dungeonName.." — "..g.name end
 	FP.Waypoints:Add(p.mapID,p.x,p.y,title,{
-		source={type="quest-location",questID=g.questID,objIndex=g.objIndex,refKey=g.refKey,objectiveKey=g.objectiveKey},
+		source={type="quest-location",questID=g.questID,objIndex=g.objIndex,refKey=g.refKey,objectiveKey=g.objectiveKey,entrance=p.entrance},
 		desc=g.title..": "..note,radius=20})
 	return true
 end
@@ -180,7 +183,9 @@ function Q:Tooltip(pin, owner)
 		if i > 8 then GameTooltip:AddLine("More objectives share this area…", .7,.7,.7); break end
 		local p,g = entry.point,entry.group
 		local label=g.kind=="Event" and "Event completion area" or g.kind=="Hint" and "Quest hint" or g.kind=="Credit" and "Possible quest-credit target" or nil
+		if p.entrance then label="Dungeon entrance: "..p.dungeonName end
 		GameTooltip:AddLine((label and (label..": ") or "")..p.name..(p.role=="vendor" and " (vendor)" or ""),1,1,1)
+		if p.entrance then GameTooltip:AddLine("Outdoor approach; the quest target is inside. Interior paths are not mapped.",.7,.8,1,true) end
 		if g.kind=="Hint" then GameTooltip:AddLine("Not tied to individual progress; remains until the quest is complete.",.7,.8,1,true)
 		elseif g.kind=="Event" then GameTooltip:AddLine("Follow the quest instructions; this is not an escort route or proof of completion.",.7,.8,1,true) end
 		GameTooltip:AddLine(tostring(g.title) .. " — " .. tostring(g.text), .8,.8,.8,true)
