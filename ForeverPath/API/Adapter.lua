@@ -389,6 +389,80 @@ local function referenceZones(db)
 	return maps
 end
 
+
+-- Provider dungeon AreaIDs (including synthetic aliases) describe instance
+-- membership, not native floor maps. Only authored outdoor entrance triples
+-- may turn their {-1,-1} markers into navigable points.
+local function referenceDungeon(db, area)
+	local support = db.Support and db.Support.Get and db.Support.Get("ZoneDB")
+	local entries = support and support.private and support.private.dungeons
+	if type(entries) ~= "table" then return nil end
+	if type(entries[area]) == "table" then return entries[area], area end
+	local count=0
+	for id,entry in pairs(entries) do
+		count=count+1; if count>512 then break end
+		if type(entry)=="table" and type(entry[2])=="table" then
+			for i,alias in ipairs(entry[2]) do
+				if i>64 then break end
+				if alias==area then return entry,id end
+			end
+		end
+	end
+end
+
+local function referenceEntrances(db, maps, area)
+	local entry,id=referenceDungeon(db,area)
+	local out={}
+	if not entry or type(entry[1])~="string" or type(entry[4])~="table" then return out end
+	for i,tuple in ipairs(entry[4]) do
+		if i>16 then break end
+		if type(tuple)=="table" then
+			local mapID,x,y=maps[tuple[1]],tuple[2],tuple[3]
+			local info=mapID and API.GetMapInfo(mapID)
+			if info and info.mapType==3 and U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
+				out[#out+1]={mapID=mapID,x=x/100,y=y/100,name=entry[1],dungeonName=entry[1],
+					areaID=id,entrance=true,entranceIndex=i,role="entrance"}
+			end
+		end
+	end
+	return out
+end
+
+function API.GetDungeonEntrances(area)
+	if not U.Finite(area) or area<=0 or not API.QuestDatabaseStatus() then return {} end
+	local ok,out=pcall(function() return referenceEntrances(LibQuestieDB,referenceZones(LibQuestieDB) or {},area) end)
+	return ok and out or {}
+end
+
+local function referencePoints(db,maps,spawns,name,id,role)
+	local out={}
+	if type(spawns)~="table" then return out end
+	local count=0
+	for area,coords in pairs(spawns) do
+		count=count+1; if count>512 then break end
+		local dungeon=referenceDungeon(db,area)
+		local mapID=maps[area]
+		local info=not dungeon and mapID and API.GetMapInfo(mapID)
+		if type(coords)=="table" then
+			local routed=false
+			for i,xy in ipairs(coords) do
+				if i>4096 or #out>=4096 then break end
+				local x,y=type(xy)=="table" and xy[1],type(xy)=="table" and xy[2]
+				if dungeon and x==-1 and y==-1 and not routed then
+					routed=true
+					for _,p in ipairs(referenceEntrances(db,maps,area)) do
+						if #out>=4096 then break end
+						p.name,p.entityID=name,id; out[#out+1]=p
+					end
+				elseif info and info.mapType==3 and U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
+					out[#out+1]={mapID=mapID,x=x/100,y=y/100,name=name,entityID=id,role=role}
+				end
+			end
+		end
+	end
+	return out
+end
+
 function API.GetQuestReference(questID)
 	if not U.Finite(questID) or questID<=0 or questID~=math.floor(questID) or not API.QuestDatabaseStatus() then return nil end
 	local ok, result = pcall(function()
@@ -401,21 +475,9 @@ function API.GetQuestReference(questID)
 		if type(objectives) ~= "table" then return nil end
 		local function validID(id) return U.Finite(id) and id>0 and id==math.floor(id) end
 		local function coordinates(group, spawns, name, id, role)
-			if type(spawns)~="table" then return end
-			for area, coords in pairs(spawns) do
-				local mapID=maps[area]
-				local info=mapID and API.GetMapInfo(mapID)
-				-- Provider coordinates are already Forever coordinates. Dungeon
-				-- sentinels/floors remain excluded; never apply Era conversion twice.
-				if info and info.mapType==3 and type(coords)=="table" then
-					for i,xy in ipairs(coords) do
-						if i>4096 or #group.points>=4096 then break end
-						local x,y=type(xy)=="table" and xy[1],type(xy)=="table" and xy[2]
-						if U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
-							group.points[#group.points+1]={mapID=mapID,x=x/100,y=y/100,name=name,entityID=id,role=role}
-						end
-					end
-				end
+			for _,p in ipairs(referencePoints(db,maps,spawns,name,id,role)) do
+				if #group.points>=4096 then break end
+				group.points[#group.points+1]=p
 			end
 		end
 		local function source(group,kind,id,role)
@@ -559,31 +621,20 @@ function API.GetQuestChainRecord(id)
 	return ok and q or nil
 end
 
--- Names and known pickup coordinates are informational, not live quest offers.
-function API.GetQuestChainStarters(id)
-	if not API.QuestDatabaseStatus() then return {} end
+-- Reference contacts are informational, not live offers/turn-in confirmation.
+local function questContacts(id,field)
+	if not U.Finite(id) or id<=0 or not API.QuestDatabaseStatus() then return {} end
 	local ok, result = pcall(function()
 		local db, out = LibQuestieDB, {}
 		local maps = referenceZones(db) or {}
-		local starts = db.Quest.Get(id,"startedBy") or {}
+		local contacts = db.Quest.Get(id,field) or {}
 		for i,kind in ipairs({"Npc","Object","Item"}) do
-			for _, entityID in ipairs(starts[i] or {}) do
+			for n, entityID in ipairs(contacts[i] or {}) do
+				if n>256 then break end
 				local name = db[kind].Get(entityID,"name")
 				if type(name) == "string" then
 					local entry = {name=name,kind=kind,id=entityID,points={}}
-					if kind ~= "Item" then
-						for area,points in pairs(db[kind].Get(entityID,"spawns") or {}) do
-							local mapID = maps[area]
-							local info = mapID and API.GetMapInfo(mapID)
-							if info and info.mapType == 3 then
-								for _,xy in ipairs(points) do
-									if U.Finite(xy[1]) and U.Finite(xy[2]) and U.ValidMapPoint(mapID,xy[1]/100,xy[2]/100) then
-										entry.points[#entry.points+1]={mapID=mapID,x=xy[1]/100,y=xy[2]/100,name=name}
-									end
-								end
-							end
-						end
-					end
+					if kind ~= "Item" then entry.points=referencePoints(db,maps,db[kind].Get(entityID,"spawns"),name,entityID,field) end
 					out[#out+1] = entry
 				end
 			end
@@ -592,6 +643,8 @@ function API.GetQuestChainStarters(id)
 	end)
 	return ok and result or {}
 end
+function API.GetQuestChainStarters(id) return questContacts(id,"startedBy") end
+function API.GetQuestEnders(id) return questContacts(id,"finishedBy") end
 
 function API.GetQuestTitle(questID)
 	if has(C_QuestLog, "GetTitleForQuestID") then

@@ -1,7 +1,7 @@
 local _, FP = ...
 local D, API = FP.Dungeons, FP.API
 local P = FP:NewModule("DungeonPanel")
-local DUNGEON_ROWS, QUEST_ROWS = 17, 6
+local DUNGEON_ROWS, QUEST_ROWS = 17, 5
 
 local function label(parent, x, y, width, font)
     local text = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
@@ -13,6 +13,8 @@ local function button(parent, x, y, w, text, fn)
     b:SetSize(w, 22); b:SetPoint("TOPLEFT", x, y); b:SetText(text); b:SetScript("OnClick", fn)
     return b
 end
+
+local function enabled(b,value) if value then b:Enable() else b:Disable() end end
 
 function P:OnInit()
     FP.cdb.dungeonChecklist = FP.cdb.dungeonChecklist or {}
@@ -47,10 +49,18 @@ function P:OnInit()
         self.settings.all = not self.settings.all; self.questPage=1; self:Refresh()
     end)
     label(f, 16, -572, 210):SetText("Includes item starts and follow-ups.\nClick a quest for pickup and chain details.")
+    self.entranceButton = button(f, 240, -88, 140, "Guide entrance", function()
+        local _,message=D:GuideEntrance(self.settings.selected,self.entranceIndex); FP:Print(message)
+    end)
+    self.entranceNext = button(f, 390, -88, 145, "Other entrance", function()
+        local points=D:Entrances(self.settings.selected)
+        self.entranceIndex=(self.entranceIndex or 1)%math.max(1,#points)+1; self:RefreshEntrance()
+    end)
+    self.entranceText = label(f,240,-117,560)
     self.questButtons = {}
     for i=1,QUEST_ROWS do
         local b = CreateFrame("Button", nil, f)
-        b:SetSize(560, 45); b:SetPoint("TOPLEFT", 240, -94-(i-1)*46)
+        b:SetSize(560, 45); b:SetPoint("TOPLEFT", 240, -150-(i-1)*46)
         local hl = b:CreateTexture(nil,"HIGHLIGHT"); hl:SetAllPoints(); hl:SetColorTexture(1,1,1,.08)
         b.title = label(b, 0, 0, 560, "GameFontHighlightSmall"); b.title:SetWordWrap(false)
         b.pickup = label(b, 0, -17, 560); b.pickup:SetWordWrap(false)
@@ -68,13 +78,19 @@ function P:OnInit()
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
         self.questButtons[i] = b
     end
-    self.questPageLabel = label(f, 305, -379, 420)
-    self.questPrev = button(f, 240, -374, 50, "<", function() self.questPage=math.max(1,self.questPage-1); self.selectedQuest=nil; self:Refresh() end)
-    self.questNext = button(f, 750, -374, 50, ">", function() self.questPage=math.min(math.max(1,math.ceil(#self.rows/QUEST_ROWS)),self.questPage+1); self.selectedQuest=nil; self:Refresh() end)
+    self.questPageLabel = label(f, 305, -395, 420)
+    self.questPrev = button(f, 240, -390, 50, "<", function() self.questPage=math.max(1,self.questPage-1); self.selectedQuest=nil; self:Refresh() end)
+    self.questNext = button(f, 750, -390, 50, ">", function() self.questPage=math.min(math.max(1,math.ceil(#self.rows/QUEST_ROWS)),self.questPage+1); self.selectedQuest=nil; self:Refresh() end)
+    self.guideQuest = button(f,240,-422,160,"Guide quest",function()
+        local _,message=D:GuideQuest(self.selectedQuest); FP:Print(message)
+    end)
+    self.viewChain = button(f,410,-422,150,"View quest chain",function()
+        if self.selectedQuest then f:Hide(); FP.Hub:OpenQuestChain(self.selectedQuest) end
+    end)
     local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
     self.scroll = scroll
-    scroll:SetPoint("TOPLEFT", 240, -412); scroll:SetSize(536, 155)
-    local child = CreateFrame("Frame", nil, scroll); child:SetSize(530,155); scroll:SetScrollChild(child)
+    scroll:SetPoint("TOPLEFT", 240, -458); scroll:SetSize(536, 112)
+    local child = CreateFrame("Frame", nil, scroll); child:SetSize(530,112); scroll:SetScrollChild(child)
     self.detailChild, self.details = child, label(child, 0, 0, 525)
     label(f, 240, -584, 560):SetText("Reference list, not a guarantee of all current Forever quests or eligibility.")
     f:Hide()
@@ -93,7 +109,7 @@ end
 
 function P:Select(key)
     if not FP.DungeonCatalog.dungeons[key] then return end
-    self.settings.selected, self.questPage, self.selectedQuest = key, 1, nil
+    self.settings.selected, self.questPage, self.selectedQuest, self.entranceIndex = key, 1, nil, nil
     self:Refresh()
 end
 
@@ -125,8 +141,13 @@ function P:RefreshDetails(reset)
     local dungeon = FP.DungeonCatalog.dungeons[self.settings.selected]
     local empty = #dungeon.quests == 0 and "Quest coverage is not yet catalogued for this dungeon. This does not mean it has no quests."
         or "No quests match this faction/class filter. Use Show all factions/classes to inspect the reference list."
-    self.details:SetText(selected and D:Details(selected,self.context) or empty)
-    self.detailChild:SetHeight(math.max(155,self.details:GetStringHeight()+16))
+    local text=selected and D:Details(selected,self.context) or empty
+    self.details:SetText(text.."\n\n"..D:RouteNote(self.settings.selected))
+    local code=selected and selected.code
+    self.guideQuest:SetText(code=="ready" and "Guide turn-in" or code=="active" and "Guide objective" or "Guide pickup")
+    enabled(self.guideQuest,code=="ready" or code=="active" or code=="offer" or code=="pickup")
+    enabled(self.viewChain,selected~=nil)
+    self.detailChild:SetHeight(math.max(112,self.details:GetStringHeight()+16))
     if reset then self.scroll:SetVerticalScroll(0) end
 end
 
@@ -159,5 +180,29 @@ function P:Refresh()
         else b:Hide() end
     end
     self.questPageLabel:SetText(#self.rows .. " quests | Page " .. self.questPage .. "/" .. math.max(1,math.ceil(#self.rows/QUEST_ROWS)) .. " | Details below (scroll)")
+    self:RefreshEntrance()
     self:RefreshDetails()
+end
+
+function P:RefreshEntrance()
+    local points=D:Entrances(self.settings.selected)
+    if not self.entranceIndex then
+        FP.Pos:Refresh(true)
+        local distance
+        self.entranceIndex=1
+        for i,p in ipairs(points) do
+            local d=FP.Pos:DistanceTo(p)
+            if d and (not distance or d<distance) then self.entranceIndex,distance=i,d end
+        end
+    end
+    self.entranceIndex=math.min(self.entranceIndex,math.max(1,#points))
+    local p=points[self.entranceIndex]
+    enabled(self.entranceButton,p~=nil and not API.InInstance())
+    enabled(self.entranceNext,#points>1)
+    if API.InInstance() then self.entranceText:SetText("Inside an instance: outdoor entrance guidance paused.")
+    elseif p then self.entranceText:SetText("Entrance "..self.entranceIndex.."/"..#points..": "..API.GetMapName(p.mapID).." "..FP.Util.FormatCoords(p.x,p.y))
+    else
+        local ready=API.QuestDatabaseStatus()
+        self.entranceText:SetText(ready and "Entrance coordinates unavailable for this dungeon." or "Entrance guidance needs QuestieDB Forever enabled.")
+    end
 end

@@ -156,3 +156,72 @@ function D:Details(row, ctx)
     lines[#lines + 1] = "Reference: wowhead.com/forever/quest=" .. row.id
     return table.concat(lines, "\n\n")
 end
+
+
+-- Explicit catalogue-to-provider AreaID crosswalk. No name matching against
+-- other-expansion dungeons, no guessed coordinates for uncovered Forever sites.
+D.entranceAreas={
+    ["blackfathom-deeps"]=719,["blackrock-depths"]=1584,["city-of-dalaran"]=16544,
+    ["deadmines"]=1581,["dire-maul-east"]=10026,["dire-maul-north"]=10022,["dire-maul-west"]=10023,
+    ["excavation-site-wetlands"]=16732,["gnomeregan"]=721,["hall-of-thanes"]=16919,
+    ["lower-blackrock-spire"]=1583,["upper-blackrock-spire"]=1583,["maraudon"]=2100,
+    ["ragefire-chasm"]=2437,["razorfen-downs"]=722,["razorfen-kraul"]=491,["ruins-of-lordaeron"]=16611,
+    ["scarlet-monastery-armory"]=796,["scarlet-monastery-cathedral"]=796,
+    ["scarlet-monastery-graveyard"]=796,["scarlet-monastery-library"]=796,
+    ["scholomance"]=2057,["shadowfang-keep"]=209,["stratholme-main-gate"]=2017,
+    ["stratholme-service-gate"]=2017,["sunken-temple"]=1477,["the-stockade"]=717,
+    ["uldaman"]=1337,["wailing-caverns"]=718,["zul-farrak"]=1176,
+}
+function D:Entrances(key)
+    local points=API.GetDungeonEntrances(self.entranceAreas[key])
+    local gate=key=="stratholme-main-gate" and 1 or key=="stratholme-service-gate" and 2
+    if gate then
+        for _,p in ipairs(points) do if p.entranceIndex==gate then return {p} end end
+        return {}
+    end
+    return points
+end
+function D:RouteNote(key)
+    local area=self.entranceAreas[key]
+    if area==796 then return "Shared monastery approach; choose your wing inside the complex." end
+    if area==1583 or area==1584 then return "Blackrock Mountain approach; continue inside to your dungeon entrance." end
+    return "Outdoor entrance/approach only. Interior paths and boss order are not mapped."
+end
+function D:GuideEntrance(key,index)
+    if API.InInstance() then return false,"Already inside an instance; outdoor entrance guidance is paused." end
+    local p=self:Entrances(key)[index or 1]
+    if not p or not catalog.dungeons[key] then return false,"No supported entrance coordinates for this dungeon." end
+    FP.Waypoints:RemoveBySource("dungeon-entrance")
+    local wp=FP.Waypoints:Add(p.mapID,p.x,p.y,"Entrance: "..catalog.dungeons[key].name,{
+        source={type="dungeon-entrance",dungeon=key,entrance=true},radius=20,
+        desc=self:RouteNote(key)})
+    return wp~=nil,"Guiding to the outdoor entrance/approach. "..self:RouteNote(key)
+end
+function D:GuideQuest(id)
+    if not catalog.quests[id] then return false,"Choose a dungeon quest first." end
+    local code=self:Evaluate(id,self:Context())
+    if code=="active" or code=="ready" then
+        FP.Pos:Refresh(true)
+        for _,step in ipairs(FP.Planner:Build()) do
+            if step.questID==id and step.mapID then
+                return FP.Planner:Go(step)~=nil,"Guiding the selected quest. Follow the quest instructions inside the dungeon."
+            end
+        end
+        return false,"No usable coordinates for this quest step. Follow the quest instructions; interior paths may be unavailable."
+    end
+    if code=="offer" or code=="pickup" then return FP.QuestChains:GuidePickup(id) end
+    return false,"Check this quest's requirements first. View its chain for prerequisites and pickup details."
+end
+function D:OnEnable()
+    local function entering()
+        if not API.InInstance() then return end
+        for i=#FP.Waypoints.list,1,-1 do
+            local wp=FP.Waypoints.list[i]
+            if wp.source and wp.source.entrance then FP.Waypoints:Remove(wp.id) end
+        end
+        if FP.Planner.waiting and FP.Planner.waiting.entrance then FP.Planner.waiting=nil end
+    end
+    FP:RegisterEvent("PLAYER_ENTERING_WORLD",entering)
+    FP:RegisterEvent("ZONE_CHANGED_NEW_AREA",entering)
+    entering()
+end

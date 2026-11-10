@@ -125,9 +125,49 @@ end end;assert(found)
 print("PASS packaged interaction hint: Frostmaw's Flame of Uzel")
 M.quests={};M.complete[92401]=false
 M.AddQuest({questID=92401,title="A Frightened Request",objectives={{text="Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",type="event",finished=false}}})
-Q:Refresh(true);assert(Q.events==0 and Q.missing==1,"sentinel coordinates became an event location")
+Q:Refresh(true);assert(Q.events==1 and Q.missing==0,"authored dungeon event entrance missing")
+assert(#Q.groups[1].points==1 and Q.groups[1].points[1].entrance)
+local eventPoint=Q.groups[1].points[1]
+assert(eventPoint.mapID==1458 and math.abs(eventPoint.x-.7241)<.000001 and math.abs(eventPoint.y-.1137)<.000001)
+print("PASS packaged dungeon event: A Frightened Request -> Ruins of Lordaeron entrance",eventPoint.mapID,eventPoint.x,eventPoint.y)
 M.quests={};M.complete[92474]=false
 M.AddQuest({questID=92474,title="Falling With Style",objectives={{text="Use Walk on Air",type="spell",finished=false}}})
 Q:Refresh(true);assert(Q.matched==0 and Q.missing==1,"spell with no reference location invented a destination")
-print("PASS packaged unknowns: event sentinel and locationless spell remain unmapped")
+print("PASS packaged unknown: locationless spell remains unmapped")
 assert(#FP.db.errors==0,"event integration stored errors")
+
+-- Entrance crosswalk, real sentinel aliases and known quest contacts.
+local D=FP.Dungeons
+local count=0
+for _,dungeon in ipairs(D:List())do
+ local points=D:Entrances(dungeon.key)
+ if #points>0 then count=count+1 end
+ for _,p in ipairs(points)do assert(p.entrance and p.x>=0 and p.y>=0 and p.x<=1 and p.y<=1)end
+end
+assert(count==30,"dungeon coverage changed: "..count)
+local rfc=D:Entrances("ragefire-chasm")[1];assert(rfc.mapID==1454 and rfc.x==.526 and rfc.y==.49)
+local strat=D:Entrances("stratholme-service-gate")[1];assert(strat.mapID==1423 and math.abs(strat.x-.4145)<.000001 and math.abs(strat.y-.1774)<.000001)
+local wc=D:Entrances("wailing-caverns")[1];assert(wc.mapID==1413 and wc.x==.46 and wc.y==.365)
+for _,qid in ipairs({7461,5382})do
+ local refs=FP.API.GetQuestReference(qid);local points=0
+ for _,ref in ipairs(refs or {})do for _,p in ipairs(ref.points)do
+  assert(p.entrance and p.mapID==(qid==7461 and 1444 or 1422),"instance floor escaped as outdoor coordinate")
+  points=points+1
+ end end
+ assert(points>0,"actual dungeon alias objective missing")
+ print("PASS packaged dungeon objective",qid,points,"entrance points")
+end
+local pickup=FP.API.GetQuestChainStarters(7461)
+assert(#pickup>0 and pickup[1].points[1].entrance,"Shen'dralar Ancient pickup entrance missing")
+local itemStart=FP.API.GetQuestChainStarters(6981)
+assert(#itemStart==1 and itemStart[1].kind=="Item" and #itemStart[1].points==0,"item start invented pickup coordinates")
+local enders=FP.API.GetQuestEnders(1486)
+assert(#enders>0 and #enders[1].points>0,"Deviate Hides turn-in missing")
+M.instance=nil;M.quests={};M.mapID=1413;M.px=.4;M.py=.4;FP.Pos:Refresh(true)
+FP.Waypoints:Clear();FP.DungeonPanel:Open("wailing-caverns")
+FP.DungeonPanel.entranceButton:GetScript("OnClick")()
+assert(FP.Waypoints:GetActive().source.entrance)
+M.instance={type="party"};M.FireEvent("ZONE_CHANGED_NEW_AREA");M.RunTimers(.5)
+assert(not FP.Waypoints:GetActive() and not FP.DungeonPanel.entranceButton:IsEnabled())
+assert(#FP.db.errors==0,"dungeon integration stored errors")
+print("PASS packaged dungeon checklist: 30/35 entrances, converted Stratholme, pickup/turn-in contacts, entry cleanup; zero stored mock errors")

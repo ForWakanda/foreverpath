@@ -265,7 +265,7 @@ function C:Details(questID,ctx)
 		if i>6 then lines[#lines+1]="More pickup sources are listed in the database.";break end
 		local text="Pickup: "..start.name..(start.kind=="Item" and " (starting item)" or "")
 		local point=start.points[1]
-		if point then text=text.." — "..API.GetMapName(point.mapID).." "..U.FormatCoords(point.x,point.y) end
+		if point then text=text..(point.entrance and " — dungeon entrance (giver inside): " or " — ")..API.GetMapName(point.mapID).." "..U.FormatCoords(point.x,point.y) end
 		lines[#lines+1]=text
 	end
 	if #starts==0 then lines[#lines+1]="Pickup source not recorded." end
@@ -287,16 +287,16 @@ function C:GuidePickup(questID)
 		for _,starter in ipairs(self:Starters(questID)) do
 			for _,point in ipairs(starter.points) do
 				local d=FP.Pos:DistanceTo(point)
-				if d and (not distance or d<distance) then best,distance=point,d end
+				if (not point.entrance or not API.InInstance()) and d and (not distance or d<distance) then best,distance=point,d end
 			end
 		end
 	end
 	if not best then return false,"No pickup coordinates could be resolved on your current continent. Check the pickup details." end
 	FP.Waypoints:RemoveBySource("chain-pickup")
-	FP.Waypoints:Add(best.mapID,best.x,best.y,"Pickup: "..self:Title(questID),{
-		source={type="chain-pickup",questID=questID},radius=15,
-		desc="Known pickup location; check requirements with the quest giver."})
-	return true,"Guiding to the known pickup location. Availability is not guaranteed."
+	FP.Waypoints:Add(best.mapID,best.x,best.y,(best.entrance and "Entrance for pickup: " or "Pickup: ")..self:Title(questID),{
+		source={type="chain-pickup",questID=questID,entrance=best.entrance},radius=15,
+		desc=best.entrance and ("Entrance to "..best.dungeonName.."; quest giver is inside. Check requirements there.") or "Known pickup location; check requirements with the quest giver."})
+	return true,best.entrance and "Guiding to the dungeon entrance; the known quest giver is inside. Availability is not guaranteed." or "Guiding to the known pickup location. Availability is not guaranteed."
 end
 
 function C:OnEnable()

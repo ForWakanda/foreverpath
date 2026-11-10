@@ -73,6 +73,14 @@ function P:ResolveTurnIn(questID)
 			if n and n.pos[1] then return n.pos[1].m, n.pos[1].x, n.pos[1].y, "npc" end
 		end
 	end
+	local best,distance
+	for _,contact in ipairs(API.GetQuestEnders(questID)) do
+		for _,p in ipairs(contact.points) do
+			local d=FP.Pos:DistanceTo(p)
+			if (not p.entrance or not API.InInstance()) and d and (not distance or d<distance) then best,distance=p,d end
+		end
+	end
+	if best then return best.mapID,best.x,best.y,(best.entrance and "dungeon entrance: "..best.dungeonName or "known turn-in: "..best.name),best.entrance end
 	if q and q.gpos then return q.gpos.m, q.gpos.x, q.gpos.y, "giver" end
 	if q then
 		for npcID in pairs(q.givers) do
@@ -107,7 +115,7 @@ function P:ResolveObjective(questID, i)
 		if cm then return cm, cx, cy, "mobs" end
 	end
 	local point = FP.QuestObjectives:Nearest(questID, i)
-	if point then return point.mapID, point.x, point.y, (point.role=="event" and "event completion area: " or "known source: ") .. point.name end
+	if point then return point.mapID, point.x, point.y, (point.entrance and ("dungeon entrance: "..point.dungeonName) or ((point.role=="event" and "event completion area: " or "known source: ") .. point.name)), point.entrance end
 	return nil
 end
 
@@ -134,21 +142,21 @@ function P:Build()
 		local qid = info.questID
 		local shared = party and party[qid] and true or false
 		if info.isComplete then
-			local m, x, y, how = self:ResolveTurnIn(qid)
-			steps[#steps + 1] = { kind = "turnin", questID = qid, title = "Turn in: " .. tostring(info.title), text = info.title, mapID = m, x = x, y = y, how = how, shared = shared, radius = 12 }
+			local m, x, y, how, entrance = self:ResolveTurnIn(qid)
+			steps[#steps + 1] = { kind = "turnin", questID = qid, title = "Turn in: " .. tostring(info.title), text = info.title, mapID = m, x = x, y = y, how = how, entrance = entrance, shared = shared, radius = 12 }
 		else
 			local objs = API.GetQuestObjectives(qid)
 			local added = false
 			for i, o in ipairs(objs) do
 				if not o.finished then
-					local m, x, y, how = self:ResolveObjective(qid, i)
-					steps[#steps + 1] = { kind = "objective", questID = qid, objIndex = i, title = tostring(info.title), text = cleanObjectiveText(o.text), mapID = m, x = x, y = y, how = how, shared = shared, radius = 35, progress = (o.numRequired and o.numRequired > 0) and (tostring(o.numFulfilled or 0) .. "/" .. o.numRequired) or nil }
+					local m, x, y, how, entrance = self:ResolveObjective(qid, i)
+					steps[#steps + 1] = { kind = "objective", questID = qid, objIndex = i, title = tostring(info.title), text = cleanObjectiveText(o.text), mapID = m, x = x, y = y, how = how, entrance = entrance, shared = shared, radius = 35, progress = (o.numRequired and o.numRequired > 0) and (tostring(o.numFulfilled or 0) .. "/" .. o.numRequired) or nil }
 					added = true
 				end
 			end
 			if not added and #objs == 0 then
-				local m, x, y, how = self:ResolveObjective(qid, 1)
-				steps[#steps + 1] = { kind = "objective", questID = qid, objIndex = 1, title = tostring(info.title), text = "go there", mapID = m, x = x, y = y, how = how, shared = shared, radius = 35 }
+				local m, x, y, how, entrance = self:ResolveObjective(qid, 1)
+				steps[#steps + 1] = { kind = "objective", questID = qid, objIndex = 1, title = tostring(info.title), text = "go there", mapID = m, x = x, y = y, how = how, entrance = entrance, shared = shared, radius = 35 }
 			end
 		end
 	end
@@ -244,15 +252,16 @@ function P:NextStep()
 end
 
 function P:Go(step, automatic)
-	if not step or not U.ValidMapPoint(step.mapID, step.x, step.y) then return nil end
+	if not step or (step.entrance and API.InInstance()) or not U.ValidMapPoint(step.mapID, step.x, step.y) then return nil end
 	if not automatic and self.deferred and step.questID then self.deferred[step.questID] = nil end
 	self.waiting, self.paused = nil, nil
 	self.pinned = not automatic
 	FP.Waypoints:RemoveBySource("plan")
 	local title = step.kind ~= "objective" and step.title or (step.text .. (step.progress and (" " .. step.progress) or ""))
+	if step.entrance then title="Entrance: "..title end
 	local wp = FP.Waypoints:Add(step.mapID, step.x, step.y, title, {
-		source = { type = "plan", kind = step.kind, questID = step.questID, objIndex = step.objIndex },
-		radius = step.radius, desc = step.kind == "turnin" and ("Quest: " .. tostring(step.text)) or ("Quest: " .. tostring(step.title) .. "  (" .. tostring(step.how) .. ")"),
+		source = { type = "plan", kind = step.kind, questID = step.questID, objIndex = step.objIndex, entrance = step.entrance },
+		radius = step.radius, desc = step.entrance and (tostring(step.how)..". Continue inside; interior paths are not mapped.") or step.kind == "turnin" and ("Quest: " .. tostring(step.text)) or ("Quest: " .. tostring(step.title) .. "  (" .. tostring(step.how) .. ")"),
 	})
 	self.current = step
 	return wp
@@ -296,6 +305,9 @@ function P:Auto(reason)
 			-- POIs can move and objective counts change without a new quest ID.
 			active.mapID, active.x, active.y = s.mapID, s.x, s.y
 			active.title = s.kind ~= "objective" and s.title or (s.text .. (s.progress and (" " .. s.progress) or ""))
+			if s.entrance then active.title="Entrance: "..active.title end
+			active.source.entrance=s.entrance
+			active.desc=tostring(s.title).." ("..tostring(s.how)..")"
 			self.current = s
 			FP:Fire("WAYPOINTS_CHANGED")
 			return
@@ -349,7 +361,9 @@ function P:OnEnable()
 			self.waiting.mapID, self.waiting.x, self.waiting.y, self.waiting.radius = wp.mapID, wp.x, wp.y, wp.radius
 			self.waiting.title = wp.title
 			self.pinned = nil
-			if wp.source.kind == "objective" then
+			if wp.source.entrance then
+				FP:Print("At the dungeon entrance/approach. Continue inside and follow your quest instructions.")
+			elseif wp.source.kind == "objective" then
 				FP:Print(FP.GREY .. "You're in the objective area. Look for the quest targets nearby; /fp next to skip.|r")
 			end
 		end
@@ -414,6 +428,7 @@ function P:Describe(step)
 	if step.kind == "turnin" or step.kind == "pickup" then label = FP.GOLD .. step.title .. "|r"
 	elseif step.kind == "hearth" then label = FP.GREEN .. step.title .. "|r " .. FP.GREY .. step.text .. "|r"
 	else label = step.text .. (step.progress and (" " .. FP.GREY .. step.progress .. "|r") or "") .. FP.GREY .. " — " .. U.Truncate(step.title, 28) .. "|r" end
+	if step.entrance then label="[Entrance] "..label end
 	if step.shared then label = "★ " .. label end
 	if step.highLevel then label = FP.GOLD .. "[Lv " .. step.level .. "]|r " .. label end
 	if step.cluster and step.cluster > 0 then label = label .. FP.GREY .. " (+" .. step.cluster .. " nearby)|r" end
