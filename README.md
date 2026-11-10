@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.10.0)
+## What it does (v0.11.0)
 
 - **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
 - **Compact next-steps panel** (`/fp panel`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
@@ -22,6 +22,14 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Reminders** (`/fp remind`, out of combat only, repeated in chat at most every 10 minutes): low or broken durability, low ammo, bags nearly full, a self-buff you know but do not have (Shaman Lightning Shield, Mage Arcane Intellect and Frost/Ice Armor, Hunter Aspect), a Shaman weapon with no imbue. Buff reads go through Blizzard's secret predicate; in combat the reminder row hides instead of guessing.
 - **Trainer notes** (`/fp trainer`): at a class or profession trainer, what you can learn now, the total cost against your gold and the next level that unlocks something. On a level-up, which recorded trainer teaches something at the new level and what it costs. `/fp trainer 28` asks about a level.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
+
+## Quest chains and prerequisites (v0.11.0)
+
+Open **ForeverPath → Quest chains**, or select a quest in Navigation and click **View quest chain**. The browser starts with your quest log; typing a name or quest ID searches QuestieDB's reference catalog too. Same-name quest stages retain their IDs. **Current quest** opens the quest selected in Blizzard's log.
+
+Inspect a quest to see its completed/in-log/ready status, minimum level, **ANY ONE** versus **ALL** prerequisite groups, active-parent requirements, optional lead-ins, alternative branches, cutoff conditions, known pickup sources, and follow-ups. Click a linked row and **Inspect linked quest** to move through the chain; **Previous quest** retraces your steps and **Back to search** preserves your query. Long chains are shortened in the list; inspect a linked quest to continue. **Guide to pickup** explicitly sets a waypoint to a known pickup location; accepting/completing that quest clears the pickup waypoint.
+
+Ordinary quest progress updates the view automatically. Browsing never changes your route or accepts quests. The first database search builds incrementally when you open the page, keeping spawn decoding out of the search path. QuestieDB Forever is the same optional data dependency used by source maps. Missing records, unknown completion reads, and contradictory prerequisites remain visible gaps. Character class/race/profession/reputation/event restrictions are flagged where listed; this is a chain browser, not a full eligibility engine. Only a live map offer is labeled as offered; satisfying reference prerequisites does not guarantee availability.
 
 ## Quest source maps (v0.10.0)
 

@@ -54,3 +54,31 @@ assert(FP.QuestObjectives.groups[2].name=="Kul Tiras Marine" and #FP.QuestObject
 assert(#FP.db.errors==0)
 print("PASS packaged provider: mixed objective order and completion; zero stored mock errors")
 print("Provider quest records:",#db.Quest.GetAllIds(),"(not a count of mapped ForeverPath quests)")
+
+-- Quest chain integration: actual prerequisite, reverse-edge, pickup and search
+-- fields from the same pinned distribution, exercised through the tools UI.
+local C,H=FP.QuestChains,FP.Hub
+local before=collectgarbage("count")
+local started=os.clock()
+H:Open("chains")
+assert(C.loading and C.scanned==40)
+local batches=0
+while C.loading do M.RunTimers(.03);batches=batches+1;assert(batches<200,"chain index did not finish")end
+assert(C.indexed and #C.searchRows==5233)
+local q=C:Get(1322)
+assert(q.name=="The Black Shield" and q.preQuestSingle[1]==1321)
+assert(C:Get(1321).preQuestSingle[1]==1251)
+assert(C.followups[1322][1323] and C.followups[1323][1276])
+local context=C:Context()
+local rows=C:Search("The Black Shield",false,context)
+assert(#rows>=6,"same-name quest stages collapsed")
+local seen={};for _,row in ipairs(C:Links(1322,context))do seen[row.id]=true end
+assert(seen[1321] and seen[1251] and seen[1323])
+local starts=C:Starters(1322)
+assert(starts[1].name=="Do'gol" and #starts[1].points>0 and starts[1].points[1].mapID==1445)
+H:OpenQuestChain(1322)
+assert(FP.ChainPanel.questID==1322 and FP.ChainPanel.detailText:GetText():find("Do'gol",1,true))
+assert(H.pages.chains.body:GetHeight()>432)
+print("PASS packaged chain index:",#C.searchRows,"records",batches.." async batches",string.format("%.3fs CPU, %.0f KiB growth",os.clock()-started,collectgarbage("count")-before))
+print("PASS Black Shield chain: 1251 -> 1321 -> 1322 -> 1323 -> 1276; distinct stages, Do'gol pickup, UI details")
+assert(#FP.db.errors==0,"chain UI stored errors")
