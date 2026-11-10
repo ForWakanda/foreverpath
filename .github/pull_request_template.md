@@ -11,5 +11,5 @@
 ## Rules
 
 - [ ] No automation: nothing accepts, turns in, loots, buys, targets, casts or moves for the player
-- [ ] Gameplay API calls go through `ForeverPath/API/Adapter.lua`; unit reads through `FP.safe()`
-- [ ] `docs/FOREVERPATH_SPEC.md` updated if an API fact was verified or falsified
+- [ ] Gameplay API calls go through `HearthAndHustle/API/Adapter.lua`; unit reads through `FP.safe()`
+- [ ] `docs/SPEC.md` updated if an API fact was verified or falsified

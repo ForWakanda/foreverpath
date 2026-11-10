@@ -67,6 +67,6 @@ for x in json.loads(raw):
     items.append(row)
 items.sort(key=lambda x:x['id'])
 assert len(items)>5000 and len({x['id'] for x in items})==len(items)
-out=Path('ForeverPath/Data/GearCatalog.lua')
+out=Path('HearthAndHustle/Data/GearCatalog.lua')
 out.write_text('-- Generated factual item reference. See tools/import-gear-catalog.py and THIRD_PARTY_NOTICES.txt.\nlocal _,FP=...\nFP.GearCatalog={revision='+lua(revision)+',date="2026-11-07",sha256='+lua(hashlib.sha256(raw).hexdigest())+',items={\n'+''.join(lua(x)+',\n' for x in items)+'}}\n')
 print(len(items),'Forever item records;',out.stat().st_size,'bytes;',revision)

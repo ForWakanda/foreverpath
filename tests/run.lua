@@ -2,13 +2,13 @@
 package.path = "./tests/?.lua;" .. package.path
 local M = require("wowmock")
 M.verbose = os.getenv("VERBOSE") ~= nil
-local ADDON = "ForeverPath"
+local ADDON = "HearthAndHustle"
 local FP = {}
 
 local files = {}
-for line in io.lines("ForeverPath/ForeverPath.toc") do
+for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
 	line = line:gsub("\r", "")
-	if line:match("%.lua$") then files[#files + 1] = "ForeverPath/" .. line:gsub("\\", "/") end
+	if line:match("%.lua$") then files[#files + 1] = "HearthAndHustle/" .. line:gsub("\\", "/") end
 end
 for _, path in ipairs(files) do
 	local chunk, err = loadfile(path)
@@ -71,7 +71,7 @@ check(#WorldMapFrame._pins == 1, "one world map pin, got " .. #WorldMapFrame._pi
 WorldMapFrame._pins[1]:OnMouseEnter(); WorldMapFrame._pins[1]:OnMouseLeave()
 
 -- Commands
-local function cmd(s) SlashCmdList.FOREVERPATH(s) end
+local function cmd(s) SlashCmdList.HEARTHANDHUSTLE(s) end
 cmd("status"); cmd("help"); cmd("apicheck")
 cmd("way 47.2 61.8 Test spot")
 check(#FP.Waypoints.list == 2, "manual waypoint added")
@@ -208,7 +208,7 @@ local function scan(t, path, seen)
 		if tv == "table" then scan(v, path .. "." .. tostring(k), seen) end
 	end
 end
-scan(ForeverPathDB, "ForeverPathDB"); scan(ForeverPathCharDB, "ForeverPathCharDB")
+scan(HearthAndHustleDB, "HearthAndHustleDB"); scan(HearthAndHustleCharDB, "HearthAndHustleCharDB")
 -- Retired action sounds stay absent, including after legacy slash commands.
 check(FP.HunterAudio == nil and FP.settings.hunterAudio == nil, "custom Hunter audio removed")
 M.class="HUNTER"
@@ -272,10 +272,10 @@ M.inGroup = true
 M.SetUnit("party1", {name="Hunterbro",realm="ClassicBetaPvP2"})
 cast(122, "Cast-8"); M.RunTimers(1)
 check(#M.addonSent >= 1 and M.addonSent[#M.addonSent]:match("^PT;122;Frost Nova;8%.0;;;root$"), "own CC broadcast: " .. tostring(M.addonSent[#M.addonSent]))
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "PT;19503;Scatter Shot;4.0;Noblewarrior;DR full;cc", "PARTY", "Hunterbro-ClassicBetaPvP2")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "PT;19503;Scatter Shot;4.0;Noblewarrior;DR full;cc", "PARTY", "Hunterbro-ClassicBetaPvP2")
 local partner = FP.CastTimers.active[#FP.CastTimers.active]
 check(partner and partner.owner == "Hunterbro" and partner.spell == "Scatter Shot" and partner.duration == 4, "partner CC received as a timer")
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "PT;19503;Scatter Shot;4.0;X;;cc", "PARTY", "Chiznooch")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "PT;19503;Scatter Shot;4.0;X;;cc", "PARTY", "Chiznooch")
 check(FP.Coordination.received == 1, "own echoed message ignored")
 M.lockdown = true
 local sentBefore = #M.addonSent
@@ -370,7 +370,7 @@ check(RW:Current() == nil and FP.db.rare.runs["7781"].closed, "reset closes the 
 M.FireEvent("PLAYER_ENTERING_WORLD")
 M.RunTimers(2)
 check(RW:Current() and RW:Current().key:find("^visit%-"), "re-entry after reset opens a new provisional run")
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;no", "PARTY", "Hunterbro")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "RW;no", "PARTY", "Hunterbro")
 check(RW:Current().absent and RW:Current().absentBy == "Hunterbro", "partner's not-up mark applied")
 M.lootSource = "Creature-0-4379-189-7790-4295-00003BB9A2"
 M.lootSlots = { { name = "Linen Cloth", qty = 2, itemID = 2589 } }
@@ -379,7 +379,7 @@ local st = RW:Stats()
 check(st.runs == 2 and st.seen == 1 and st.killed == 1 and st.checked == 2, string.format("stats runs %d seen %d killed %d checked %d", st.runs, st.seen, st.killed, st.checked))
 -- partner sighting arrives → alert without re-broadcast
 sentBefore, playedBefore = #M.addonSent, #M.played
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;up;32;Undead;Ironspine", "PARTY", "Hunterbro")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "RW;up;32;Undead;Ironspine", "PARTY", "Hunterbro")
 check(RW:Current().seen and RW:Current().seenName == "Ironspine" and #M.played == playedBefore + 1 and #M.addonSent == sentBefore, "partner sighting alerts locally and is not echoed")
 cmd("rare"); cmd("rare runs"); cmd("rare scan"); cmd("rare list")
 M.SetUnit("target", nil)

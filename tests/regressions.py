@@ -11,13 +11,13 @@ BOOT = r'''
 package.path = "./tests/?.lua;" .. package.path
 local M = require("wowmock")
 local FP = {}
-for line in io.lines("ForeverPath/ForeverPath.toc") do
+for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     line = line:gsub("\r", "")
     if line:match("%.lua$") then
-        assert(loadfile("ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath", FP)
+        assert(loadfile("HearthAndHustle/" .. line:gsub("\\", "/")))("HearthAndHustle", FP)
     end
 end
-M.FireEvent("ADDON_LOADED", "ForeverPath")
+M.FireEvent("ADDON_LOADED", "HearthAndHustle")
 M.FireEvent("PLAYER_LOGIN")
 M.RunTimers(10)
 M.RunTimers(2)
@@ -31,7 +31,7 @@ local function addQuest(id, complete)
     return q
 end
 local function active() return FP.Waypoints:GetActive() end
-local function cmd(s) SlashCmdList.FOREVERPATH(s) end
+local function cmd(s) SlashCmdList.HEARTHANDHUSTLE(s) end
 local function snapshot(value)
     if type(value) ~= "table" then return type(value) .. ":" .. tostring(value) end
     local parts={}
@@ -217,7 +217,7 @@ local calls=0
 FP.Party.Send=function() calls=calls+1 end
 FP.Vendor.SellClicked=function() calls=calls+1 end
 FP.Vendor.RepairClicked=function() calls=calls+1 end
-ForeverPath_OnAddonCompartmentClick()
+HearthAndHustle_OnAddonCompartmentClick()
 assert(H.frame:IsShown() and H.selected=="home")
 for _,s in ipairs(H.sections) do page(s[1]); assert(H.pages[s[1]].body:GetHeight()>=432) end
 local count=#M.frames
@@ -336,15 +336,15 @@ page("navigation"); click("clearRoute")
 assert(H.pending and active()==wp)
 H.confirmNo:GetScript("OnClick")(); assert(not H.pending and active()==wp)
 click("clearRoute"); page("tools"); assert(not H.pending and active()==wp)
-click("resetAccount"); assert(H.pending and ForeverPathDB)
-H:Toggle(); assert(not H.pending and ForeverPathDB, "closing left a destructive action armed")
+click("resetAccount"); assert(H.pending and HearthAndHustleDB)
+H:Toggle(); assert(not H.pending and HearthAndHustleDB, "closing left a destructive action armed")
 page("navigation"); click("clearRoute"); H.confirmYes:GetScript("OnClick")()
 assert(not active() and FP.Planner.paused and not H.pending)
-local account=ForeverPathDB
+local account=HearthAndHustleDB
 page("tools"); click("resetCharacter")
-assert(ForeverPathCharDB and ForeverPathDB==account)
+assert(HearthAndHustleCharDB and HearthAndHustleDB==account)
 H.confirmYes:GetScript("OnClick")()
-assert(ForeverPathCharDB==nil and ForeverPathDB==account)
+assert(HearthAndHustleCharDB==nil and HearthAndHustleDB==account)
 assert(#FP.db.errors==0)
 ''',
     "hub_output_capture_is_bounded_and_restored_after_failure": HUB + r'''
@@ -415,7 +415,7 @@ FP.settings.arrow.flip=true
 FP.settings.arrow.scale=1.7
 local before=snapshot(FP.settings)
 FP.Panel:Toggle(false)
-ForeverPath_OnAddonCompartmentClick()
+HearthAndHustle_OnAddonCompartmentClick()
 assert(FP.Hub.frame:IsShown())
 FP.Panel:Toggle(true)
 FP.Panel.settingsButton:GetScript("OnClick")()
@@ -431,9 +431,9 @@ assert(active()==wp and #FP.Waypoints.list==1)
 local window=P.displayFrame
 P:OpenSettings(); assert(P.displayFrame==window)
 local count=0
-for _,name in ipairs(UISpecialFrames) do if name=="ForeverPathDisplaySettings" then count=count+1 end end
+for _,name in ipairs(UISpecialFrames) do if name=="HearthAndHustleDisplaySettings" then count=count+1 end end
 assert(count==1, "escape registration duplicated on reopen")
-assert(FP.settings==ForeverPathDB.settings and #FP.db.errors==0)
+assert(FP.settings==HearthAndHustleDB.settings and #FP.db.errors==0)
 ''',
     "display_settings_pin_toggles_apply_immediately_and_survive_ticks": r'''
 cmd("way 60 60 Keep my route")
@@ -501,7 +501,7 @@ assert(P.displayChecks[3]:GetChecked() and P.arrowSize:GetText()=="Arrow size: 1
 P.displayChecks[1]:SetChecked(false); P.displayChecks[1]:GetScript("OnClick")(P.displayChecks[1])
 P.displayChecks[2]:SetChecked(false); P.displayChecks[2]:GetScript("OnClick")(P.displayChecks[2])
 -- Startup fills missing fields, preserving existing false values and arrow choices.
-local saved=FP.Util.Copy(ForeverPathDB)
+local saved=FP.Util.Copy(HearthAndHustleDB)
 local restored=FP.deepDefaults(saved,FP.defaults)
 assert(not restored.settings.worldMapPins and not restored.settings.minimapPin)
 assert(restored.settings.arrow.locked and restored.settings.arrow.flip)
@@ -845,7 +845,7 @@ FP.Planner:Build()
 assert(not FP.Planner.steps[1].shared)
 IsInGroup = function() return true end
 M.SetUnit("party1", {name="Friend", realm="Realm"})
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "FP1;Friend;MAGE;20;9001", "PARTY", "Friend-Realm")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "FP1;Friend;MAGE;20;9001", "PARTY", "Friend-Realm")
 assert(FP.Planner.steps[1].shared, "received quest state never refreshed the planner")
 ''',
     "creature_sighting_not_stored_as_exact_player_position": r'''
@@ -907,11 +907,11 @@ M.lootSlots = {{name="Cloth",qty=2,itemID=4306}}
 M.FireEvent("LOOT_OPENED")
 M.frames, M.timers, M.tickers = {}, {}, {}
 local nextFP = {}
-for line in io.lines("ForeverPath/ForeverPath.toc") do
+for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     line = line:gsub("\r", "")
-    if line:match("%.lua$") then assert(loadfile("ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath", nextFP) end
+    if line:match("%.lua$") then assert(loadfile("HearthAndHustle/" .. line:gsub("\\", "/")))("HearthAndHustle", nextFP) end
 end
-M.FireEvent("ADDON_LOADED", "ForeverPath"); M.FireEvent("PLAYER_LOGIN")
+M.FireEvent("ADDON_LOADED", "HearthAndHustle"); M.FireEvent("PLAYER_LOGIN")
 M.FireEvent("LOOT_OPENED")
 assert(nextFP.data.creatures[7001].loot[4306] == 2 and nextFP.data.creatures[7001].looted == 1)
 assert(#nextFP.db.errors == 0)
@@ -943,15 +943,15 @@ assert(FP.Prof.open and #FP.Prof.open.recipes > 0, "profession UI should still w
 ''',
     "record_off_at_login_does_not_collect_dataset": r'''
 M.frames, M.timers, M.tickers = {}, {}, {}
-ForeverPathDB = {settings={record=false}}
-ForeverPathCharDB = nil
+HearthAndHustleDB = {settings={record=false}}
+HearthAndHustleCharDB = nil
 local nextFP = {}
-for line in io.lines("ForeverPath/ForeverPath.toc") do
+for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     line=line:gsub("\r", "")
-    if line:match("%.lua$") then assert(loadfile("ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath",nextFP) end
+    if line:match("%.lua$") then assert(loadfile("HearthAndHustle/" .. line:gsub("\\", "/")))("HearthAndHustle",nextFP) end
 end
 M.AddQuest({questID=9001,title="Quest",objectives={}})
-M.FireEvent("ADDON_LOADED", "ForeverPath"); M.FireEvent("PLAYER_LOGIN")
+M.FireEvent("ADDON_LOADED", "HearthAndHustle"); M.FireEvent("PLAYER_LOGIN")
 M.RunTimers(10); M.RunTimers(3)
 assert(next(nextFP.data.chars) == nil and next(nextFP.data.quests) == nil)
 assert(nextFP.db.apicheck["70124"], "diagnostic probes should remain enabled")
@@ -1012,13 +1012,13 @@ local messages={}
 C_ChatInfo.SendAddonMessage=function(_,msg) assert(#msg<=255); messages[#messages+1]=msg; return 0 end
 assert(FP.Party:Send())
 assert(#messages>1)
-for i=#messages,1,-1 do M.FireEvent("CHAT_MSG_ADDON","FPATH",messages[i],"PARTY","Friend-Realm") end
+for i=#messages,1,-1 do M.FireEvent("CHAT_MSG_ADDON","HHUSTLE",messages[i],"PARTY","Friend-Realm") end
 assert(FP.Util.Count(FP.cdb.party.quests)==40 and FP.cdb.party.complete[100040])
 ''',
     "party_live_state_cleared_but_paste_seed_retained": r'''
 IsInGroup=function() return true end
 M.SetUnit("party1",{name="Friend",realm="Realm"})
-M.FireEvent("CHAT_MSG_ADDON","FPATH","FP1;Friend;MAGE;20;9001","PARTY","Friend-Realm")
+M.FireEvent("CHAT_MSG_ADDON","HHUSTLE","FP1;Friend;MAGE;20;9001","PARTY","Friend-Realm")
 assert(FP.cdb.party.name=="Friend")
 IsInGroup=function() return false end
 M.FireEvent("GROUP_ROSTER_UPDATE")
@@ -1030,7 +1030,7 @@ assert(FP.cdb.party.name=="Seed")
     "party_ignores_outsiders_and_refreshes_on_completion_removal": r'''
 IsInGroup=function() return true end
 M.SetUnit("party1",{name="Friend",realm="Realm"})
-M.FireEvent("CHAT_MSG_ADDON","FPATH","FP1;Stranger;MAGE;20;9001","WHISPER","Stranger-Realm")
+M.FireEvent("CHAT_MSG_ADDON","HHUSTLE","FP1;Stranger;MAGE;20;9001","WHISPER","Stranger-Realm")
 assert(not FP.cdb.party.name)
 local sent={}
 C_ChatInfo.SendAddonMessage=function(_,msg) sent[#sent+1]=msg; return 0 end
@@ -1159,45 +1159,45 @@ pin:OnMouseLeave()
 assert(hides==1, "late leave callback hid another pin's tooltip")
 ''',
     "way_shortcut_decimal_coordinates_and_manual_priority": r'''
-assert(SLASH_FOREVERPATHWAY1 == "/way")
-SlashCmdList.FOREVERPATHWAY("45.4 70.4")
+assert(SLASH_HEARTHANDHUSTLEWAY1 == "/way")
+SlashCmdList.HEARTHANDHUSTLEWAY("45.4 70.4")
 local wp=active()
 assert(wp and wp.mapID==1413)
 assert(math.abs(wp.x-.454)<1e-12 and math.abs(wp.y-.704)<1e-12)
 addQuest(9001); M.RunTimers(4)
 assert(active().id==wp.id, "auto route replaced /way target")
-SlashCmdList.FOREVERPATHWAY("45.4 70.4 Quest cave")
+SlashCmdList.HEARTHANDHUSTLEWAY("45.4 70.4 Quest cave")
 assert(active().title=="Quest cave")
 cmd("way 45.4 70.4 Quest cave")
 assert(active().mapID==wp.mapID and active().x==wp.x and active().y==wp.y)
 ''',
     "way_shortcut_map_edges_and_invalid_input": r'''
-SlashCmdList.FOREVERPATHWAY("12 45.4 70.4 Other zone")
+SlashCmdList.HEARTHANDHUSTLEWAY("12 45.4 70.4 Other zone")
 assert(active().mapID==12 and active().title=="Other zone")
-SlashCmdList.FOREVERPATHWAY("0 100 Map edge")
+SlashCmdList.HEARTHANDHUSTLEWAY("0 100 Map edge")
 assert(active().x==0 and active().y==1)
-SlashCmdList.FOREVERPATHWAY("0.5 1 Near edge")
+SlashCmdList.HEARTHANDHUSTLEWAY("0.5 1 Near edge")
 assert(active().x==.005 and active().y==.01)
 local n=#FP.Waypoints.list
 for _, input in ipairs({"-1 70.4", "45.4 100.1", "1e309 70.4", "45.4", "foo bar", "12 45.4 101"}) do
-    SlashCmdList.FOREVERPATHWAY(input)
+    SlashCmdList.HEARTHANDHUSTLEWAY(input)
 end
 assert(#FP.Waypoints.list==n)
 assert(#(FP.db.errors or {})==0)
 ''',
     "way_shortcut_management_commands": r'''
-SlashCmdList.FOREVERPATHWAY("45.4 70.4 First")
+SlashCmdList.HEARTHANDHUSTLEWAY("45.4 70.4 First")
 local first=active().id
-SlashCmdList.FOREVERPATHWAY("46 71 Second")
-SlashCmdList.FOREVERPATHWAY("next")
+SlashCmdList.HEARTHANDHUSTLEWAY("46 71 Second")
+SlashCmdList.HEARTHANDHUSTLEWAY("next")
 assert(active().id==first)
-SlashCmdList.FOREVERPATHWAY("rm "..first)
+SlashCmdList.HEARTHANDHUSTLEWAY("rm "..first)
 assert(not FP.Waypoints:Get(first))
-SlashCmdList.FOREVERPATHWAY("clear")
+SlashCmdList.HEARTHANDHUSTLEWAY("clear")
 assert(#FP.Waypoints.list==0)
-SlashCmdList.FOREVERPATHWAY("here Home")
+SlashCmdList.HEARTHANDHUSTLEWAY("here Home")
 assert(active().title=="Home" and active().persistent)
-SlashCmdList.FOREVERPATHWAY("")
+SlashCmdList.HEARTHANDHUSTLEWAY("")
 assert(#(FP.db.errors or {})==0)
 ''',
     "waypoint_percent_validation_and_low_map_id": r'''
@@ -1241,14 +1241,14 @@ assert(snapshot(FP.data)==before)
 ''',
     "v1_migration_preserves_but_separates_biased_evidence": r'''
 M.frames,M.timers,M.tickers={},{},{}
-ForeverPathDB={version=1,data={creatures={[7001]={loot={[4306]=4},looted=1,pos={{m=1413,x=.5,y=.5}}}},
+HearthAndHustleDB={version=1,data={creatures={[7001]={loot={[4306]=4},looted=1,pos={{m=1413,x=.5,y=.5}}}},
     quests={[9001]={obj={{mobs={[7001]=2}}},items={[4306]={[7001]=1}}}}}}
-ForeverPathCharDB=nil
+HearthAndHustleCharDB=nil
 local nextFP={}
-for line in io.lines("ForeverPath/ForeverPath.toc") do
-    if line:match("%.lua$") then assert(loadfile("ForeverPath/"..line:gsub("\\","/")))("ForeverPath",nextFP) end
+for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
+    if line:match("%.lua$") then assert(loadfile("HearthAndHustle/"..line:gsub("\\","/")))("HearthAndHustle",nextFP) end
 end
-M.FireEvent("ADDON_LOADED","ForeverPath")
+M.FireEvent("ADDON_LOADED","HearthAndHustle")
 local c=nextFP.data.creatures[7001]
 assert(c.legacyLootV1[4306]==4 and next(c.loot)==nil and c.looted==0 and c.pos[1].observer)
 local q=nextFP.data.quests[9001]
@@ -1265,13 +1265,13 @@ assert(FP.data.lootObservations[1].items[4306]==2 and next(FP.data.creatures)==n
 ''',
     "v1_paste_seed_survives_upgrade_and_login": r'''
 M.frames,M.timers,M.tickers={},{},{}
-ForeverPathDB={version=1}
-ForeverPathCharDB={party={name="Friend",from="paste",quests={[9001]=true},complete={}}}
+HearthAndHustleDB={version=1}
+HearthAndHustleCharDB={party={name="Friend",from="paste",quests={[9001]=true},complete={}}}
 local nextFP={}
-for line in io.lines("ForeverPath/ForeverPath.toc") do
-    if line:match("%.lua$") then assert(loadfile("ForeverPath/"..line:gsub("\\","/")))("ForeverPath",nextFP) end
+for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
+    if line:match("%.lua$") then assert(loadfile("HearthAndHustle/"..line:gsub("\\","/")))("HearthAndHustle",nextFP) end
 end
-M.FireEvent("ADDON_LOADED","ForeverPath"); M.FireEvent("PLAYER_LOGIN")
+M.FireEvent("ADDON_LOADED","HearthAndHustle"); M.FireEvent("PLAYER_LOGIN")
 assert(nextFP.cdb.party.name=="Friend" and nextFP.cdb.party.mode=="paste")
 ''',
 })
@@ -1283,7 +1283,7 @@ a.waypoint={1413,.60,.60}; b.waypoint={1413,.80,.80}
 FP.Waypoints:RemoveBySource("plan")
 FP.Panel:Toggle(false)
 M.Tick(1); M.RunTimers(4)
-assert(active() and active().source.questID==9001, "idle planner requires /fp next")
+assert(active() and active().source.questID==9001, "idle planner requires /hh next")
 M.px,M.py=.78,.78
 M.Tick(1); M.RunTimers(4)
 assert(active() and active().source.questID==9002, "movement never reconsiders nearest quest")
@@ -1388,7 +1388,7 @@ assert(not e.target and not e.drText, "missing cast target replaced with selecte
 ''',
     "pvp_party_messages_reject_outsiders_and_invalid_durations": r'''
 M.inGroup=true; M.SetUnit("party1",{name="Friend",realm="Realm"})
-local function msg(body,channel,sender) M.FireEvent("CHAT_MSG_ADDON","FPATH",body,channel or "PARTY",sender or "Friend-Realm") end
+local function msg(body,channel,sender) M.FireEvent("CHAT_MSG_ADDON","HHUSTLE",body,channel or "PARTY",sender or "Friend-Realm") end
 msg("PT;118;Polymorph;20;Enemy;;cc","WHISPER","Stranger-Realm")
 msg("PT;118;Polymorph;1e309;Enemy;;cc")
 msg("PT;118;Polymorph;-20;Enemy;;cc")
@@ -1644,7 +1644,7 @@ M.instance = { name = "Scarlet Monastery", mapID = 189 }
 M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
 M.inGroup = true
 M.SetUnit("party1", { guid = "Player-4-0A1B2C3E", name = "Hunterbro", player = true })
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Stranger")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Stranger")
 assert(not RW:Current().seen, "outsider ignored")
 M.FireEvent("CHAT_MSG_ADDON", "OTHER", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Hunterbro")
 assert(not RW:Current().seen, "other prefix ignored")
@@ -1653,7 +1653,7 @@ for _, bad in ipairs({ "RW;up", "RW;up;33", "RW;bogus;1", "RW;kill;x", "RW;no;ex
 end
 assert(RW:Decode("RW;up;;;") and RW:Decode("RW;up;;;").level == nil, "empty fields decode")
 local sent = #M.addonSent
-M.FireEvent("CHAT_MSG_ADDON", "FPATH", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Hunterbro")
+M.FireEvent("CHAT_MSG_ADDON", "HHUSTLE", "RW;up;33;Undead;Azshir the Sleepless", "PARTY", "Hunterbro")
 assert(RW:Current().seen and RW:Current().seenName == "Azshir the Sleepless" and RW:Current().sightings[1].by == "Hunterbro", "party sighting applied")
 assert(#M.addonSent == sent, "received sighting is not re-broadcast")
 -- name sanitising on send
@@ -2122,7 +2122,7 @@ Q:Refresh();assert(#Q.groups==0 and not Q.references[9101])
 M.mapID=1445;FP.Pos:Refresh(true)
 FP.Pins.provider:RefreshAllData()
 local pin
-for _,p in ipairs(WorldMapFrame._pins)do if p._pinTemplate=="ForeverPathObjectivePinTemplate"then pin=p;break end end
+for _,p in ipairs(WorldMapFrame._pins)do if p._pinTemplate=="HearthAndHustleObjectivePinTemplate"then pin=p;break end end
 assert(pin and pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT" and pin:IsMouseClickEnabled())
 pin:OnMouseEnter();assert(GameTooltip:IsOwned(pin))
 pin:OnClick("RightButton");assert(not active())
@@ -2864,8 +2864,8 @@ assert(H.controls.supplySummary.items[1].text:find("after combat",1,true))
 ''',
 "retired_hunter_audio_assets_and_action_events_stay_silent":HUB+r'''
 assert(not FP.HunterAudio and not FP.settings.hunterAudio)
-assert(not io.open("ForeverPath/Modules/HunterAudioFeedback.lua","rb"))
-for i=1,10 do assert(not io.open(string.format("ForeverPath/Sounds/Hunter/hunter_feedback_%02d.ogg",i),"rb"))end
+assert(not io.open("HearthAndHustle/Modules/HunterAudioFeedback.lua","rb"))
+for i=1,10 do assert(not io.open(string.format("HearthAndHustle/Sounds/Hunter/hunter_feedback_%02d.ogg",i),"rb"))end
 M.class="HUNTER";local count=#M.sounds
 for _,id in ipairs({2643,136,1510})do
  M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","Cast-"..id,id)
@@ -2902,7 +2902,7 @@ for name, body in CASES.items():
 # Fresh release logins exercise module registration with each actual launch class.
 for player_class in ("SHAMAN", "HUNTER", "MAGE", "WARRIOR", "ROGUE", "PRIEST", "WARLOCK", "DRUID", "PALADIN"):
     boot = BOOT.replace('local FP = {}', 'M.class = "' + player_class + '"\nGetBuildInfo = function() return "1.60.1", "70790", "Nov 4 2026", 16001 end\nlocal FP = {}')
-    boot = boot.replace('local FP = {}', 'ForeverPathDB={settings={hunterAudio={enabled=true,cooldown=1}}}\nForeverPathCharDB={prep={water=35,food=14,supplies={[17031]=9}}}\nlocal FP = {}')
+    boot = boot.replace('local FP = {}', 'HearthAndHustleDB={settings={hunterAudio={enabled=true,cooldown=1}}}\nHearthAndHustleCharDB={prep={water=35,food=14,supplies={[17031]=9}}}\nlocal FP = {}')
     body = PREP_SETUP + r'''
 assert(not FP.HunterAudio and not FP.settings.hunterAudio)
 assert(FP.cdb.prep.food==14 and FP.cdb.prep.water==35 and FP.cdb.prep.supplies[17031]==9)
@@ -2927,11 +2927,124 @@ assert(#FP.ClassPrep:Lines()>0 and #FP.db.errors==0)
         failed += 1
         print(result.stderr)
 
+# Renamed from ForeverPath in v0.17.0: saved data must follow, and another addon's
+# tables that happen to use the old variable names must never be adopted.
+LEGACY_ACCOUNT = 'ForeverPathDB={version=2,errors={},settings={arrow={x=-410.5,shown=true},autoNext=false,hunterAudio={enabled=true}},data={quests={[1322]={t="The Black Shield"}}},meta={created=77,builds={},counters={quests=1}}}'
+LEGACY_CHAR = 'ForeverPathCharDB={nextId=901,activeId=900,completed={[100]=true},waypoints={{id=900,mapID=1413,x=.5,y=.68,title="Legacy waypoint",persistent=false,radius=15,t=5}},gear={weights={},wishlist={[6504]=true}}}'
+RENAME_CASES = {
+    "rename_adopts_legacy_saved_variables": (LEGACY_ACCOUNT + "\n" + LEGACY_CHAR, r"""
+assert(HearthAndHustleDB==ForeverPathDB and HearthAndHustleCharDB==ForeverPathCharDB, "an orphaned legacy file is adopted, not copied")
+assert(FP.db==HearthAndHustleDB and FP.cdb==HearthAndHustleCharDB and FP.migratedFrom=="ForeverPath")
+assert(FP.settings.arrow.x==-410.5 and FP.settings.autoNext==false and FP.settings.hunterAudio==nil)
+assert(FP.data.quests[1322].t=="The Black Shield" and FP.db.meta.created==77)
+assert(FP.cdb.gear.wishlist[6504] and FP.cdb.nextId==901 and active() and active().title=="Legacy waypoint")
+local told=false; for _,l in ipairs(M.Chat()) do if tostring(l):find("Formerly ForeverPath",1,true) then told=true end end
+assert(told and SlashCmdList.HEARTHANDHUSTLE and SLASH_HEARTHANDHUSTLE1=="/hh" and SLASH_HEARTHANDHUSTLE2=="/hustle" and not SlashCmdList.FOREVERPATH)
+"""),
+    "rename_copies_legacy_data_while_old_addon_is_loaded": (LEGACY_ACCOUNT + "\n" + LEGACY_CHAR + '\nC_AddOns.IsAddOnLoaded=function(n) return n=="ForeverPath" end', r"""
+assert(HearthAndHustleDB~=ForeverPathDB and HearthAndHustleCharDB~=ForeverPathCharDB, "a live old addon keeps its own tables")
+assert(FP.settings.arrow.x==-410.5 and FP.data.quests[1322].t=="The Black Shield" and FP.cdb.gear.wishlist[6504])
+FP.settings.arrow.x=1; FP.data.quests[1322].t="changed"; FP.cdb.gear.wishlist[6504]=nil
+assert(ForeverPathDB.settings.arrow.x==-410.5 and ForeverPathDB.data.quests[1322].t=="The Black Shield" and ForeverPathCharDB.gear.wishlist[6504])
+local warned=false; for _,l in ipairs(M.Chat()) do if tostring(l):find("old ForeverPath folder is still installed",1,true) then warned=true end end
+assert(warned and FP.migratedFrom~="ForeverPath")
+"""),
+    "rename_ignores_foreign_tables_with_the_old_names": ('ForeverPathDB={profile={arrow=true},guides={"a","b"},settings={scale=2}}\nForeverPathCharDB={step=3,guide="Durotar",waypoints={}}', r"""
+assert(HearthAndHustleDB~=ForeverPathDB and HearthAndHustleCharDB~=ForeverPathCharDB and FP.migratedFrom==nil)
+assert(snapshot(ForeverPathDB)==snapshot({profile={arrow=true},guides={"a","b"},settings={scale=2}}), "another addon's account table was modified")
+assert(snapshot(ForeverPathCharDB)==snapshot({step=3,guide="Durotar",waypoints={}}), "another addon's character table was modified")
+assert(FP.settings.arrow.shown==true and FP.settings.scale==nil and next(FP.data.quests)==nil and #FP.cdb.waypoints==0)
+"""),
+    "rename_keeps_existing_new_data": (LEGACY_ACCOUNT + "\n" + LEGACY_CHAR + '\nHearthAndHustleDB={settings={arrow={x=7}}}\nHearthAndHustleCharDB={nextId=5,waypoints={},completed={}}', r"""
+assert(HearthAndHustleDB~=ForeverPathDB and FP.settings.arrow.x==7 and FP.cdb.nextId==5 and FP.migratedFrom==nil)
+assert(ForeverPathDB.settings.arrow.x==-410.5 and next(FP.data.quests)==nil)
+"""),
+}
+for name, (preload, body) in RENAME_CASES.items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
+# The file tool, on fixtures written the way the release client writes them: CRLF, no indentation.
+def client_lua(variable, rows):
+    return ("\r\n" + variable + " = {\r\n" + "".join(row + "\r\n" for row in rows) + "}\r\n").encode()
+
+ACCOUNT_ROWS = ['["settings"] = {', '["arrow"] = {', '["x"] = -410.5,', '["shown"] = true,', '},', '["autoNext"] = false,', '},',
+                '["data"] = {', '["quests"] = {', '[1322] = {', '["t"] = "The Black Shield",', '},', '},', '},',
+                '["meta"] = {', '["created"] = 77,', '["builds"] = {', '},', '["counters"] = {', '},', '},', '["version"] = 2,']
+CHAR_ROWS = ['["waypoints"] = {', '{', '["id"] = 900,', '["mapID"] = 1413,', '["x"] = 0.5,', '["y"] = 0.68,', '["title"] = "Legacy waypoint",',
+             '["persistent"] = false,', '["radius"] = 15,', '["t"] = 5,', '},', '},', '["completed"] = {', '[100] = true,', '},',
+             '["nextId"] = 901,', '["activeId"] = 900,']
+OUR_TOC = "## Title: ForeverPath\n## X-License: MIT\nAPI\\Adapter.lua\n"
+with tempfile.TemporaryDirectory(prefix="foreverpath-rename-") as tmp:
+    problems = []
+    def tree(name, toc=OUR_TOC, char=client_lua("ForeverPathCharDB", CHAR_ROWS)):
+        client = Path(tmp) / name
+        account, character = client / "WTF/Account/ACCT/SavedVariables", client / "WTF/Account/ACCT/Realm/Hero/SavedVariables"
+        addon = client / "Interface/AddOns/ForeverPath"
+        for folder in (account, character, addon, client / "Interface/AddOns/Other"):
+            folder.mkdir(parents=True)
+        (account / "ForeverPath.lua").write_bytes(client_lua("ForeverPathDB", ACCOUNT_ROWS))
+        (character / "ForeverPath.lua").write_bytes(char)
+        (addon / "ForeverPath.toc").write_text(toc)
+        return client, account, character, addon
+    def tool(client, *extra):
+        return subprocess.run(["python3", "tools/migrate-from-foreverpath.py", "--client", str(client), "--no-process-check", *extra], text=True, capture_output=True)
+
+    client, account, character, addon = tree("ours")
+    before = {p: p.read_bytes() for p in (account / "ForeverPath.lua", character / "ForeverPath.lua")}
+    if tool(client, "--dry-run").returncode != 0 or any(p.read_bytes() != raw for p, raw in before.items()) or not addon.is_dir():
+        problems.append("dry run changed something")
+    result = tool(client)
+    migrated = (account / "HearthAndHustle.lua", character / "HearthAndHustle.lua")
+    if result.returncode != 0 or not all(p.is_file() for p in migrated):
+        problems.append("migration did not produce both files: " + result.stdout)
+    else:
+        if migrated[0].read_bytes() != before[account / "ForeverPath.lua"].replace(b"ForeverPathDB = ", b"HearthAndHustleDB = "):
+            problems.append("account file changed beyond its variable name")
+        if migrated[1].read_bytes() != before[character / "ForeverPath.lua"].replace(b"ForeverPathCharDB = ", b"HearthAndHustleCharDB = "):
+            problems.append("character file changed beyond its variable name")
+        if (account / "ForeverPath.lua").exists() or (account / "ForeverPath.lua.pre-rename").read_bytes() != before[account / "ForeverPath.lua"]:
+            problems.append("original account file was not kept as .pre-rename")
+        if addon.exists() or not (client / "Interface/AddOns/Other").is_dir():
+            problems.append("old addon folder handling is wrong")
+        if tool(client).returncode != 0 or migrated[0].read_bytes().count(b"HearthAndHustleDB = ") != 1:
+            problems.append("second run is not a clean no-op")
+        boot = BOOT.replace('local FP = {}', 'dofile(%r); dofile(%r)\nlocal FP = {}' % (str(migrated[0]), str(migrated[1])))
+        loaded = subprocess.run([LUA, "-"], input=boot + r"""
+assert(FP.settings.arrow.x==-410.5 and FP.settings.autoNext==false and FP.data.quests[1322].t=="The Black Shield" and FP.db.meta.created==77)
+assert(FP.cdb.nextId==901 and active() and active().title=="Legacy waypoint" and FP.migratedFrom==nil and #FP.db.errors==0)
+""", text=True, capture_output=True)
+        if loaded.returncode:
+            problems.append("addon did not load the migrated files: " + (loaded.stderr.splitlines() or ["?"])[0])
+
+    # A different addon owns the old name: neither its folder nor unrecognised data may be touched.
+    client, account, character, addon = tree("foreign", toc="## Title: ForeverPath\n## X-License: GPL-3.0-only\nCore.lua\n",
+                                              char=client_lua("ForeverPathCharDB", ['["step"] = 3,']))
+    before = {p: p.read_bytes() for p in (account / "ForeverPath.lua", character / "ForeverPath.lua")}
+    result = tool(client)
+    if result.returncode == 0 or any(p.read_bytes() != raw for p, raw in before.items()) or not addon.is_dir() or (account / "HearthAndHustle.lua").exists():
+        problems.append("unrecognised data or a foreign addon folder was changed: " + result.stdout)
+
+    # An existing new file is never overwritten.
+    client, account, character, addon = tree("existing")
+    (account / "HearthAndHustle.lua").write_bytes(b"\r\nHearthAndHustleDB = {\r\n}\r\n")
+    result = tool(client)
+    if result.returncode != 0 or (account / "HearthAndHustle.lua").read_bytes() != b"\r\nHearthAndHustleDB = {\r\n}\r\n" or not (account / "ForeverPath.lua").exists():
+        problems.append("an existing HearthAndHustle.lua was overwritten")
+    print(("FAIL " if problems else "PASS ") + "rename_migration_tool_legacy_fixture")
+    for problem in problems:
+        print("  " + problem)
+    failed += 1 if problems else 0
+
 # Corrupt an actual XML file in an ephemeral copy; never change the real checkout.
 with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
-    for name in ("ForeverPath", "tests", "tools"):
+    for name in ("HearthAndHustle", "tests", "tools"):
         shutil.copytree(name, Path(tmp) / name)
-    (Path(tmp) / "ForeverPath/Nav/MapPins.xml").write_text("<Ui><broken></Ui>\n")
+    (Path(tmp) / "HearthAndHustle/Nav/MapPins.xml").write_text("<Ui><broken></Ui>\n")
     result = subprocess.run(["bash", "tools/check.sh"], cwd=tmp, text=True, capture_output=True)
     assert "BAD XML" in result.stdout, "XML corruption was not exercised"
     if result.returncode == 0:
@@ -2944,19 +3057,19 @@ with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
 # Missing TOC entries, compiler failure, and bypass attempts must also reject.
 for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
     with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
-        for name in ("ForeverPath", "tests", "tools"):
+        for name in ("HearthAndHustle", "tests", "tools"):
             shutil.copytree(name, Path(tmp) / name)
         env = os.environ.copy()
         command = ["bash", "tools/check.sh"]
         if scenario == "missing_toc_file":
-            with (Path(tmp) / "ForeverPath/ForeverPath.toc").open("a") as toc:
+            with (Path(tmp) / "HearthAndHustle/HearthAndHustle.toc").open("a") as toc:
                 toc.write("Missing.xml\n")
         elif scenario == "compiler_failure":
             env["LUAC"] = "/bin/false"
         else:
             addons = Path(tmp) / "AddOns"
             addons.mkdir()
-            sentinel = addons / "ForeverPath"
+            sentinel = addons / "HearthAndHustle"
             sentinel.mkdir()
             (sentinel / "keep.txt").write_text("unchanged")
             env["WOW_ADDONS"] = str(addons)
@@ -2969,5 +3082,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)

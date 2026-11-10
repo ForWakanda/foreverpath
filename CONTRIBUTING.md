@@ -1,8 +1,8 @@
-# Contributing to ForeverPath
+# Contributing to Hearth & Hustle
 
 Two of us work on this at the same time, so the workflow is: branch, check, pull request, merge. `main` is protected: nothing lands on it until the `check` workflow is green, and it cannot be force-pushed or deleted.
 
-The engineering rules live in [CLAUDE.md](CLAUDE.md) and apply to humans too. The short version: **no automation, ever**; every gameplay API call goes through `ForeverPath/API/Adapter.lua`; unit reads go through `FP.safe()`; `tools/check.sh` must pass before you commit anything under `ForeverPath/`.
+The engineering rules live in [CLAUDE.md](CLAUDE.md) and apply to humans too. The short version: **no automation, ever**; every gameplay API call goes through `HearthAndHustle/API/Adapter.lua`; unit reads go through `FP.safe()`; `tools/check.sh` must pass before you commit anything under `HearthAndHustle/`.
 
 ## One-time setup
 
@@ -42,7 +42,7 @@ gh pr create --fill          # or open the PR on github.com
 
 ## Installing your branch to play-test
 
-`tools/deploy.sh` runs the checks and copies `ForeverPath/` into the game's AddOns folder. It takes no arguments; set `WOW_CLIENT` (client root) or `WOW_ADDONS` (the AddOns directory) if the game is not at `/mnt/d/World of Warcraft/_forever_`:
+`tools/deploy.sh` runs the checks and copies `HearthAndHustle/` into the game's AddOns folder. It takes no arguments; set `WOW_CLIENT` (client root) or `WOW_ADDONS` (the AddOns directory) if the game is not at `/mnt/d/World of Warcraft/_forever_`:
 
 ```sh
 WOW_CLIENT="/mnt/c/Program Files (x86)/World of Warcraft/_forever_" tools/deploy.sh
@@ -61,11 +61,11 @@ git clone --depth 1 --branch forever https://github.com/Gethe/wow-ui-source.git 
 grep -rn "GetQuestsOnMap" /tmp/wow-ui-source/Interface/AddOns/Blizzard_APIDocumentationGenerated/
 ```
 
-Record a verified or falsified fact in `docs/FOREVERPATH_SPEC.md`.
+Record a verified or falsified fact in `docs/SPEC.md`.
 
 ## Releases
 
-Tags `vX.Y.Z` on `main` build `ForeverPath.zip` and publish a GitHub release automatically. Bump `## Version` in `ForeverPath/ForeverPath.toc` and the version line in `README.md` in the same PR as the last change for that release, then:
+Tags `vX.Y.Z` on `main` build `HearthAndHustle.zip` and publish a GitHub release automatically. Bump `## Version` in `HearthAndHustle/HearthAndHustle.toc` and the version line in `README.md` in the same PR as the last change for that release, then:
 
 ```sh
 git switch main && git pull --ff-only

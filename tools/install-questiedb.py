@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the pinned, unmodified Forever data addon beside ForeverPath.
+"""Install the pinned, unmodified Forever data addon beside HearthAndHustle.
 
 No Questie interface, gameplay automation, or account data. Refuses to replace a
 nonidentical existing installation. The upstream license stays with the addon.

@@ -13,14 +13,14 @@ jobs:
         run: |
           python3 - <<'PY'
           import zipfile, os
-          with zipfile.ZipFile("ForeverPath.zip", "w", zipfile.ZIP_DEFLATED) as z:
-              for root, _, files in os.walk("ForeverPath"):
+          with zipfile.ZipFile("HearthAndHustle.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for root, _, files in os.walk("HearthAndHustle"):
                   for f in files:
                       p = os.path.join(root, f)
                       z.write(p, p)
-          print("ok", os.path.getsize("ForeverPath.zip"))
+          print("ok", os.path.getsize("HearthAndHustle.zip"))
           PY
       - name: Publish release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ForeverPath.zip
+          files: HearthAndHustle.zip
