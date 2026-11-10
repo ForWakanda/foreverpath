@@ -1,7 +1,6 @@
 -- ForeverPath / Nav / MapPins.lua
 -- World map pins (Blizzard data-provider API) and a minimap pin for the
--- active waypoint. Quest POIs themselves are drawn by Blizzard; we only add
--- our waypoints.
+-- active waypoint and database-backed quest source locations.
 local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local Pins = FP:NewModule("Pins")
@@ -74,16 +73,44 @@ function ForeverPathMapPinMixin:OnClick(button)
 	end
 end
 
+-- Small source markers sit below Blizzard quest markers, with their own pool.
+ForeverPathObjectivePinMixin = {}
+function ForeverPathObjectivePinMixin:OnLoad()
+	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_DEFAULT") end
+	if self.SetScalingLimits then self:SetScalingLimits(1, 1, 1.3) end
+end
+function ForeverPathObjectivePinMixin:OnAcquired(point)
+	self.point = point
+	self:EnableMouse(true)
+	-- Reuse the shipped pin asset; no new media dependency.
+	self.Icon:SetTexture("Interface\\AddOns\\ForeverPath\\Media\\pin")
+	self.Icon:SetVertexColor(1,.65,.15)
+	self.Icon:SetSize(12,12)
+	self:SetPosition(point.x, point.y)
+end
+function ForeverPathObjectivePinMixin:ShouldMouseButtonBePassthrough(button) return button ~= "LeftButton" end
+function ForeverPathObjectivePinMixin:OnMouseEnter() if self.point then FP.QuestObjectives:Tooltip(self.point,self) end end
+function ForeverPathObjectivePinMixin:OnMouseLeave() if GameTooltip:IsOwned(self) then GameTooltip:Hide() end end
+function ForeverPathObjectivePinMixin:OnClick(button)
+	if button == "LeftButton" and self.point then FP.QuestObjectives:Guide(self.point) end
+end
+
 ForeverPathMapDataProviderMixin = {}
 
 function ForeverPathMapDataProviderMixin:RemoveAllData()
 	self:GetMap():RemoveAllPinsByTemplate(PIN_TEMPLATE)
+	self:GetMap():RemoveAllPinsByTemplate("ForeverPathObjectivePinTemplate")
 end
 
 function ForeverPathMapDataProviderMixin:RefreshAllData(fromOnShow)
 	self:RemoveAllData()
-	if not FP.settings.worldMapPins then return end
 	local mapID = self:GetMap():GetMapID()
+	if FP.settings.questWorldPins and FP.settings.worldMapPins then
+		for _,point in ipairs(FP.QuestObjectives:WorldPins(mapID)) do
+			self:GetMap():AcquirePin("ForeverPathObjectivePinTemplate",point)
+		end
+	end
+	if not FP.settings.worldMapPins then return end
 	local active = FP.Waypoints:GetActive()
 	for _, wp in ipairs(FP.Waypoints.list) do
 		if wp.mapID == mapID then
@@ -120,7 +147,15 @@ function Pins:OnInit()
 end
 
 function Pins:OnEnable()
-	FP:On("POSITION", function(pos) self:UpdateMinimap(pos) end)
+	FP:On("POSITION", function(pos) self:UpdateMinimap(pos); self:UpdateObjectiveMinimap(pos) end)
+	FP:On("QUEST_LOCATIONS_CHANGED", function()
+		if FP.settings.questMinimapPins and FP.settings.minimapPin and #FP.QuestObjectives.groups > 0 then
+			FP.Pos:Acquire("quest-objective-minimap")
+		else FP.Pos:Release("quest-objective-minimap") end
+		self:OnWaypointsChanged()
+		self.lastObjectiveMini = nil
+		self:UpdateObjectiveMinimap(FP.Pos:Refresh(true))
+	end)
 	FP:On("WAYPOINTS_CHANGED", function() self:OnWaypointsChanged() end)
 	self:HookWorldMap()
 end
@@ -134,6 +169,7 @@ function Pins:HookWorldMap()
 	end
 	for k, v in pairs(MapCanvasPinMixin) do
 		if ForeverPathMapPinMixin[k] == nil then ForeverPathMapPinMixin[k] = v end
+		if ForeverPathObjectivePinMixin[k] == nil then ForeverPathObjectivePinMixin[k] = v end
 	end
 	for k, v in pairs(MapCanvasDataProviderMixin) do
 		if ForeverPathMapDataProviderMixin[k] == nil then ForeverPathMapDataProviderMixin[k] = v end
@@ -173,4 +209,59 @@ function Pins:UpdateMinimap(pos)
 	m:SetPoint("CENTER", Minimap, "CENTER", x, y)
 	m:SetAlpha(edge and 0.55 or 1)
 	m:Show()
+end
+
+-- Pool only nearby points (no clamping distant sources onto the minimap rim).
+-- Map-space prefilter avoids world conversions for every distant spawn.
+function Pins:UpdateObjectiveMinimap(pos)
+	self.objectiveMini = self.objectiveMini or {}
+	local function hideAll() for _,frame in ipairs(self.objectiveMini) do frame:Hide() end end
+	if not FP.settings.questMinimapPins or not FP.settings.minimapPin or not pos.valid then hideAll(); return end
+	local now = API.Time()
+	if self.lastObjectiveMini and now-self.lastObjectiveMini < .25 then return end
+	self.lastObjectiveMini = now
+	local radius, nearby, seen = API.GetMinimapViewRadius(), {}, {}
+	local w,h = API.GetMapWorldSize(pos.mapID)
+	if not w or not h or not radius or radius <= 0 then hideAll(); return end
+	for _,group in ipairs(FP.QuestObjectives:VisibleGroups()) do
+		for _,p in ipairs(group.points) do
+			if p.mapID == pos.mapID then
+				local dx,dy=(p.x-pos.x)*w,(p.y-pos.y)*h
+				if dx*dx+dy*dy <= radius*radius then
+					local key=math.floor(p.x*w/12)..":"..math.floor(p.y*h/12)
+					local pin=seen[key]
+					if not pin then
+						local d,bearing=FP.Pos:VectorTo(p)
+						if d and d <= radius then
+							pin={mapID=p.mapID,x=p.x,y=p.y,d=d,bearing=bearing,entries={}}
+							seen[key],nearby[#nearby+1]=pin,pin
+						end
+					end
+					if pin then pin.entries[#pin.entries+1]={point=p,group=group} end
+				end
+			end
+		end
+	end
+	table.sort(nearby,function(a,b) return a.d < b.d end)
+	local half=(Minimap:GetWidth() or 140)/2
+	local rotating=API.IsMinimapRotating()
+	for i=1,math.min(40,#nearby) do
+		local pin,frame=nearby[i],self.objectiveMini[i]
+		if not frame then
+			frame=CreateFrame("Button",nil,Minimap)
+			frame:SetSize(10,10); frame:SetFrameStrata("MEDIUM")
+			frame:SetFrameLevel((Minimap:GetFrameLevel() or 1)+3)
+			local tex=frame:CreateTexture(nil,"OVERLAY"); tex:SetAllPoints()
+			tex:SetTexture("Interface\\AddOns\\ForeverPath\\Media\\pin"); tex:SetVertexColor(1,.65,.15)
+			frame:SetScript("OnEnter",function(f) if f.point then FP.QuestObjectives:Tooltip(f.point,f) end end)
+			frame:SetScript("OnLeave",function(f) if GameTooltip:IsOwned(f) then GameTooltip:Hide() end end)
+			frame:SetScript("OnClick",function(f) if f.point then FP.QuestObjectives:Guide(f.point) end end)
+			self.objectiveMini[i]=frame
+		end
+		frame.point=pin
+		local rel=pin.bearing-(rotating and pos.facing or 0)
+		local x,y=U.RadialOffset(rel,pin.d*half/radius)
+		frame:ClearAllPoints(); frame:SetPoint("CENTER",Minimap,"CENTER",x,y); frame:Show()
+	end
+	for i=math.min(40,#nearby)+1,#self.objectiveMini do self.objectiveMini[i]:Hide() end
 end

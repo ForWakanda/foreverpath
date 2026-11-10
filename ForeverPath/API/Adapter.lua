@@ -357,6 +357,99 @@ function API.GetQuestObjectives(questID)
 	return {}
 end
 
+-- QuestieDB is a separately installed data provider; no Questie UI is required.
+-- Use only its public reads. Never load Classic coordinates as Forever data.
+function API.QuestDatabaseStatus()
+	local db = LibQuestieDB
+	if type(db) ~= "table" then return false, "Quest locations: install/enable QuestieDB (Forever), then restart WoW." end
+	if type(db.RequireContract) ~= "function" then return false, "Quest locations: update QuestieDB." end
+	local ok, supported = pcall(db.RequireContract, 1)
+	if not ok or not supported then return false, "Quest locations: incompatible QuestieDB; update it." end
+	if not db.flavor or db.flavor.expansion ~= "Forever" then return false, "Quest locations: QuestieDB must use its Forever database." end
+	for _, kind in ipairs({"Quest", "Npc", "Object", "Item"}) do
+		if not db[kind] or type(db[kind].Get) ~= "function" then return false, "Quest locations: database not ready." end
+	end
+	return true, "QuestieDB Forever (" .. tostring(db.readMode or "unknown mode") .. "): known locations, not live spawns."
+end
+
+local zoneProvider, zoneMap
+local function referenceZones(db)
+	if zoneProvider == db and zoneMap then return zoneMap end
+	local support = db.Support and db.Support.Get and db.Support.Get("ZoneDB")
+	local raw = support and support.private and support.private.areaIdToUiMapId
+	if type(raw) ~= "string" then return nil end
+	-- Public support payload is a Lua table expression; an empty environment
+	-- prevents it accessing client globals. Do not use legacy instance overrides.
+	local chunk = loadstring(raw, "QuestieDB zone mapping")
+	if not chunk then return nil end
+	setfenv(chunk, {})
+	local ok, maps = pcall(chunk)
+	if not ok or type(maps) ~= "table" then return nil end
+	zoneProvider, zoneMap = db, maps
+	return maps
+end
+
+function API.GetQuestReference(questID)
+	if not API.QuestDatabaseStatus() then return nil end
+	local ok, result = pcall(function()
+		local db, groups = LibQuestieDB, {}
+		local maps = referenceZones(db)
+		if not maps then return nil end
+		local function get(kind, id, field) return db[kind].Get(id, field) end
+		local objectives = get("Quest", questID, "objectives")
+		if type(objectives) ~= "table" then return nil end
+		local function source(group, kind, id, role)
+			if type(id) ~= "number" or id <= 0 then return end
+			local name, spawns = get(kind, id, "name"), get(kind, id, "spawns")
+			if type(name) ~= "string" or type(spawns) ~= "table" then return end
+			for area, coords in pairs(spawns) do
+				local mapID = maps[area]
+				local info = mapID and API.GetMapInfo(mapID)
+				-- Outdoor zone frames only. Dungeon sentinels/retired floor maps
+				-- are not coordinates, and are deliberately not guessed here.
+				if info and info.mapType == 3 then
+					for _, xy in ipairs(coords) do
+						local x, y = xy[1], xy[2]
+						if U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID, x/100, y/100) then
+							group.points[#group.points+1] = {mapID=mapID, x=x/100, y=y/100, name=name, entityID=id, role=role}
+						end
+					end
+				end
+			end
+		end
+		local function itemSources(group, id, visited, depth)
+			if visited[id] or depth > 3 then return end
+			visited[id] = true
+			for _, spec in ipairs({{"npcDrops","Npc","drop"}, {"objectDrops","Object","object"}, {"vendors","Npc","vendor"}}) do
+				for _, entityID in ipairs(get("Item", id, spec[1]) or {}) do source(group, spec[2], entityID, spec[3]) end
+			end
+			for _, container in ipairs(get("Item", id, "itemDrops") or {}) do itemSources(group, container, visited, depth+1) end
+		end
+		for index, kind in ipairs({"Npc", "Object", "Item"}) do
+			for _, row in ipairs(objectives[index] or {}) do
+				local name = get(kind, row[1], "name")
+				if type(name) == "string" then
+					local group = {kind=kind, id=row[1], name=name, text=row[2], points={}}
+					if kind == "Item" then itemSources(group, row[1], {}, 0)
+					else source(group, kind, row[1], kind == "Npc" and "kill" or "object") end
+					table.sort(group.points, function(a,b)
+						if a.mapID ~= b.mapID then return a.mapID < b.mapID end
+						if a.x ~= b.x then return a.x < b.x end
+						if a.y ~= b.y then return a.y < b.y end
+						if a.entityID ~= b.entityID then return a.entityID < b.entityID end
+						return a.role < b.role
+					end)
+					groups[#groups+1] = group
+				end
+			end
+		end
+		return groups
+	end)
+	if ok then return result end
+	-- Missing/broken providers degrade this feature, not the route or other tools.
+	return nil
+end
+
 function API.GetQuestTitle(questID)
 	if has(C_QuestLog, "GetTitleForQuestID") then
 		local t = C_QuestLog.GetTitleForQuestID(questID)

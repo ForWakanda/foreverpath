@@ -217,6 +217,9 @@ function H:BuildPage(key)
 			{"clearRoute","Clear route",function() FP.Waypoints:Clear() end,confirm="Remove all saved waypoints and pause guidance? Your quests stay in your quest log."},
 		})
 		self:Actions(p,{{"recoverGuide","Restore arrow and compact panel",function() command("guide") end}})
+		self:Section(p,"Quest locations")
+		self:Text(p,"",function() return FP.QuestObjectives:Summary() end)
+		self:Text(p,"Small orange dots mark known sources for unfinished quests. Hover for details; click to guide there. Nearby sources appear on the minimap. Dense world-map points are grouped, with up to 350 markers; the minimap shows the nearest 40. Some event and new Forever objectives have no locations yet.")
 		self:Section(p,"Quest destinations")
 		local search=self:Field(p,"questSearch","Find a quest","")
 		local list=self:List(p,"quests",function()
@@ -395,6 +398,10 @@ function H:BuildPage(key)
 	elseif key=="display" then
 		self:Section(p,"Map pins and arrow")
 		for _,entry in ipairs({{"worldMapPins","World-map pins"},{"minimapPin","Minimap pin"}}) do
+			local key,text=entry[1],entry[2]
+			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
+		end
+		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"}}) do
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end

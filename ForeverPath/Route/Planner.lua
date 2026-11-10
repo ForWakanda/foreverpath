@@ -106,6 +106,8 @@ function P:ResolveObjective(questID, i)
 		local cm, cx, cy = centroidOnMap(pts)
 		if cm then return cm, cx, cy, "mobs" end
 	end
+	local point = FP.QuestObjectives:Nearest(questID, i)
+	if point then return point.mapID, point.x, point.y, "known source: " .. point.name end
 	return nil
 end
 
@@ -116,6 +118,7 @@ local function cleanObjectiveText(text)
 end
 
 function P:Build()
+	FP.QuestObjectives:Refresh()
 	local steps = {}
 	local log = API.GetQuestLog()
 	local infoByID = {}
