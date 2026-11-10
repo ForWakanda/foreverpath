@@ -7,6 +7,7 @@ local H = FP:NewModule("Hub")
 local W = 600
 local SECTIONS = {
 	{"navigation", "Navigation", "Choose your next quest or resume your route."},
+	{"chains", "Quest chains", "Explore prerequisites, optional lead-ins, and what comes next."},
 	{"waypoints", "Waypoints", "Save places, enter coordinates, and manage your destinations."},
 	{"professions", "Professions", "Choose a learned recipe and plan the materials for a batch."},
 	{"party", "Party", "Compare quest progress and exchange snapshots with your partner."},
@@ -103,6 +104,11 @@ function H:Open(key)
 	self:Select(key or self.selected or "navigation")
 end
 
+function H:OpenQuestChain(questID)
+	self:Open("chains")
+	FP.ChainPanel:Inspect(questID,true)
+end
+
 function H:Select(key)
 	local section
 	for _,s in ipairs(SECTIONS) do if s[1]==key then section=s end end
@@ -118,6 +124,7 @@ function H:Select(key)
 	for k,b in pairs(self.nav) do if k==key then b:Disable() else b:Enable() end end
 	self.selected=key
 	if key=="navigation" then FP.Planner:Build() end
+	if key=="chains" then FP.QuestChains:StartIndex() end
 	self.heading:SetText(section[2]); self.subtitle:SetText(section[3])
 	self:Refresh()
 	self:SetResults(self.pages[key].results or {"Choose an action above. Its results appear here."})
@@ -201,7 +208,9 @@ end
 
 function H:BuildPage(key)
 	local p=self:NewPage(key)
-	if key=="navigation" then
+	if key=="chains" then
+		FP.ChainPanel:Build(self,p)
+	elseif key=="navigation" then
 		self:Text(p,"",function()
 			local wp=FP.Waypoints:GetActive()
 			return (wp and ("Current: "..U.Truncate(wp.title,85)) or "No active destination.") .. "\nAutomatic selection: " .. (FP.settings.autoNext and not FP.Planner.paused and "on" or "paused/off")
@@ -240,6 +249,8 @@ function H:BuildPage(key)
 				else FP:Print("No coordinates available yet. Check the quest directions.") end
 			end,enabled=function() return self:Selected(list)~=nil end},
 			{"refreshQuests","Refresh quest list",function() FP.Planner:Build() end},
+			{"viewQuestChain","View quest chain",function() local item=self:Selected(list);if item then self:OpenQuestChain(item.step.questID) end end,
+				enabled=function()local item=self:Selected(list);return item and item.step.questID~=nil end},
 		})
 		self:Section(p,"A crowded quest?")
 		local mins=self:Field(p,"skipMinutes","Defer current quest (minutes)",10)
@@ -558,7 +569,7 @@ function H:OnEnable()
 			FP.Throttle("hub-refresh",.2,function() self:Refresh() end)
 		end
 	end
-	for _,event in ipairs({"WAYPOINTS_CHANGED","PLAN_UPDATED","PROFESSIONS_CHANGED","RECIPES_SCANNED","PARTY_UPDATED","PVP_CHANGED","RARE_CHANGED","DISPLAY_SETTINGS_CHANGED"}) do FP:On(event,refresh) end
+	for _,event in ipairs({"WAYPOINTS_CHANGED","PLAN_UPDATED","PROFESSIONS_CHANGED","RECIPES_SCANNED","PARTY_UPDATED","PVP_CHANGED","RARE_CHANGED","DISPLAY_SETTINGS_CHANGED","QUEST_CHAINS_CHANGED"}) do FP:On(event,refresh) end
 	FP:RegisterEvent("PLAYER_REGEN_ENABLED",refresh)
 	FP:RegisterEvent("PLAYER_REGEN_DISABLED",refresh)
 	FP:RegisterEvent("UI_SCALE_CHANGED",function() self:FitWindow() end)

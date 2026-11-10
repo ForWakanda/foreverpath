@@ -2035,6 +2035,185 @@ M.RemoveQuest(9101);M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(4);M.RunTimers(2
 assert(Q.matched==1 and not Q.references[9101])
 '''
 
+CHAINS = r'''
+local records={
+ [201]={name="The Same Name",preQuestSingle={202,203},requiredLevel=30,startedBy={{501}}},
+ [202]={name="First step",preQuestGroup={204,205}},
+ [203]={name="Alternative first step"},
+ [204]={name="Old beginning",exclusiveTo={206}},
+ [205]={name="Another beginning"},
+ [206]={name="Alternate beginning"},
+ [207]={name="The Same Name",preQuestSingle={201}},
+ [208]={name="Optional lead-in",breadcrumbForQuestId=201},
+ [209]={name="Needs active parent",parentQuest=201,availableStartingWith=202},
+}
+local finished={};local calls=0
+C_QuestLog.IsQuestFlaggedCompleted=function(qid)return finished[qid] or false end
+LibQuestieDB={flavor={expansion="Forever"},readMode="baked",RequireContract=function()return true end,
+ Support={Get=function()return {private={areaIdToUiMapId="return {[17]=1413}"}}end},
+ Quest={Get=function(qid,key)calls=calls+1;return records[qid] and records[qid][key] end,
+ GetAllIds=function()local ids={};for qid in pairs(records)do ids[#ids+1]=qid end;table.sort(ids);return ids end},
+ Npc={Get=function(_,key)if key=="name"then return "Quest Giver"elseif key=="spawns"then return {[17]={{60,60},{-1,-1}}}end end},
+ Item={Get=function()return "Starting Letter"end},Object={Get=function()end}}
+local C=FP.QuestChains
+C:StartIndex(true)
+local function ctx()return C:Context()end
+'''
+
+CASES.update({
+"chains_any_and_all_prerequisites_are_distinct": CHAINS+r'''
+assert(C:Requirements(C:Get(201),ctx())==false)
+finished[203]=true;assert(C:Requirements(C:Get(201),ctx())==true)
+assert(C:Requirements(C:Get(202),ctx())==false)
+finished[204]=true;assert(C:Requirements(C:Get(202),ctx())==false)
+finished[205]=true;assert(C:Requirements(C:Get(202),ctx())==true)
+local lines=table.concat(C:Details(201,ctx())," ")
+assert(lines:find("ANY ONE",1,true) and not lines:find("Available",1,true))
+''',
+"chains_group_alternatives_and_exact_negative_ids": CHAINS+r'''
+finished[206],finished[205]=true,true
+assert(C:Requirements(C:Get(202),ctx())==true,"exclusive alternative must satisfy positive group")
+records[202].preQuestGroup={-204,205};C:StartIndex(true)
+assert(C:Requirements(C:Get(202),ctx())==false,"negative entry must require exact quest")
+finished[204]=true;assert(C:Requirements(C:Get(202),ctx())==true)
+''',
+"chains_unknown_states_are_not_missing_or_completed": CHAINS+r'''
+C_QuestLog.IsQuestFlaggedCompleted=nil
+assert(C:Requirements(C:Get(201),ctx())==nil)
+assert(C:StateLabel(201,ctx())=="State unknown")
+C_QuestLog.IsQuestFlaggedCompleted=function()return M.Secret()end
+assert(C:Requirements(C:Get(201),ctx())==nil)
+C_QuestLog.IsQuestFlaggedCompleted=function()error("unavailable")end
+assert(C:Requirements(C:Get(201),ctx())==nil and #FP.db.errors==0)
+''',
+"chains_live_status_and_offer_win_over_reference": CHAINS+r'''
+finished[201]=true
+assert(C:StateLabel(201,ctx())=="Completed")
+addQuest(201,false);assert(C:StateLabel(201,ctx())=="In quest log")
+M.complete[201]=true;assert(C:StateLabel(201,ctx())=="Ready to turn in")
+M.RemoveQuest(201);finished[201]=false
+local context=ctx();context.offers[201]={questID=201}
+assert(C:StateLabel(201,context)=="Offered on current map")
+assert(C:Requirements(C:Get(201),context)==false,"reference requirements stay separate from offer")
+''',
+"chains_optional_leadins_and_parent_gates": CHAINS+r'''
+records[201].breadcrumbs={208};C:StartIndex(true)
+finished[203]=true
+assert(C:Requirements(C:Get(201),ctx())==true,"optional lead-in became mandatory")
+assert(C:Requirements(C:Get(209),ctx())==false)
+addQuest(201);finished[202]=true
+assert(C:Requirements(C:Get(209),ctx())==true)
+M.RemoveQuest(201);finished[201]=true
+assert(C:Requirements(C:Get(209),ctx())==false,"completed parent is not active parent")
+''',
+"chains_cutoffs_and_branches_are_not_prerequisites": CHAINS+r'''
+records[201].nextQuestInChain=207;records[201].exclusiveTo={203};records[201].disabledByQuest=208
+records[201].availableUntilCompleted=205;C:StartIndex(true)
+finished[207],finished[203],finished[205]=true,true,true;addQuest(208)
+local blockers=table.concat(C:Blockers(C:Get(201),ctx())," ")
+assert(blockers:find("Later step",1,true) and blockers:find("Alternative branch",1,true) and blockers:find("blocker",1,true) and blockers:find("cutoff",1,true))
+local links=C:Links(201,ctx());local found=false
+for _,row in ipairs(links)do if row.id==207 and row.label:find("Later step",1,true)then found=true end end
+assert(found)
+''',
+"chains_missing_conflicting_and_cyclic_references_are_visible": CHAINS+r'''
+assert(table.concat(C:Details(999,ctx())," "):find("coverage gap",1,true))
+assert(table.concat(C:Details(203,ctx())," "):find("does not prove",1,true))
+records[201].preQuestGroup={204};C:StartIndex(true)
+local value,notes=C:Requirements(C:Get(201),ctx());assert(value==nil and notes[1]:find("Conflicting",1,true))
+records[204].preQuestSingle={202};C:StartIndex(true)
+local rows=C:Links(202,ctx());assert(#rows<=100)
+local cycle=false;for _,row in ipairs(rows)do if row.label:find("cycle",1,true)then cycle=true end end
+assert(cycle)
+''',
+"chains_search_duplicate_names_ids_and_log_filter": CHAINS+r'''
+local rows=C:Search("The Same Name",false,ctx());assert(#rows==2 and rows[1].id==201 and rows[2].id==207)
+assert(#C:Search("#207",false,ctx())==1)
+assert(#C:Search("",true,ctx())==0)
+addQuest(201);assert(#C:Search("",true,ctx())==1)
+local stateCalls=0;FP.API.GetDungeonQuestState=function()stateCalls=stateCalls+1;return {}end
+C:Search("",false,ctx());assert(stateCalls==0,"search scanned live state for every catalog record")
+''',
+"chains_index_batches_generation_and_cache": CHAINS+r'''
+for i=300,450 do records[i]={name="Quest "..i,preQuestSingle={201}}end
+C:StartIndex(true);assert(C.loading and C.scanned==40 and not C.indexed)
+local prior=calls;C:Get(201);C:Get(201);assert(calls==prior)
+records[400]=nil;C:StartIndex(true)
+for i=1,8 do M.RunTimers(.03)end
+assert(C.indexed and not C.records[400] and C.followups[201][450])
+local rows=C:Links(201,ctx());assert(#rows<=100)
+''',
+"chains_adapter_rejects_bad_ids_fields_and_provider": CHAINS+r'''
+assert(not FP.API.GetQuestChainRecord(nil) and not FP.API.GetQuestChainRecord(-1))
+records[201].preQuestSingle={202,"invalid"};C:StartIndex(true)
+assert(C:Get(201).incomplete and C:Requirements(C:Get(201),ctx())==false)
+records[201].preQuestSingle="broken";C:StartIndex(true)
+assert(C:Requirements(C:Get(201),ctx())==nil)
+LibQuestieDB=nil;C:StartIndex(true)
+assert(not C.loading and not C.indexed and not C:Get(201))
+assert(table.concat(C:Details(201,ctx())," "):find("coverage gap",1,true))
+''',
+"chains_pickup_only_on_click_and_cleans_up_on_accept": CHAINS+r'''
+C:Details(201,ctx());C:Links(201,ctx());assert(not active())
+local ok,message=C:GuidePickup(201);assert(ok and active().source.type=="chain-pickup")
+assert(active().mapID==1413 and active().x==.6 and message:find("not guaranteed",1,true))
+addQuest(201);FP:Fire("QUESTLOG_SCANNED");assert(not active())
+assert(not C:GuidePickup(201))
+M.RemoveQuest(201);finished[201]=true;assert(not C:GuidePickup(201))
+records[203].startedBy={nil,nil,{900}};C:StartIndex(true)
+assert(not C:GuidePickup(203),"item starter invented a location")
+''',
+"chains_gui_search_drilldown_back_and_drafts": CHAINS+HUB+r'''
+page("chains");field("chainSearch","The Same Name");H.controls.chainSearch:GetScript("OnTextChanged")()
+assert(#H.controls.chainResults.items==2 and not FP.ChainPanel.currentOnly)
+selectRow("chainResults",1);click("chainInspect")
+assert(FP.ChainPanel.questID==201 and FP.ChainPanel.view=="detail")
+assert(FP.ChainPanel.detailText:GetText():find("ANY ONE",1,true))
+selectRow("chainLinks",1);local linked=H:Selected(H.controls.chainLinks).id;click("chainFollow")
+assert(FP.ChainPanel.questID==linked and #FP.ChainPanel.history==1)
+click("chainBack");assert(FP.ChainPanel.questID==201)
+click("chainSearchBack");assert(FP.ChainPanel.view=="browser" and H.controls.chainSearch:GetText()=="The Same Name")
+assert(#H.controls.chainResults.items==2)
+local count=#M.frames
+selectRow("chainResults",2);click("chainInspect");click("chainSearchBack")
+assert(#M.frames==count and #FP.db.errors==0)
+''',
+"chains_navigation_entry_and_live_refresh_preserve_route": CHAINS+HUB+r'''
+addQuest(201);cmd("way 50 50 Keep my route");local wp=active()
+page("navigation");field("questSearch","Quest 201");H.controls.questSearch:GetScript("OnTextChanged")()
+selectRow("quests");click("viewQuestChain")
+assert(H.selected=="chains" and FP.ChainPanel.questID==201 and active()==wp)
+assert(FP.ChainPanel.detailText:GetText():find("In quest log",1,true))
+M.complete[201]=true;FP:Fire("QUESTLOG_SCANNED");M.RunTimers(.3)
+assert(FP.ChainPanel.detailText:GetText():find("Ready to turn in",1,true) and active()==wp)
+assert(#FP.db.errors==0)
+''',
+})
+
+CASES["chains_unknown_blockers_and_signed_single_stay_unknown"] = CHAINS+r'''
+records[201].preQuestSingle={-202};records[201].disabledByQuest=203;C:StartIndex(true)
+finished[202]=true
+assert(C:Requirements(C:Get(201),ctx())==nil)
+C_QuestLog.IsOnQuest=nil
+assert(table.concat(C:Blockers(C:Get(201),ctx())," "):find("unknown",1,true))
+assert(not C:GuidePickup(201) and not C:GuidePickup(nil))
+'''
+CASES["chains_selected_link_survives_completion_refresh"] = CHAINS+HUB+r'''
+H:OpenQuestChain(201);selectRow("chainLinks",1)
+local key=H.controls.chainLinks.selected
+finished[202]=true;FP:Fire("QUESTLOG_SCANNED");M.RunTimers(.3)
+assert(H.controls.chainLinks.selected==key and H:Selected(H.controls.chainLinks))
+'''
+
+CASES["chains_large_ancestry_keeps_followups_visible"] = CHAINS+r'''
+records[201].preQuestSingle={};records[201].preQuestGroup={}
+for i=300,390 do records[i]={name="Ancestor "..i};table.insert(records[201].preQuestGroup,i)end
+C:StartIndex(true);for i=1,4 do M.RunTimers(.03)end
+local rows=C:Links(201,ctx());local found=false
+for _,row in ipairs(rows)do if row.id==207 and row.label:find("Follow-up",1,true)then found=true end end
+assert(found and #rows<=100,"ancestor list hid direct follow-up")
+'''
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

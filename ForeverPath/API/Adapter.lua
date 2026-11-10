@@ -450,6 +450,88 @@ function API.GetQuestReference(questID)
 	return nil
 end
 
+-- Quest chain reads are separate from objective/source decoding: opening the
+-- browser never loads every quest's spawn list.
+function API.GetQuestChainIDs()
+	if not API.QuestDatabaseStatus() then return nil end
+	local db = LibQuestieDB.Quest
+	if type(db.GetAllIds) ~= "function" then return nil end
+	local ok, ids = pcall(db.GetAllIds)
+	if not ok or type(ids) ~= "table" then return nil end
+	local out = {}
+	for _, id in ipairs(ids) do
+		if U.Finite(id) and id > 0 and id == math.floor(id) then out[#out+1] = id end
+	end
+	return out -- owned copy; the provider's ID table is shared
+end
+
+function API.GetQuestChainRecord(id)
+	if not U.Finite(id) or id <= 0 or id ~= math.floor(id) or not API.QuestDatabaseStatus() then return nil end
+	local ok, q = pcall(function()
+		local get, out = LibQuestieDB.Quest.Get, {id=id}
+		out.name = get(id, "name")
+		if type(out.name) ~= "string" or out.name == "" then return nil end
+		for _, key in ipairs({"requiredLevel","questLevel","requiredMaxLevel","requiredRaces","requiredClasses",
+			"parentQuest","availableStartingWith","availableUntilCompleted","disabledByQuest","nextQuestInChain",
+			"breadcrumbForQuestId","requiredSpell","requiredSpecialization","specialFlags"}) do
+			local value = get(id,key)
+			if U.Finite(value) then out[key] = value elseif value ~= nil then out.incomplete = true end
+		end
+		for _, key in ipairs({"parentQuest","availableStartingWith","availableUntilCompleted","disabledByQuest","nextQuestInChain","breadcrumbForQuestId"}) do
+			local value=out[key]
+			if value and (value<0 or value~=math.floor(value)) then out.incomplete=true;out[key]=nil end
+		end
+		for _, key in ipairs({"preQuestGroup","preQuestSingle","childQuests","inGroupWith","exclusiveTo","breadcrumbs"}) do
+			local value, ids = get(id,key), {}
+			if value ~= nil and type(value) ~= "table" then out.incomplete = true end
+			for _, link in ipairs(type(value) == "table" and value or {}) do
+				if U.Finite(link) and link ~= 0 and link == math.floor(link) then ids[#ids+1] = link
+				else out.incomplete = true end
+			end
+			out[key] = ids
+		end
+		for _, key in ipairs({"requiredSkill","requiredRanks","requiredMinRep","requiredMaxRep"}) do
+			out[key] = get(id,key) -- detail labels only; these are not eligibility checks
+		end
+		return out
+	end)
+	return ok and q or nil
+end
+
+-- Names and known pickup coordinates are informational, not live quest offers.
+function API.GetQuestChainStarters(id)
+	if not API.QuestDatabaseStatus() then return {} end
+	local ok, result = pcall(function()
+		local db, out = LibQuestieDB, {}
+		local maps = referenceZones(db) or {}
+		local starts = db.Quest.Get(id,"startedBy") or {}
+		for i,kind in ipairs({"Npc","Object","Item"}) do
+			for _, entityID in ipairs(starts[i] or {}) do
+				local name = db[kind].Get(entityID,"name")
+				if type(name) == "string" then
+					local entry = {name=name,kind=kind,id=entityID,points={}}
+					if kind ~= "Item" then
+						for area,points in pairs(db[kind].Get(entityID,"spawns") or {}) do
+							local mapID = maps[area]
+							local info = mapID and API.GetMapInfo(mapID)
+							if info and info.mapType == 3 then
+								for _,xy in ipairs(points) do
+									if U.Finite(xy[1]) and U.Finite(xy[2]) and U.ValidMapPoint(mapID,xy[1]/100,xy[2]/100) then
+										entry.points[#entry.points+1]={mapID=mapID,x=xy[1]/100,y=xy[2]/100,name=name}
+									end
+								end
+							end
+						end
+					end
+					out[#out+1] = entry
+				end
+			end
+		end
+		return out
+	end)
+	return ok and result or {}
+end
+
 function API.GetQuestTitle(questID)
 	if has(C_QuestLog, "GetTitleForQuestID") then
 		local t = C_QuestLog.GetTitleForQuestID(questID)
