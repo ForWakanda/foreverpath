@@ -31,6 +31,7 @@ FP.defaults = {
 		questWorldPins = true,
 		questMinimapPins = true,
 		questSelectedOnly = false,
+		questEventHints = true,
 		arrow = { shown = true, locked = false, scale = 1.0, flip = false, x = 0, y = 180, point = "CENTER" },
 		panel = { shown = true, locked = false, scale = 1.0, x = -20, y = -160, point = "TOPRIGHT", maxSteps = 10 },
 		hub = { point = "CENTER", x = 0, y = 0 },

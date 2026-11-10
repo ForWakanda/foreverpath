@@ -107,7 +107,7 @@ function P:ResolveObjective(questID, i)
 		if cm then return cm, cx, cy, "mobs" end
 	end
 	local point = FP.QuestObjectives:Nearest(questID, i)
-	if point then return point.mapID, point.x, point.y, "known source: " .. point.name end
+	if point then return point.mapID, point.x, point.y, (point.role=="event" and "event completion area: " or "known source: ") .. point.name end
 	return nil
 end
 

@@ -415,7 +415,7 @@ function H:BuildPage(key)
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end
-		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"}}) do
+		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"},{"questEventHints","Show quest hints (separate from objective progress)"}}) do
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end

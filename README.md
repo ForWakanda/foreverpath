@@ -4,7 +4,7 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.12.0)
+## What it does (v0.13.0)
 
 - **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Quest rewards, Quest chains, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
 - **Compact next-steps panel** (`/fp panel`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
@@ -23,6 +23,16 @@ It shows you where to go. You play. Nothing in here moves your character, target
 - **Trainer notes** (`/fp trainer`): at a class or profession trainer, what you can learn now, the total cost against your gold and the next level that unlocks something. On a level-up, which recorded trainer teaches something at the new level and what it costs. `/fp trainer 28` asks about a level.
 - **Party seed**: `/fp partyexport` → paste string for a friend, `/fp partyimport <string>` here; when both run the addon, quest state syncs over addon messages automatically.
 
+## Event objectives and quest hints (v0.13.0)
+
+Supported exploration, conversation and escort-completion areas now appear automatically alongside ordinary quest sources on the world map and nearby minimap. Click a marker to guide there; matched markers clear as the live objective finishes. An escort marker describes its completion area, not the route to walk or the location of a moving NPC. The arrow uses the known area only when existing native/recorded guidance has no location.
+
+Shared quest-credit objectives can show all their known target species, including tasks such as Kodo Roundup. Follow the quest's instructions for the required action; these targets are not necessarily things to kill.
+
+Provider notes such as **Use the cannon**, **Use a Fresh Carcass at the Flame of Uzel**, and **Lure the Kodos to Smeed Scrabblescrew** appear as clearly labeled **quest hints**. They have no individual progress tracking, remain until the quest is complete, and only become a destination when clicked. Hide them in **Display → Show quest hints** while keeping tracked objective pins visible. Navigation reports tracked event/credit objectives and hints separately.
+
+Uses the existing QuestieDB Forever provider. Ambiguous matches, missing locations, unsupported spell objectives, and dungeon placeholders stay unmapped. No new dependency or media; `/reload` loads this update. Source, mock and packaged-provider checks pass; in-game rendering and locations still need verification.
+
 ## Quest reward comparisons (v0.12.0)
 
 Open **ForeverPath → Quest rewards**, or click **Compare rewards** beneath a quest offer/turn-in. The page follows either the quest selected in Blizzard's quest log or the open quest dialog; the two buttons choose the source. It never selects or claims a reward.
@@ -31,7 +41,7 @@ Open **ForeverPath → Quest rewards**, or click **Compare rewards** beneath a q
 - Select a reward to see numeric stats alongside equipped gear, with gains and losses. Rings/trinkets show each slot; two-handed weapons compare against both equipped hands together. Hover a reward for its full tooltip.
 - Equipment changes and arriving item data refresh the open page. Missing data stays unavailable, and comparisons pause in combat. Weapon effects, enchants, set bonuses and procs are not fully represented by numeric stats; there is no automatic upgrade score.
 
-This version is source-checked and mock-tested; client layout, tooltips and reward reads await in-game verification. Event objectives and dungeon routing remain the next roadmap items.
+This version is source-checked and mock-tested; client layout, tooltips and reward reads await in-game verification. Dungeon routing remains the next roadmap item.
 
 ## Quest chains and prerequisites (v0.11.0)
 

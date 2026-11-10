@@ -82,3 +82,52 @@ assert(H.pages.chains.body:GetHeight()>432)
 print("PASS packaged chain index:",#C.searchRows,"records",batches.." async batches",string.format("%.3fs CPU, %.0f KiB growth",os.clock()-started,collectgarbage("count")-before))
 print("PASS Black Shield chain: 1251 -> 1321 -> 1322 -> 1323 -> 1276; distinct stages, Do'gol pickup, UI details")
 assert(#FP.db.errors==0,"chain UI stored errors")
+
+-- Actual packaged event records, including labels previously observed in saved
+-- quest data. Fixtures replay the client shape; they do not prove live rendering.
+local Q=FP.QuestObjectives
+local eventCases={
+ {870,"The Forgotten Pools","Explore the waters of the Forgotten Pools",1413,.4506,.2253},
+ {1273,"Questioning Reethe","Question Reethe with Ogron",1445,.4247,.3807},
+ {25,"Stonetalon Standstill","Scout the gazebo on Mystral Lake that overlooks the nearby Alliance outpost.",1440,.4892,.6956},
+ {898,"Free From the Hold","Escort Gilthares Firebough back to Ratchet",1413,.6227,.3909},
+}
+for _,case in ipairs(eventCases)do
+ M.quests={};M.complete[case[1]]=false;M.mapID=case[4];M.px=case[5];M.py=case[6];FP.Pos:Refresh(true)
+ local q={questID=case[1],title=case[2],objectives={{text=case[3],type="event",finished=false,numRequired=1,numFulfilled=0}}}
+ M.AddQuest(q);Q:Refresh(true)
+ assert(Q.events==1 and Q.missing==0,case[2].." did not map")
+ local point=Q.groups[1].points[1]
+ assert(point.mapID==case[4] and math.abs(point.x-case[5])<.000001 and math.abs(point.y-case[6])<.000001)
+ local pins=Q:WorldPins(case[4]);assert(#pins>0 and Q:Guide(pins[1]))
+ assert(FP.Waypoints:GetActive().desc:find("Event completion area",1,true))
+ local clicked=FP.Waypoints:GetActive()
+ q.objectives[1].finished=true;Q:Refresh();assert(Q.events==0)
+ for _,wp in ipairs(FP.Waypoints.list)do assert(wp~=clicked,"completed event waypoint survived")end
+ -- The older planner waypoint may become active again; it is not this event.
+ print("PASS packaged event",case[1],case[2],case[4],case[5],case[6])
+end
+M.quests={};M.complete[5561]=false
+M.AddQuest({questID=5561,title="Kodo Roundup",objectives={{text="Kodos Tamed: 0/5",type="monster",finished=false,numRequired=5,numFulfilled=0}}})
+Q:Refresh(true);assert(Q.events==1 and Q.hints==1)
+local targets={};for _,p in ipairs(Q.groups[1].points)do targets[p.entityID]=true end
+assert(targets[4700] and targets[4701] and targets[4702])
+assert(Q.groups[2].kind=="Hint" and not Q.groups[2].objIndex)
+print("PASS packaged credit+hint: Kodo Roundup, all three target species and separate lure destination")
+M.quests={};M.complete[1136]=false
+M.AddQuest({questID=1136,title="Frostmaw",objectives={{text="Frostmaw's Mane: 0/1",type="item",finished=false}}})
+Q:Refresh(true);assert(Q.hints==1)
+local found=false;for _,g in ipairs(Q.groups)do if g.kind=="Hint"then
+ assert(g.name=="Use a Fresh Carcass at the Flame of Uzel" and #g.points>0)
+ for _,p in ipairs(g.points)do assert(p.entityID==1770)end
+ found=true
+end end;assert(found)
+print("PASS packaged interaction hint: Frostmaw's Flame of Uzel")
+M.quests={};M.complete[92401]=false
+M.AddQuest({questID=92401,title="A Frightened Request",objectives={{text="Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",type="event",finished=false}}})
+Q:Refresh(true);assert(Q.events==0 and Q.missing==1,"sentinel coordinates became an event location")
+M.quests={};M.complete[92474]=false
+M.AddQuest({questID=92474,title="Falling With Style",objectives={{text="Use Walk on Air",type="spell",finished=false}}})
+Q:Refresh(true);assert(Q.matched==0 and Q.missing==1,"spell with no reference location invented a destination")
+print("PASS packaged unknowns: event sentinel and locationless spell remain unmapped")
+assert(#FP.db.errors==0,"event integration stored errors")
