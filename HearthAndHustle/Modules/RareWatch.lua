@@ -364,19 +364,32 @@ function RW:Encode(kind, info)
 	return "RW;no"
 end
 
+local function messageText(s,limit)
+ s=s:gsub("[|%c]", "")
+ if #s>limit then return nil end
+ return s~="" and s or nil
+end
+local function integer(s,max)
+ if not s:match("^%d+$") then return nil end
+ local n=tonumber(s)
+ if U.Finite(n) and n>0 and n<=max and n==math.floor(n) then return n end
+end
 function RW:Decode(msg)
 	if type(msg) ~= "string" or #msg > 120 then return nil end
 	local kind, rest = msg:match("^RW;([a-z]+);?(.*)$")
 	if kind == "no" and rest == "" then return { kind = "no" } end
 	if kind == "up" then
 		local level, ct, name = rest:match("^([^;]*);([^;]*);([^;]*)$")
-		if not level then return nil end
-		return { kind = "up", level = tonumber(level), creatureType = ct ~= "" and ct or nil, name = name ~= "" and name or nil }
+		if not level or #ct>24 or #name>48 then return nil end
+  local value=level~="" and integer(level,255) or nil
+  if level~="" and not value then return nil end
+  return {kind="up",level=value,creatureType=messageText(ct,24),name=messageText(name,48)}
 	end
 	if kind == "kill" then
 		local id, name = rest:match("^([^;]*);([^;]*)$")
-		if not id then return nil end
-		return { kind = "kill", id = tonumber(id), name = name ~= "" and name or nil }
+		local value=id and integer(id,2147483647)
+  if not value or #name>48 then return nil end
+  return {kind="kill",id=value,name=messageText(name,48)}
 	end
 	return nil
 end
@@ -390,7 +403,11 @@ function RW:Broadcast(kind, info)
 end
 
 function RW:Receive(msg, sender)
-	local p = self:Decode(msg)
+ if not settings().enabled or not self.inside or not self:Current() then return false end
+ if type(sender)~="string" then return false end
+ sender=messageText(sender,96)
+ if not sender then return false end
+ local p = self:Decode(msg)
 	if not p then return false end
 	self.received = (self.received or 0) + 1
 	if p.kind == "up" then
@@ -455,7 +472,7 @@ function RW:OnInit()
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
-	f:SetScript("OnDragStart", function(frame) if not settings().locked then frame:StartMoving() end end)
+	f:SetScript("OnDragStart", function(frame) if not settings().locked and not API.InCombat() then frame:StartMoving() end end)
 	f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing(); savePosition(frame) end)
 	if f.SetBackdrop then
 		f:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
@@ -541,6 +558,7 @@ local function measure(self, key, fs, fallback)
 end
 
 function RW:Layout()
+ if API.InCombat() then self.scanPending=true;self.layoutPending=true;return end
 	local nameShown = self.nameShown and true or false
 	self.detail:ClearAllPoints()
 	self.detail:SetPoint("TOPLEFT", self.status, "BOTTOMLEFT", 0, nameShown and -24 or -6)
@@ -550,6 +568,7 @@ function RW:Layout()
 end
 
 function RW:ApplySettings()
+ if API.InCombat() then self.scanPending=true;self.layoutPending=true;return end
 	local s = settings()
 	local f = self.frame
 	f:ClearAllPoints()
@@ -603,6 +622,7 @@ function RW:StatusLines()
 end
 
 function RW:Refresh()
+ if API.InCombat() then self.scanPending=true;self.layoutPending=true;return end
 	local f = self.frame
 	local show = self:ShouldShow()
 	if show then
@@ -676,6 +696,7 @@ function RW:OnEnable()
 	E(FP, "VIGNETTES_UPDATED", function() FP.Throttle("rare-vignette", 1, function() RW:ProbeVignettes("updated") end) end)
 	E(FP, "PLAYER_REGEN_ENABLED", function()
 		if RW.macroPending then RW:ApplyMacro() end
+		if RW.layoutPending then RW.layoutPending=nil;RW:ApplySettings() end
 		if RW.scanPending then RW:Refresh() end
 	end)
 	FP:On("RARE_CHANGED", function() RW:RequestRefresh() end)

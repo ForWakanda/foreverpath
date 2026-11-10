@@ -144,6 +144,14 @@ local function onAddonLoaded(event, name)
 end
 FP:RegisterEvent("ADDON_LOADED", onAddonLoaded)
 
+for _,event in ipairs({"ADDON_ACTION_BLOCKED","ADDON_ACTION_FORBIDDEN"}) do
+ local kind=event
+ FP:RegisterEvent(kind,function(_,addon,action)
+  addon,action=FP.safe(addon),FP.safe(action)
+  if addon==ADDON then FP:ReportError(kind,tostring(action or "unknown action")) end
+ end)
+end
+
 FP:RegisterEvent("PLAYER_LOGIN", function()
 	if not FP.dbReady then return end
 	FP:EnableModules()

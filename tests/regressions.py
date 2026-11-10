@@ -1623,7 +1623,7 @@ assert(not RW.macroPending and RW.scan:GetAttribute("macrotext"):find("/targetex
 -- hiding/showing the protected button is also deferred
 M.combatLockdown = true
 M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
-assert(RW.scan:IsShown() and RW.scanPending and not RW.frame:IsShown(), "scan button untouched in combat; hud itself hidden")
+assert(RW.scan:IsShown() and RW.scanPending and RW.frame:IsShown(), "secure button and its anchor retain geometry in combat")
 M.combatLockdown = false
 M.FireEvent("PLAYER_REGEN_ENABLED")
 assert(not RW.scan:IsShown(), "scan button hidden once combat ends")

@@ -67,3 +67,38 @@ end
 assert(stripped>350)
 ''',
 })
+
+REVIEW_CASES.update({
+"review_rare_messages_reject_nonfinite_and_outside_context": r'''
+local R=FP.RareWatch
+for _,n in ipairs({"1e999","nan","-5.5","0","1.5","2147483648"}) do assert(not R:Decode("RW;kill;"..n..";x"),n) end
+for _,n in ipairs({"1e999","nan","-1","1.5","256"}) do assert(not R:Decode("RW;up;"..n..";Undead;x"),n) end
+local p=R:Decode("RW;up;40;Undead;|Tfoo|t");assert(p and not p.name:find("|",1,true))
+R:OpenRun({name="Test"},"test");R.inside=false
+local before=snapshot(FP.db.rare);assert(not R:Receive("RW;kill;6490;x","friend"));assert(snapshot(FP.db.rare)==before)
+R.inside=true;FP.settings.rare.enabled=false;assert(not R:Receive("RW;no","friend"));assert(snapshot(FP.db.rare)==before)
+FP.settings.rare.enabled=true;assert(R:Receive("RW;kill;6490;x","friend"));assert(R:Current().kills[6490]==1)
+assert(not FP.Party:Parse("FP1;|Tfoo|t;MAGE;40;1"))
+''',
+"review_pin_passthrough_and_secure_hud_wait_for_combat_end": r'''
+local calls=0
+MapCanvasPinMixin.CheckMouseButtonPassthrough=function() calls=calls+1 end
+FP.API.InCombat=function() return true end
+HearthAndHustleMapPinMixin.CheckMouseButtonPassthrough({})
+HearthAndHustleObjectivePinMixin.CheckMouseButtonPassthrough({})
+assert(calls==0)
+local R=FP.RareWatch
+local old=R.frame.SetHeight;R.frame.SetHeight=function() error("protected anchor resized") end
+R:Layout();R:ApplySettings();R:Refresh();assert(R.scanPending)
+R.frame.SetHeight=old;FP.API.InCombat=function() return false end
+HearthAndHustleMapPinMixin.CheckMouseButtonPassthrough({});assert(calls==1)
+M.FireEvent("PLAYER_REGEN_ENABLED");assert(not R.scanPending)
+''',
+"review_blocked_actions_are_recorded": r'''
+M.FireEvent("ADDON_ACTION_BLOCKED","OtherAddon","ignored")
+assert(#FP.db.errors==0)
+M.FireEvent("ADDON_ACTION_BLOCKED","HearthAndHustle","SetPassThroughButtons()")
+assert(#FP.db.errors==1 and FP.db.errors[1].where=="ADDON_ACTION_BLOCKED")
+FP.db.errors={}
+''',
+})
