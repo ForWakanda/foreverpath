@@ -58,7 +58,158 @@ local function selectRow(id,n)
 end
 '''
 
+GEAR = r'''
+local G=FP.Gear
+local function item(id,loc,stats,extra)
+ local row={id=id,name="Gear "..id,equipLoc=loc,classID=4,subclassID=1,level=25,minLevel=20,
+ stats=stats or {},sources={"Test Dungeon"},sourceTypes={"Dungeon"},bosses={},subtype="Cloth"}
+ for k,v in pairs(extra or {}) do row[k]=v end
+ return row
+end
+FP.API.GetCharInfo=function() return {name="Tester",class="MAGE",level=30} end
+FP.API.PlayerLevel=function() return 30 end
+local a=item(1001,"INVTYPE_HEAD",{ITEM_MOD_INTELLECT_SHORT=10})
+local b=item(1002,"INVTYPE_HEAD",{ITEM_MOD_INTELLECT_SHORT=20})
+FP.GearCatalog={date="fixture",items={a,b}}
+'''
+
+GEAR_CASES = {
+ "gear_rank_filters_unknown_and_ties": GEAR + r'''
+local rows=G:Rows({slot="HEAD",level=30});assert(#rows==2 and rows[1].key==1002)
+a.stats.ITEM_MOD_INTELLECT_SHORT=20
+rows=G:Rows({slot="HEAD",level=30});assert(rows[1].key==1001)
+a.minLevel=nil;b.minLevel=31
+rows=G:Rows({slot="HEAD",level=30});assert(#rows==0)
+rows=G:Rows({slot="HEAD",level=30,unknown=true});assert(#rows==1 and rows[1].key==1001)
+rows=G:Rows({slot="HEAD",level=30,unknown=true,source="Quest"});assert(#rows==0)
+rows=G:Rows({slot="HEAD",level=60,query="1002"});assert(#rows==1 and rows[1].key==1002)
+rows=G:Rows({slot="FEET",level=60});assert(#rows==0)
+''',
+ "gear_class_armor_weapons_relics": GEAR + r'''
+for class in pairs(G.classProfiles) do
+ local char={class=class,level=30}
+ assert(G:ClassMatches(a,char),class)
+ assert(not G:ClassMatches(item(3,"INVTYPE_HEAD",{}, {subclassID=4}),char))
+end
+assert(G:ClassMatches(item(4,"INVTYPE_HEAD",{}, {subclassID=4}),{class="WARRIOR",level=40}))
+assert(not G:ClassMatches(item(4,"INVTYPE_HEAD",{}, {classes="Priest"}),{class="MAGE",level=60}))
+assert(not G:ClassMatches(item(5,"INVTYPE_WEAPON",{}, {classID=2,subclassID=7}),{class="SHAMAN",level=60}))
+assert(G:ClassMatches(item(6,"INVTYPE_RELIC",{}, {subclassID=9}),{class="SHAMAN",level=60}))
+assert(not G:ClassMatches(item(6,"INVTYPE_RELIC",{}, {subclassID=9}),{class="MAGE",level=60}))
+assert(not G:ClassMatches(a,{class="UNKNOWN",level=60}))
+''',
+ "gear_weights_affect_rank_and_ranged_dps_scope": GEAR + r'''
+a.stats.ITEM_MOD_STAMINA_SHORT=100
+FP.cdb.gear.weights.caster={int=0,sta=1}
+assert(G:Rows({slot="HEAD"})[1].key==1001)
+FP.cdb.gear.weights.caster={int=0/0,sta=-4}
+local w=G:Weights();assert(w.int==1 and w.sta==.3)
+assert(G:Score({ITEM_MOD_SPELL_POWER_SHORT=44},{heal=1},"MAIN")==44)
+assert(G:Score({ITEM_MOD_SPELL_HEALING_DONE_SHORT=124,ITEM_MOD_SPELL_DAMAGE_DONE_SHORT=41},{heal=1},"MAIN")==124)
+assert(G:Score({ITEM_MOD_SPELL_HEALING_DONE_SHORT=124,ITEM_MOD_SPELL_DAMAGE_DONE_SHORT=41},{spell=1},"MAIN")==41)
+assert(G:Score(nil,w,"HEAD")==nil)
+assert(G:Score({ITEM_MOD_INTELLECT_SHORT=0/0},w,"HEAD")==nil)
+assert(G:Score({ITEM_MOD_DAMAGE_PER_SECOND_SHORT=10},{dps=6,ranged=true},"MAIN")==0)
+assert(G:Score({ITEM_MOD_DAMAGE_PER_SECOND_SHORT=10},{dps=6,ranged=true},"RANGED")==60)
+assert(G:Score({ITEM_MOD_DAMAGE_PER_SECOND_SHORT=10},{dps=6},"RANGED")==0)
+''',
+ "gear_all_class_profiles_and_cross_character_setting": GEAR + r'''
+for class,keys in pairs(G.classProfiles) do
+ FP.API.GetCharInfo=function() return {class=class,level=30} end
+ FP.cdb.gear.profile="unrecognized"
+ local key,p=G:Profile();assert(key==keys[1] and p.name and G:Weights())
+ for _,k in ipairs(keys) do FP.cdb.gear.profile=k;assert(G:Profile()==k) end
+end
+''',
+ "gear_combat_pauses_without_item_reads": GEAR + r'''
+FP.API.InCombat=function() return true end
+FP.API.GetRewardItem=function() error("item read in combat") end
+FP.API.GetRewardEquipment=function() error("equipment read in combat") end
+assert(#G:Rows({})==0)
+assert(G:Details({item=a},"HEAD"):find("after combat"))
+assert(#FP.API.GetGearQuestSources(1001)==0)
+''',
+ "gear_comparisons_unknown_rings_and_hand_warning": GEAR + r'''
+local called={}
+FP.API.GetRewardItem=function() return nil end
+FP.API.GetRewardEquipment=function(slot) called[#called+1]=slot;return {status="unknown"} end
+local row={item=a,score=10,rank=1}
+local details=G:Details(row,"FINGER");assert(details:find("unavailable") and called[1]==11 and called[2]==12)
+assert(not details:find("stat%-score change"))
+FP.API.GetRewardItem=function() return {stats={ITEM_MOD_INTELLECT_SHORT=12}} end
+FP.API.GetRewardEquipment=function() return {status="empty",stats={}} end
+assert(G:Details(row,"HEAD"):find("%+12.0"))
+assert(not G:Details(row,"MAIN"):find("stat%-score change"))
+assert(G:Details(row,"MAIN"):find("both hands"))
+''',
+ "gear_gui_filter_wishlist_and_weights_transaction": HUB + GEAR + r'''
+page("gear");assert(#H.controls.gearItems.items==2)
+selectRow("gearItems",1);click("gearSave");assert(FP.cdb.gear.wishlist[1002])
+click("gearWishlist");assert(#H.controls.gearItems.items==1)
+click("gearSave");assert(#H.controls.gearItems.items==0)
+click("gearWishlist");field("gearLevel","bad");H.controls.gearLevel:GetScript("OnTextChanged")()
+assert(#H.controls.gearItems.items==0)
+field("gearLevel",30);H.controls.gearLevel:GetScript("OnTextChanged")();assert(#H.controls.gearItems.items==2)
+click("gearWeights");local P=FP.GearPanel;assert(P.weightsFrame:IsShown())
+P.weightFields.int:SetText("bad");P.weightApply:GetScript("OnClick")();assert(P.weightsFrame:IsShown() and not FP.cdb.gear.weights.caster)
+P.weightFields.int:SetText("2");P.weightApply:GetScript("OnClick")();assert(FP.cdb.gear.weights.caster.int==2 and not P.weightsFrame:IsShown())
+click("gearWeights");page("home");assert(not P.weightsFrame:IsShown())
+page("gear");assert(H.controls.gearLevel:GetText()=="30")
+assert(#FP.db.errors==0)
+''',
+ "gear_gui_source_links_and_browse_preserves_route": HUB + GEAR + r'''
+cmd("way 60 60 Preserve")
+local before=snapshot(FP.Waypoints.list)
+FP.API.GetGearQuestSources=function() return {{id=9001,name="One"},{id=9002,name="Two"}} end
+page("gear");assert(FP.GearPanel.sourceIndex==1)
+click("gearNextQuestSource");assert(FP.GearPanel.sourceIndex==2)
+local inspected
+H.OpenQuestChain=function(self,id) inspected=id end
+click("gearQuestSource");assert(inspected==9002)
+assert(snapshot(FP.Waypoints.list)==before)
+assert(FP.GearPanel:Dungeon({item={sourceTypes={"Quest","Dungeon"},sources={"Quest Rewards","The Deadmines"}}})=="The Deadmines")
+''',
+ "gear_provider_missing_bad_ids_and_errors": r'''
+local API=FP.API
+assert(#API.GetGearQuestSources(nil)==0 and #API.GetGearQuestSources(0)==0)
+API.QuestDatabaseStatus=function() return true end
+LibQuestieDB={Item={Get=function(id,key) assert(key=="questRewards");return {1,1,-2,0/0,2} end}}
+API.GetQuestChainRecord=function(id) return {id=id,name="Quest "..id} end
+local sources=API.GetGearQuestSources(1001);assert(#sources==2 and sources[1].id==1 and sources[2].id==2)
+LibQuestieDB.Item.Get=function() error("provider failed") end
+assert(#API.GetGearQuestSources(1001)==0)
+''',
+ "gear_catalog_forever_integrity_and_coverage": r'''
+local seen,slots,classes={}, {}, {}
+assert(#FP.GearCatalog.items>7000)
+for _,item in ipairs(FP.GearCatalog.items) do
+ assert(not seen[item.id]);seen[item.id]=true
+ assert(#item.sources==#item.sourceTypes and #item.sources>0)
+ assert(item.minLevel==nil or item.minLevel>=0)
+ assert(not item.name:find("[TMP]",1,true))
+ slots[item.equipLoc]=true
+ for k,v in pairs(item.stats) do assert(FP.Util.Finite(v) and v>=0) end
+end
+for class in pairs(FP.Gear.classProfiles) do
+ FP.API.GetCharInfo=function() return {class=class,level=60} end
+ assert(#FP.Gear:Rows({slot="HEAD",level=60})>0,class)
+end
+assert(slots.INVTYPE_HEAD and slots.INVTYPE_FINGER and slots.INVTYPE_2HWEAPON)
+assert(seen[7714] and seen[6504])
+''',
+ "hub_overview_cards_today_features_and_dungeon_entry": HUB + r'''
+page("home")
+for _,key in ipairs({"navigation","gear","rewards","chains","dungeons","town"}) do
+ page("home");click("home_"..key);assert(H.selected==key)
+end
+page("dungeons");selectRow("hubDungeons",1);local key=H.controls.hubDungeons.items[1].key
+click("openDungeonChecklist");assert(FP.DungeonPanel.frame:IsShown() and FP.DungeonPanel.settings.selected==key)
+assert(#FP.db.errors==0)
+''',
+}
+
 CASES = {
+    **GEAR_CASES,
     "hub_all_sections_are_read_only_and_reuse_frames": HUB + r'''
 cmd("way 60 60 Preserve")
 local beforeSettings,beforeData,beforeChar=snapshot(FP.settings),snapshot(FP.data),snapshot(FP.cdb)
@@ -67,7 +218,7 @@ FP.Party.Send=function() calls=calls+1 end
 FP.Vendor.SellClicked=function() calls=calls+1 end
 FP.Vendor.RepairClicked=function() calls=calls+1 end
 ForeverPath_OnAddonCompartmentClick()
-assert(H.frame:IsShown() and H.selected=="navigation")
+assert(H.frame:IsShown() and H.selected=="home")
 for _,s in ipairs(H.sections) do page(s[1]); assert(H.pages[s[1]].body:GetHeight()>=432) end
 local count=#M.frames
 for _,s in ipairs(H.sections) do page(s[1]) end

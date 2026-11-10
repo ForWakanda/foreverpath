@@ -1900,3 +1900,23 @@ function API.GetRewardContext(mode)
 	elseif #out.items==0 then out.message="No item rewards listed for this quest." end
 	return out
 end
+
+-- Optional provider links; reading a gear source does not alter selected quests.
+function API.GetGearQuestSources(itemID)
+ if API.InCombat() or not U.Finite(itemID) or itemID<=0 or not API.QuestDatabaseStatus() then return {} end
+ local db=LibQuestieDB.Item
+ if type(db)~="table" or type(db.Get)~="function" then return {} end
+ local ok,ids=pcall(db.Get,itemID,"questRewards")
+ if not ok or type(ids)~="table" then return {} end
+ local out,seen={},{}
+ for i,id in ipairs(ids) do
+  if i>64 then break end
+  if U.Finite(id) and id>0 and id==math.floor(id) and not seen[id] then
+   seen[id]=true
+   local q=API.GetQuestChainRecord(id)
+   if q then out[#out+1]=q end
+  end
+ end
+ table.sort(out,function(a,b) return a.id<b.id end)
+ return out
+end

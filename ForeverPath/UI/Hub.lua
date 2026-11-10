@@ -6,6 +6,9 @@ local U, API = FP.Util, FP.API
 local H = FP:NewModule("Hub")
 local W = 600
 local SECTIONS = {
+	{"home", "Overview", "Quest, gear and preparation tools for your next adventure."},
+	{"gear", "Best in slot", "Find gear by slot, compare stats and plan your next upgrade."},
+	{"dungeons", "Dungeons", "Entrance guidance, quest preparation and pickup routes."},
 	{"navigation", "Navigation", "Choose your next quest or resume your route."},
 	{"rewards", "Quest rewards", "Compare reward items, equipped gear, and vendor values."},
 	{"chains", "Quest chains", "Explore prerequisites, optional lead-ins, and what comes next."},
@@ -78,11 +81,11 @@ function H:Create()
 	self.nav = {}
 	for i,section in ipairs(SECTIONS) do
 		local key = section[1]
-		self.nav[key] = button(f,section[2],16,-82-(i-1)*34,142,function() self:Select(key) end)
+		self.nav[key] = button(f,section[2],16,-78-(i-1)*29,142,function() self:Select(key) end)
 	end
-	button(f,"Compact panel",16,-465,142,function() FP.Panel:Toggle() end)
-	button(f,"Dungeon quests",16,-497,142,function() f:Hide(); FP.DungeonPanel:Open() end)
-	label(f,"Choose a section.\nChanges save automatically.\n\nDrag the title area to move this window.",20,-539,134)
+	button(f,"Compact panel",16,-500,142,function() FP.Panel:Toggle() end)
+	button(f,"Quest map settings",16,-532,142,function() self:Select("display") end)
+	label(f,"Drag the title area to move.\nPreferences save automatically.",20,-569,134)
 	button(f,"Recenter window",16,-620,142,function()
 		s.point,s.x,s.y="CENTER",0,0; f:ClearAllPoints(); f:SetPoint("CENTER"); self:FitWindow()
 	end)
@@ -102,7 +105,7 @@ function H:Open(key)
 	if not self.frame then self:Create() end
 	self.frame:Show()
 	self:FitWindow()
-	self:Select(key or self.selected or "navigation")
+	self:Select(key or self.selected or "home")
 end
 
 function H:OpenQuestChain(questID)
@@ -155,6 +158,7 @@ function H:Run(title,fn)
 end
 
 function H:CancelConfirm()
+	if FP.GearPanel and FP.GearPanel.weightsFrame then FP.GearPanel.weightsFrame:Hide() end
 	self.pending=nil
 	if self.confirmFrame then self.confirmFrame:Hide() end
 end
@@ -208,9 +212,46 @@ function H:HudControls(p,prefix,settings)
 	})
 end
 
+function H:BuildOverview(p)
+ self:Text(p,"",function()
+  local char=API.GetCharInfo();local wp=FP.Waypoints:GetActive()
+  return FP.GOLD..tostring(char.name).." · Level "..tostring(char.level or "?").." "..tostring(char.class or "").."|r\n"..
+   (wp and ("Heading to "..wp.title) or "Choose a tool below to plan your next step.")
+ end)
+ local cards={
+  {"navigation","Quest navigation","Automatic objective and event markers. Click a source on the map to guide there.","INV_Misc_Map_01"},
+  {"gear","Best in slot","Browse gear, compare equipped items and save a wishlist for your class.","INV_Chest_Chain_04"},
+  {"rewards","Compare quest rewards","Choice and guaranteed rewards, vendor values, tooltips and stat differences.","INV_Misc_Gift_01"},
+  {"chains","Quest chains","Search quests, inspect prerequisites and guide to known pickup locations.","INV_Misc_Book_09"},
+  {"dungeons","Dungeon preparation","Entrance routes, quest checklists and pickup / turn-in guidance.","INV_Misc_Key_03"},
+  {"town","Supplies & town","Supplies for every class, personal targets, vendor and trainer information.","INV_Misc_Bag_08"},
+ }
+ for i,card in ipairs(cards) do
+  local key=card[1];local x=((i-1)%2)*304;local y=p.y+math.floor((i-1)/2)*108
+  local b=CreateFrame("Button",nil,p.body,"BackdropTemplate")
+  b:SetSize(294,98);b:SetPoint("TOPLEFT",x,-y);backdrop(b,.8)
+  local icon=b:CreateTexture(nil,"ARTWORK");icon:SetSize(28,28);icon:SetPoint("TOPLEFT",12,-12);icon:SetTexture("Interface\\Icons\\"..card[4])
+  label(b,FP.GOLD..card[2].."|r",48,-14,234,"GameFontNormal")
+  label(b,card[3],12,-46,270)
+  local hl=b:CreateTexture(nil,"HIGHLIGHT");hl:SetAllPoints();hl:SetColorTexture(.2,.6,.8,.12)
+  b:SetScript("OnClick",function() self:Select(key) end);self.controls["home_"..key]=b
+ end
+ p.y=p.y+324
+ self:Text(p,"Quest maps work automatically. Use Display for source markers, event hints and overlay settings; the remaining tools are always in the sidebar.")
+end
+
 function H:BuildPage(key)
 	local p=self:NewPage(key)
-	if key=="rewards" then
+	if key=="home" then
+		self:BuildOverview(p)
+	elseif key=="gear" then
+		FP.GearPanel:Build(self,p)
+	elseif key=="dungeons" then
+		self:Text(p,"Choose a dungeon to prepare quests and guide to its entrance. Inspecting the checklist does not change your route.")
+		local list=self:List(p,"hubDungeons",function() return FP.Dungeons:List() end,function(row) return row.data.name.." · "..tostring(row.data.recommendedLevel or "Level unknown") end)
+		self:Actions(p,{{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end}})
+		self:Text(p,"Entrance routes and quest pickup / objective / turn-in guidance are available inside the checklist. Interior paths and boss order are not mapped.")
+	elseif key=="rewards" then
 		FP.RewardPanel:Build(self,p)
 	elseif key=="chains" then
 		FP.ChainPanel:Build(self,p)
@@ -545,12 +586,14 @@ function H:Number(field,name,min,max,integer)
 	return n
 end
 
-function H:List(p,id,get,describe)
+function H:List(p,id,get,describe,options)
+	options=options or {}
+	local width,count=options.width or W,options.count or 7
 	local list={page=1,rows={},get=get,describe=describe}
 	self.controls[id]=list
-	for i=1,7 do
-		local row=button(p.body,"",0,-p.y,W,function() end)
-		row:SetSize(W,26)
+	for i=1,count do
+		local row=button(p.body,"",0,-p.y,width,function() end)
+		row:SetSize(width,26)
 		row:SetScript("OnClick",function(btn) if btn.item then list.selected=btn.item.key; self:Refresh() end end)
 		row:SetScript("OnEnter",function(btn)
 			if not btn.item then return end
@@ -559,21 +602,21 @@ function H:List(p,id,get,describe)
 		row:SetScript("OnLeave",function(btn) if GameTooltip:IsOwned(btn) then GameTooltip:Hide() end end)
 		list.rows[i]=row; p.y=p.y+29
 	end
-	list.caption=label(p.body,"",160,-p.y-6,280)
-	list.prev=button(p.body,"Previous",0,-p.y,130,function() list.page=math.max(1,list.page-1); self:Refresh() end)
-	list.next=button(p.body,"Next",W-130,-p.y,130,function() list.page=list.page+1; self:Refresh() end)
+	list.caption=label(p.body,"",options.width and 64 or 160,-p.y-6,options.width and 160 or 280)
+	list.prev=button(p.body,"Previous",0,-p.y,options.width and 62 or 130,function() list.page=math.max(1,list.page-1); self:Refresh() end)
+	list.next=button(p.body,"Next",width-(options.width and 62 or 130),-p.y,options.width and 62 or 130,function() list.page=list.page+1; self:Refresh() end)
 	p.y=p.y+36
 	table.insert(p.refreshers,function()
 		list.items=get() or {}
-		local pages=math.max(1,math.ceil(#list.items/7))
+		local pages=math.max(1,math.ceil(#list.items/count))
 		list.page=math.min(list.page,pages)
 		list.caption:SetText(#list.items .. " items  ·  " .. list.page .. " / " .. pages)
 		if list.page>1 then list.prev:Enable() else list.prev:Disable() end
 		if list.page<pages then list.next:Enable() else list.next:Disable() end
 		for i,b in ipairs(list.rows) do
-			b.item=list.items[(list.page-1)*7+i]
+			b.item=list.items[(list.page-1)*count+i]
 			if b.item then
-				b:SetText((list.selected==b.item.key and FP.GOLD .. "> " or "") .. U.Truncate(describe(b.item),82) .. "|r"); b:Show()
+				b:SetText((list.selected==b.item.key and FP.GOLD .. "> " or "") .. U.Truncate(describe(b.item),options.width and 36 or 82) .. "|r"); b:Show()
 			else b:Hide() end
 		end
 	end)

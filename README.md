@@ -4,7 +4,35 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## What it does (v0.15.0)
+## Gear browser and overview (v0.16.0)
+
+Open ForeverPath from the addon compartment or the compact panel's **Open tools**.
+The new **Overview** cards lead directly to quest navigation/event markers, reward
+comparisons, quest chains, dungeon preparation and supplies for every class.
+All tools remain in the sidebar; no slash commands are required.
+
+**Best in slot** is a gear explorer with 7,982 Forever item references. Choose a
+slot, a role preset for your class, a maximum required level and a source category;
+search by item name, ID or source. Select a row for its source and equipped stat
+comparison; hover for the client tooltip. Save targets to your per-character
+wishlist. **Edit stat weights** shows every scoring weight and accepts your own
+priorities. Dungeon items link to the checklist; QuestieDB supplies reward quest
+links with chain/pickup guidance where known. Multiple quest sources can be cycled.
+
+These are **estimated stat rankings within the filtered catalog**, not simulation
+results or a claim of definitive BiS. The reference snapshot runs through November 7, 2026 (some records are older);
+the detail pane separately shows current-client stats when loaded. Procs, sets,
+hit/crit caps, weapon speed and unmodeled stats are excluded. Class/type filters
+are reference rules, not checks of learned weapon skills or every equip restriction.
+An item source does not prove current availability. Missing level requirements are
+excluded unless you explicitly include them; quest rewards often fall in that group.
+Hand comparisons show individual scores without a misleading swap delta. All gear
+reads pause in combat. No equipment or reward actions are automated.
+
+Verification is offline/mock and installed-file verification; actual in-game layout,
+item tooltips and current equipment API behavior still need a client check.
+
+## What it does (v0.16.0)
 
 - **ForeverPath control window:** click ForeverPath in the addon compartment or **Open tools** on the compact panel. Navigation, Quest rewards, Quest chains, Waypoints, Professions, Party, Supplies & town, PvP, Rare watch, Display, and Diagnostics have buttons, selectors and forms. Action results appear in the window. `/fp` opens it too; slash commands remain optional shortcuts.
 - **Compact next-steps panel** (`/fp panel`): the live quest log turned into an ordered list — nearest objective areas and turn-ins first, shared party quests marked with ★, hearth hint when several turn-ins are near your inn. Click a row to send the arrow there.
