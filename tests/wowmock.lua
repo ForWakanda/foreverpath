@@ -247,7 +247,13 @@ C_Minimap = { GetViewRadius = function() return 233.3 end }
 C_CVar = { GetCVarBool = function() return M.rotateMinimap or false end }
 
 -- quest log
-function M.AddQuest(q) table.insert(M.quests, q) end
+function M.AddQuest(q)
+ -- Real Forever clients use count-first objective text.
+ for _,o in ipairs(q.objectives or {}) do
+  o.text=o.text and o.text:gsub("^(.-):%s*(%d+/%d+)$", "%2 %1")
+ end
+ table.insert(M.quests,q)
+end
 function M.RemoveQuest(id) for i, q in ipairs(M.quests) do if q.questID == id then table.remove(M.quests, i) return end end end
 local function questByID(id) for _, q in ipairs(M.quests) do if q.questID == id then return q end end end
 C_QuestLog = {

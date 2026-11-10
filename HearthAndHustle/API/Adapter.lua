@@ -364,6 +364,7 @@ end
 
 -- QuestieDB is a separately installed data provider; no Questie UI is required.
 -- Use only its public reads. Never load Classic coordinates as Forever data.
+local referenceZones
 function API.QuestDatabaseStatus()
 	local db = LibQuestieDB
 	if type(db) ~= "table" then return false, "Quest locations: install/enable QuestieDB (Forever), then restart WoW." end
@@ -374,15 +375,17 @@ function API.QuestDatabaseStatus()
 	for _, kind in ipairs({"Quest", "Npc", "Object", "Item"}) do
 		if not db[kind] or type(db[kind].Get) ~= "function" then return false, "Quest locations: database not ready." end
 	end
+	local mapsOK,maps=pcall(referenceZones,db)
+	if not mapsOK or not maps then return false,"Quest locations: incompatible zone mapping; update QuestieDB." end
 	return true, "QuestieDB Forever (" .. tostring(db.readMode or "unknown mode") .. "): known locations, not live spawns."
 end
 
-local zoneProvider, zoneMap
-local function referenceZones(db)
-	if zoneProvider == db and zoneMap then return zoneMap end
+local zoneProvider, zoneMap, zoneRaw
+referenceZones=function(db)
 	local support = db.Support and db.Support.Get and db.Support.Get("ZoneDB")
 	local raw = support and support.private and support.private.areaIdToUiMapId
 	if type(raw) ~= "string" then return nil end
+	if zoneProvider==db and zoneRaw==raw and zoneMap then return zoneMap end
 	-- Public support payload is a Lua table expression; an empty environment
 	-- prevents it accessing client globals. Do not use legacy instance overrides.
 	local chunk = loadstring(raw, "QuestieDB zone mapping")
@@ -390,7 +393,7 @@ local function referenceZones(db)
 	setfenv(chunk, {})
 	local ok, maps = pcall(chunk)
 	if not ok or type(maps) ~= "table" then return nil end
-	zoneProvider, zoneMap = db, maps
+	zoneProvider, zoneMap, zoneRaw = db, maps, raw
 	return maps
 end
 
@@ -459,7 +462,7 @@ local function referencePoints(db,maps,spawns,name,id,role)
 						if #out>=4096 then break end
 						p.name,p.entityID=name,id; out[#out+1]=p
 					end
-				elseif info and info.mapType==3 and U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
+				elseif info and (info.mapType==3 or info.mapType==2) and U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
 					out[#out+1]={mapID=mapID,x=x/100,y=y/100,name=name,entityID=id,role=role}
 				end
 			end

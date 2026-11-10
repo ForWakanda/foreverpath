@@ -188,3 +188,15 @@ assert(FP.GearPanel.details:GetText():find("Leaders of the Fang",1,true))
 FP.API.GetCharInfo=oldChar
 assert(#FP.db.errors==0)
 print("PASS packaged gear: Wingblade -> Leaders of the Fang, filtered gear UI, source details; zero stored mock errors")
+
+-- Replayed client labels, not hand-authored Classic text. Missing Forever-only
+-- quests remain explicit coverage gaps rather than inferred locations.
+local corpus=dofile(repo.."/tests/fixtures/recorded-objectives.lua")
+local matched,total=0,0
+for _,o in ipairs(corpus) do
+ local ref=Q:Match(o,FP.API.GetQuestReference(o.questID))
+ if ref and #ref.points>0 then matched=matched+1 end
+ total=total+1
+end
+assert(total==516 and matched==227,string.format("recorded coverage regressed: %d/%d",matched,total))
+print("PASS recorded client objective corpus:",matched,total)

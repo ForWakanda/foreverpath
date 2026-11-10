@@ -55,6 +55,14 @@ function U.Trim(s)
 	return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+-- Forever uses count-first labels; retain Classic suffix compatibility.
+function U.ObjectiveText(text)
+ local label=U.Trim((tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  :gsub("^%s*%d+%s*/%s*%d+%s*", ""):gsub(":%s*%d+%s*/%s*%d+%s*$", "")))
+ if label=="" or label=="slain" or label=="killed" or label=="defeated" then return nil end
+ return label
+end
+
 function U.Split(s, sep)
 	local out = {}
 	sep = sep or "%s"

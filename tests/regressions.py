@@ -2891,6 +2891,9 @@ C_Item.GetItemInfo=old;M.FireEvent("GET_ITEM_INFO_RECEIVED",999999,true);M.RunTi
 assert(prepRow("supply:999999").text:find("Item 999999",1,true))
 '''
 
+from review_cases import REVIEW_CASES
+CASES.update(REVIEW_CASES)
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)

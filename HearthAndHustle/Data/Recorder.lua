@@ -175,7 +175,8 @@ local function snapshotQuest(info)
 			q.obj[i] = q.obj[i] or {}
 			if o.text and not FP.issecret(o.text) then
 				-- store the text without the progress numbers: "Quilboar slain: 3/8" -> "Quilboar slain"
-				q.obj[i].text = (o.text:gsub(":%s*%d+%s*/%s*%d+%s*$", ""))
+				local label=U.ObjectiveText(o.text)
+				if label then q.obj[i].text=label end
 			end
 			q.obj[i].type = o.type
 			q.obj[i].req = o.numRequired
@@ -245,8 +246,8 @@ local function rescanLog(reason)
 	local seen = {}
 	for _, info in ipairs(log) do
 		seen[info.questID] = true
+		if recording() then snapshotQuest(info) end
 		if not objectiveSnapshot[info.questID] then
-			if recording() then snapshotQuest(info) end
 			objectiveSnapshot[info.questID] = objectiveSnapshotFor(info.questID)
 		else
 			diffObjectives(info.questID)

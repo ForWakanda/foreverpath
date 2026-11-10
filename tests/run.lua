@@ -155,7 +155,7 @@ M.RunTimers(2)
 FP.Planner:Build()
 check(FP.Planner.steps[1].kind == "turnin" and FP.Planner.steps[1].questID == 1236, "complete quest ranks first as turn-in: " .. tostring(FP.Planner.steps[1].title))
 -- 1236 has no recorded ender yet -> falls back to the giver (most Classic quests return to the giver)
-check(FP.Planner.steps[1].how == "giver", "turn-in falls back to giver, got " .. tostring(FP.Planner.steps[1].how))
+check(FP.Planner.steps[1].how == "giver (unconfirmed)", "turn-in falls back to giver, got " .. tostring(FP.Planner.steps[1].how))
 -- Live POIs override an older recorded ender (release locations can change).
 local m, x, y, how = FP.Planner:ResolveTurnIn(1234)
 check(how == "poi" and m == 1413, "live turn-in POI preferred to old recorded position, got " .. tostring(how))
