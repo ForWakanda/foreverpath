@@ -1,4 +1,4 @@
--- Minimal WoW API mock for running ForeverPath outside the game (Lua 5.1).
+-- Minimal WoW API mock for running HearthAndHustle outside the game (Lua 5.1).
 -- Explicit frame methods only; misspelled/nonexistent APIs must fail the tests.
 local M = { timers = {}, tickers = {}, frames = {}, units = {}, facing = 0, mapID = 1413, px = 0.45, py = 0.55,
 	quests = {}, complete = {}, dialogQuest = nil, now = 1000 }
@@ -192,7 +192,7 @@ WorldMapFrame.AcquirePin = function(self, template, ...)
 	local pin = M.NewFrame("Frame", nil, self, template)
 	pin.Icon = M.NewFrame("Texture")
 	pin._pinTemplate = template
-	for k, v in pairs(template == "ForeverPathObjectivePinTemplate" and ForeverPathObjectivePinMixin or ForeverPathMapPinMixin) do pin[k] = v end
+	for k, v in pairs(template == "HearthAndHustleObjectivePinTemplate" and HearthAndHustleObjectivePinMixin or HearthAndHustleMapPinMixin) do pin[k] = v end
 	pin:OnLoad()
 	pin:OnAcquired(...)
 	pin:CheckMouseButtonPassthrough("RightButton")

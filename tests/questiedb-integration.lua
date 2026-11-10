@@ -1,7 +1,7 @@
 -- Optional offline integration against the actual packaged provider. Run from
 -- a QuestieDB source checkout (its emulator), passing this repo and an unpacked
 -- QuestieDB 1.0.13 Forever addon directory. No game/client files are written.
-local repo, root = assert(arg[1], "ForeverPath repo path"), assert(arg[2], "unpacked QuestieDB path")
+local repo, root = assert(arg[1], "Hearth & Hustle repo path"), assert(arg[2], "unpacked QuestieDB path")
 local em = dofile("emulator/metadata.lua")
 dofile("emulator/client.lua").install({expansion="Forever",faction="Horde",classFile="SHAMAN",classId=7,raceName="Orc",raceFile="Orc",raceId=2,level=38})
 local metadata = em.parse(root .. "/QuestieDB_Forever.toc")
@@ -11,10 +11,10 @@ assert(db.readMode == "baked" and db.flavor.expansion == "Forever")
 package.path = repo .. "/tests/?.lua;" .. package.path
 local M = require("wowmock")
 local FP = {}
-for line in io.lines(repo .. "/ForeverPath/ForeverPath.toc") do
-	if line:match("%.lua$") then assert(loadfile(repo .. "/ForeverPath/" .. line:gsub("\\", "/")))("ForeverPath", FP) end
+for line in io.lines(repo .. "/HearthAndHustle/HearthAndHustle.toc") do
+	if line:match("%.lua$") then assert(loadfile(repo .. "/HearthAndHustle/" .. line:gsub("\\", "/")))("HearthAndHustle", FP) end
 end
-M.FireEvent("ADDON_LOADED", "ForeverPath"); M.FireEvent("PLAYER_LOGIN"); M.RunTimers(12)
+M.FireEvent("ADDON_LOADED", "HearthAndHustle"); M.FireEvent("PLAYER_LOGIN"); M.RunTimers(12)
 assert(FP.API.QuestDatabaseStatus())
 local cases = {
 	{1322, "The Black Shield", "Acidic Venom Sac: 0/5", "item", 106, 1445},
@@ -53,7 +53,7 @@ assert(FP.QuestObjectives.groups[1].name=="Lieutenant Benedict" and #FP.QuestObj
 assert(FP.QuestObjectives.groups[2].name=="Kul Tiras Marine" and #FP.QuestObjectives.groups[2].points==20)
 assert(#FP.db.errors==0)
 print("PASS packaged provider: mixed objective order and completion; zero stored mock errors")
-print("Provider quest records:",#db.Quest.GetAllIds(),"(not a count of mapped ForeverPath quests)")
+print("Provider quest records:",#db.Quest.GetAllIds(),"(not a count of mapped Hearth & Hustle quests)")
 
 -- Quest chain integration: actual prerequisite, reverse-edge, pickup and search
 -- fields from the same pinned distribution, exercised through the tools UI.

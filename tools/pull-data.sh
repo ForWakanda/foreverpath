@@ -10,24 +10,24 @@ found=0
 while IFS= read -r f; do
   found=1
   acct="$(echo "$f" | sed -E 's|.*/Account/([^/]+)/.*|\1|' | tr '#' '_')"
-  if [[ "$f" == *"/SavedVariables/ForeverPath.lua" && "$f" != *"/Account/$(basename "$(dirname "$(dirname "$f")")")/SavedVariables/"* ]]; then :; fi
+  if [[ "$f" == *"/SavedVariables/HearthAndHustle.lua" && "$f" != *"/Account/$(basename "$(dirname "$(dirname "$f")")")/SavedVariables/"* ]]; then :; fi
   if [[ "$(basename "$(dirname "$(dirname "$f")")")" == "Account" || "$(dirname "$(dirname "$f")")" == *"/Account/"* && "$(basename "$(dirname "$f")")" == "SavedVariables" && "$(dirname "$(dirname "$f")")" == "$WTF/"* && "$(dirname "$(dirname "$(dirname "$f")")")" == "$WTF" ]]; then
-    dest="$ROOT/data/ForeverPathDB-$acct-$ts.lua"
-    cp "$f" "$dest"; cp "$f" "$ROOT/data/ForeverPathDB-latest.lua"
+    dest="$ROOT/data/HearthAndHustleDB-$acct-$ts.lua"
+    cp "$f" "$dest"; cp "$f" "$ROOT/data/HearthAndHustleDB-latest.lua"
     echo "account DB: $f -> $(basename "$dest") ($(stat -c %s "$f") bytes)"
   else
     char="$(basename "$(dirname "$(dirname "$f")")")"
     realm="$(basename "$(dirname "$(dirname "$(dirname "$f")")")")"
-    dest="$ROOT/data/chars/ForeverPathCharDB-${realm// /_}-${char}-$ts.lua"
+    dest="$ROOT/data/chars/HearthAndHustleCharDB-${realm// /_}-${char}-$ts.lua"
     cp "$f" "$dest"
     echo "char DB: $realm/$char ($(stat -c %s "$f") bytes)"
   fi
-done < <(find "$WTF" -type f -name 'ForeverPath.lua' 2>/dev/null)
-[ $found -eq 1 ] || { echo "no ForeverPath.lua found under $WTF yet (log out or /reload once in game to flush SavedVariables)"; exit 0; }
-if [ -f "$ROOT/data/ForeverPathDB-latest.lua" ]; then
-  "$LUA" - "$ROOT/data/ForeverPathDB-latest.lua" <<'LUA'
+done < <(find "$WTF" -type f -name 'HearthAndHustle.lua' 2>/dev/null)
+[ $found -eq 1 ] || { echo "no HearthAndHustle.lua found under $WTF yet (log out or /reload once in game to flush SavedVariables)"; exit 0; }
+if [ -f "$ROOT/data/HearthAndHustleDB-latest.lua" ]; then
+  "$LUA" - "$ROOT/data/HearthAndHustleDB-latest.lua" <<'LUA'
 local f = assert(loadfile(arg[1])); f()
-local db = ForeverPathDB or {}
+local db = HearthAndHustleDB or {}
 local function n(t) local c = 0 for _ in pairs(t or {}) do c = c + 1 end return c end
 local d = db.data or {}
 print(string.format("dataset: quests %d, npcs %d, creatures %d, objects %d, items %d, vendors %d, trainers %d, taxi nodes %d, progress %d, deaths %d, recipes %d",
