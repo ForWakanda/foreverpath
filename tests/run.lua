@@ -209,49 +209,16 @@ local function scan(t, path, seen)
 	end
 end
 scan(ForeverPathDB, "ForeverPathDB"); scan(ForeverPathCharDB, "ForeverPathCharDB")
--- Hunter audio feedback: inert on a Mage, active on a Hunter, chance + cooldown + channel dedupe
-check(FP.HunterAudio.active == false and FP.HunterAudio.frame == nil, "hunter audio inert on a Mage")
-M.class = "HUNTER"
-FP.HunterAudio:Activate()
-check(FP.HunterAudio.active and FP.HunterAudio.registered.UNIT_SPELLCAST_SUCCEEDED, "hunter audio registered")
-FP.HunterAudio.TRIGGERS["Multi-Shot"].chance = 1
-FP.HunterAudio.TRIGGERS["Mend Pet"].chance = 1
-M.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3-1-1-1-1978-0001", 1978)
-check(FP.HunterAudio.plays == 0 and FP.HunterAudio.seen == 0, "unrelated spell ignored")
-M.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3-1-1-1-2643-0002", 2643)
-local function inPool(path, pool)
-	for _, f in ipairs(FP.HunterAudio.POOLS[pool]) do
-		if path:sub(-#f) == f and path:find("Hunter", 1, true) then return true end
-	end
-	return false
-end
-check(FP.HunterAudio.plays == 1 and #M.sounds == 1 and inPool(M.sounds[1].path, "short"), "Multi-Shot played a short cue: " .. tostring(M.sounds[1] and M.sounds[1].path))
-check(M.sounds[1].channel == "SFX", "SFX channel")
-M.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3-1-1-1-2643-0003", 2643)
-check(FP.HunterAudio.plays == 1 and FP.HunterAudio.seen == 2, "cooldown blocks a second cue")
-M.now = M.now + 31
-M.FireEvent("UNIT_SPELLCAST_CHANNEL_START", "player", "Cast-3-1-1-1-3111-0004", 3111)
-M.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3-1-1-1-3111-0004", 3111)
-check(FP.HunterAudio.plays == 2 and FP.HunterAudio.seen == 3 and inPool(M.sounds[2].path, "long"), "Mend Pet channel counted once, long cue: " .. tostring(M.sounds[2] and M.sounds[2].path))
-M.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "target", "Cast-3-1-1-1-2643-0005", 2643)
-check(FP.HunterAudio.seen == 3, "other units ignored")
-M.now = M.now + 31
-FP.settings.hunterAudio.enabled = false
-M.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3-1-1-1-2643-0006", 2643)
-check(FP.HunterAudio.plays == 2, "disabled setting suppresses cues")
-FP.settings.hunterAudio.enabled = true
-cmd("audio"); cmd("audio test"); cmd("audio off"); cmd("audio on")
-check(FP.HunterAudio.plays == 4, "audio test plays both pools")
--- every listed cue file exists on disk
-for _, pool in pairs(FP.HunterAudio.POOLS) do
-	for _, file in ipairs(pool) do
-		local fh = io.open("ForeverPath/Sounds/Hunter/" .. file, "rb")
-		check(fh ~= nil, "missing sound file " .. file)
-		if fh then fh:close() end
-	end
-end
-M.class = nil
-errorsEmpty("hunter audio")
+-- Retired action sounds stay absent, including after legacy slash commands.
+check(FP.HunterAudio == nil and FP.settings.hunterAudio == nil, "custom Hunter audio removed")
+M.class="HUNTER"
+local soundCount=#M.sounds
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","player","Cast-2643",2643)
+M.FireEvent("UNIT_SPELLCAST_CHANNEL_START","player","Cast-136",136)
+cmd("audio test");cmd("audio on")
+check(#M.sounds==soundCount,"Hunter actions/retired controls played custom sounds")
+M.class=nil
+errorsEmpty("retired audio")
 
 -- API probe: records distinct secrecy states on transitions, dedupes repeats
 check(FP.db.probe and #FP.db.probe.samples >= 1, "probe recorded the login sample")

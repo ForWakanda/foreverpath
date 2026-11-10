@@ -35,7 +35,6 @@ FP.defaults = {
 		arrow = { shown = true, locked = false, scale = 1.0, flip = false, x = 0, y = 180, point = "CENTER" },
 		panel = { shown = true, locked = false, scale = 1.0, x = -20, y = -160, point = "TOPRIGHT", maxSteps = 10 },
 		hub = { point = "CENTER", x = 0, y = 0 },
-		hunterAudio = { enabled = true, cooldown = 30 },   -- Hunter combat audio feedback (Hunters only)
 		probe = { enabled = true },                        -- beta diagnostic: records which values are secret and when
 		pvp = { enabled = true, share = true, trackFlag = false, locked = false, scale = 1.0, x = 30, y = 120, point = "LEFT" },
 		rare = { enabled = true, share = true, sound = true, locked = false, scale = 1.0, x = 0, y = -200, point = "TOP" },   -- dungeon rare watch (/fp rare)
@@ -55,7 +54,7 @@ FP.defaults = {
 }
 
 FP.charDefaults = {
-	prep = { enabled = true, mode = "auto", water = 40, bandages = 10, reagents = 5 },
+	prep = { enabled = true, mode = "auto", food = 20, water = 40, bandages = 10, reagents = 5, supplies = {} },
 	waypoints = {},
 	activeId = nil,
 	nextId = 1,
@@ -75,6 +74,8 @@ local function onAddonLoaded(event, name)
 	FP.db = deepDefaults(ForeverPathDB, FP.defaults)
 	FP.cdb = deepDefaults(ForeverPathCharDB, FP.charDefaults)
 	FP.settings = FP.db.settings
+	-- Retired custom Hunter sounds must not return from an older saved profile.
+	FP.settings.hunterAudio = nil
 	FP.data = FP.db.data
 	if FP.db.meta.created == 0 then FP.db.meta.created = U.Now() end
 	if FP.clientBuild then
