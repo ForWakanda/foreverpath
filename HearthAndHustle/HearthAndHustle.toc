@@ -22,7 +22,6 @@ Nav\MapPins.lua
 Nav\MapPins.xml
 Data\Recorder.lua
 Data\DungeonCatalog.lua
-Data\GearCatalog.lua
 Modules\Dungeons.lua
 Prof\Tracker.lua
 Modules\QuestObjectives.lua

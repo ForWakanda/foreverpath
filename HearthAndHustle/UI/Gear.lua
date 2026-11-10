@@ -20,7 +20,7 @@ function P:Build(H,p)
   {"gearWeights","Edit stat weights",function() self:Weights(H) end},
  })
  local search=H:Field(p,"gearSearch","Search item / source","")
- local level=H:Field(p,"gearLevel","Maximum required level (1–60)",API.PlayerLevel() or 60)
+ local level=H:Field(p,"gearLevel","Maximum level / item-level estimate (1–60)",API.PlayerLevel() or 60)
  local function apply()
   local n=tonumber(level:GetText())
   if not n or n<1 or n>60 or n~=math.floor(n) then self.invalid=true else self.invalid=nil;self.filter.level=n end
@@ -58,7 +58,7 @@ function P:Build(H,p)
  end
  table.insert(p.refreshers,function()
   local row=H:Selected(self.list)
-  if self.sourceItem~=(row and row.key) then self.sourceItem=row and row.key;self.sourceIndex=1 end
+  if self.sourceItem~=(row and row.key) then self.sourceItem=row and row.key;self.sourceIndex=1;self.dungeonIndex=1 end
   self.questSources=row and API.GetGearQuestSources(row.key) or {}
   self.sourceIndex=math.min(self.sourceIndex,math.max(1,#self.questSources))
  end)
@@ -73,10 +73,14 @@ function P:Build(H,p)
   {"gearWishlist","Show wishlist",function() self.wishlist=not self.wishlist;self.list.page=1;self.list.selected=nil end},
   {"gearDungeon","Dungeon checklist",function()
    local row=H:Selected(self.list);if row then
-    local query=self:Dungeon(row);H.frame:Hide();FP.DungeonPanel:Open(query)
+    local choices=self:Dungeons(row);local choice=choices[self.dungeonIndex or 1];if choice then H.frame:Hide();FP.DungeonPanel:Open(choice.key) end
    end
   end,enabled=function() local r=H:Selected(self.list);return r and self:Dungeon(r)~=nil end},
  })
+ H:Actions(p,{{"gearNextDungeon","Other dungeon wing",function()
+  local row=H:Selected(self.list);local choices=row and self:Dungeons(row) or {}
+  if #choices>0 then self.dungeonIndex=(self.dungeonIndex or 1)%#choices+1 end
+ end,enabled=function() local row=H:Selected(self.list);return row and #self:Dungeons(row)>1 end}})
  H:Actions(p,{
   {"gearQuestSource","View quest source",function()
    local q=self.questSources and self.questSources[self.sourceIndex]
@@ -85,7 +89,7 @@ function P:Build(H,p)
   {"gearNextQuestSource","Next quest source",function() self.sourceIndex=self.sourceIndex%#self.questSources+1 end,
    enabled=function() return self.questSources and #self.questSources>1 end},
  })
- H:Check(p,"gearUnknown","Include items with unknown required level (check the source)",function() return self.filter.unknown end,function(v) self.filter.unknown=v;self.list.page=1 end)
+ H:Check(p,"gearUnknown","Include items with no level data (check the source)",function() return self.filter.unknown end,function(v) self.filter.unknown=v;self.list.page=1 end)
  self.status=H:Text(p,"")
  p.y=p.y+32
  H:Text(p,"Rankings use editable stat weights and a dated Forever reference catalog. They are estimates, not a complete BiS simulation. Source labels do not guarantee current availability. Hover an item for its live tooltip.")
@@ -97,7 +101,10 @@ function P:Build(H,p)
   for _,s in ipairs(G.slots) do H.controls["gearSlot"..s[1]]:SetText((s[1]==self.filter.slot and FP.GOLD.."> " or "")..s[2].."|r") end
   local row=H:Selected(self.list)
   H.controls.gearSave:SetText(row and FP.cdb.gear.wishlist[row.key] and "Remove from wishlist" or "Save to wishlist")
+  local choices=row and self:Dungeons(row) or {}
+  local choice=choices[self.dungeonIndex or 1]
   local details=G:Details(row,self.filter.slot)
+  if choice then details=details.."\n\nDungeon source: "..choice.data.name..(#choices>1 and " (choose the appropriate wing with Other dungeon wing)." or "") end
   if #self.questSources>0 then
    local q=self.questSources[self.sourceIndex]
    details=details.."\n\nQuest source "..self.sourceIndex.."/"..#self.questSources..": "..q.name.." (#"..q.id..")\nQuest requires level "..tostring(q.requiredLevel or "unknown")..". Inspect its chain for restrictions and pickup guidance."
@@ -106,13 +113,25 @@ function P:Build(H,p)
   self.details:SetText(details);body:SetHeight(math.max(202,self.details:GetStringHeight()+12))
   local identity=tostring(row and row.key)..":"..self.filter.slot
   if identity~=self.detailIdentity then scroll:SetVerticalScroll(0);self.detailIdentity=identity end
-  self.status:SetText(self.message or (#self.list.items.." matches · reference updated "..FP.GearCatalog.date.." · best scored first"))
+  self.status:SetText(self.message or (#self.list.items.." matches · reference updated "..(FP.GearCatalog and FP.GearCatalog.date or "unavailable").." · best scored first"))
  end)
 end
-function P:Dungeon(row)
+function P:Dungeons(row)
+ local out,seen={},{}
  for i,kind in ipairs(row.item.sourceTypes) do
-  if kind=="Dungeon" then return row.item.sources[i] end
+  if kind=="Dungeon" then
+   local query=row.item.sources[i]:lower()
+   if query=="temple of atal'hakkar" then query="sunken temple" end
+   for _,d in ipairs(FP.Dungeons:List()) do
+    if d.data.name:lower():find(query,1,true) and not seen[d.key] then out[#out+1]=d;seen[d.key]=true end
+   end
+  end
  end
+ return out
+end
+function P:Dungeon(row)
+ local choices=self:Dungeons(row)
+ return choices[1] and choices[1].data.name
 end
 function P:Weights(H)
  if not self.weightsFrame then

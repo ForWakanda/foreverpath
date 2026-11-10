@@ -11,7 +11,7 @@ revision = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD']
 SLOTS = {'Head':'HEAD','Neck':'NECK','Shoulder':'SHOULDER','Back':'CLOAK','Chest':'CHEST',
          'Wrist':'WRIST','Hands':'HAND','Waist':'WAIST','Legs':'LEGS','Feet':'FEET','Finger':'FINGER',
          'Trinket':'TRINKET','One-Hand':'WEAPON','Main Hand':'WEAPONMAINHAND','Off Hand':'WEAPONOFFHAND',
-         'Two-Hand':'2HWEAPON','Held In Off-hand':'HOLDABLE','Ranged':'RANGED','Relic':'RELIC'}
+         'Two-Hand':'2HWEAPON','Held In Off-hand':'HOLDABLE','Ranged':'RANGED','Thrown':'THROWN','Relic':'RELIC'}
 STATS = {3:'AGILITY',4:'STRENGTH',5:'INTELLECT',6:'SPIRIT',7:'STAMINA'}
 def lua(x):
     if x is None: return 'nil'
@@ -29,14 +29,19 @@ for x in json.loads(raw):
     assert x['itemExpansion']=='Forever'
     h=x['tooltipHtml']
     m=re.search(r'<tr><td>([^<]+)</td><th><!--scstart(\d+):(-?\d+)-->(.*?)<!--scend-->',h)
-    if not m or m[1] not in SLOTS: continue
+    if not m:
+        # Cloaks have a slot-only table, with no armor-type header.
+        if '<tr><td>Back</td></tr>' not in h: continue
+        slot,cls,sub,subtype='Back',4,1,'Cloth'
+    else:
+        slot,cls,sub,subtype=m[1],int(m[2]),int(m[3]),m[4]
+    if slot not in SLOTS: continue
     # Internal/test items and unknown-only sources are not gearing recommendations.
     if x['name'].startswith(('[','zz','ZZ')) or re.match(r'^\d+ ',x['name']): continue
     if set(x['sourceTypes']) <= {'Other'}: continue
-    loc='INVTYPE_'+SLOTS[m[1]]
-    cls,sub=int(m[2]),int(m[3])
+    loc='INVTYPE_'+SLOTS[slot]
     if cls==4 and sub==6: loc='INVTYPE_SHIELD'
-    plain=html.unescape(re.sub(r'<[^>]*>',' ',h))
+    plain=html.unescape(re.sub(r'<[^>]*>',' ',re.sub(r'<!--.*?-->','',h)))
     plain=re.sub(r'\s+',' ',plain)
     # Only base stats before item effects/sets; no accidental set-bonus attribution.
     base=h.split('<!--ebstats-->')[0]
@@ -45,12 +50,12 @@ for x in json.loads(raw):
         if int(code) in STATS: stats['ITEM_MOD_'+STATS[int(code)]+'_SHORT']=float(value)
     for key,pattern in [
         ('ITEM_MOD_SPELL_POWER_SHORT',r'Equip: Increases damage and healing done by magical spells and effects by up to\s+([\d.]+)'),
-        ('ITEM_MOD_SPELL_HEALING_DONE_SHORT',r'Equip: Increases healing done by up to\s+([\d.]+)'),
+        ('ITEM_MOD_SPELL_HEALING_DONE_SHORT',r'Equip: Increases healing done (?:by magical spells and effects )?by up to\s+([\d.]+)'),
         ('ITEM_MOD_SPELL_DAMAGE_DONE_SHORT',r'and damage done by up to\s+([\d.]+) for all magical'),
-        ('ITEM_MOD_ATTACK_POWER_SHORT',r'Equip: \+([\d.]+) Attack Power'),
-        ('ITEM_MOD_MANA_REGENERATION_SHORT',r'Equip: Restores ([\d.]+) mana per 5 sec'),
+        ('ITEM_MOD_ATTACK_POWER_SHORT',r'Equip: \+\s*([\d.]+) Attack Power(?:\.|\s*$)'),
+        ('ITEM_MOD_MANA_REGENERATION_SHORT',r'Restores\s*\+?\s*([\d.]+) mana per 5 sec'),
     ]:
-        value=number(pattern,plain)
+        value=number(pattern,re.split(r'\(\d+\)\s*Set\s*:',plain)[0])
         if value is not None: stats[key]=value
     armor=number(r'<!--amr-->([\d.]+)',base)
     if armor is not None: stats['RESISTANCE0_NAME']=armor
@@ -58,7 +63,7 @@ for x in json.loads(raw):
     if dps is not None: stats['ITEM_MOD_DAMAGE_PER_SECOND_SHORT']=dps
     classes=re.search(r'Classes: (.*?)(?:Requires|Sell Price|Equip:|Durability|$)',plain)
     row=dict(id=x['itemId'],name=x['name'],equipLoc=loc,classID=cls,subclassID=sub,
-        subtype=html.unescape(re.sub('<[^>]*>','',m[4])),level=number(r'<!--ilvl-->(\d+)',h),
+        subtype=html.unescape(re.sub('<[^>]*>','',subtype)),level=number(r'<!--ilvl-->(\d+)',h),
         minLevel=number(r'<!--rlvl-->(\d+)',h),stats=stats,sources=[sources[k]['name'] for k in x['sourceKeys'] if k in sources],
         sourceTypes=[sources[k]['type'] for k in x['sourceKeys'] if k in sources],
         bosses=x['bossNames'],icon=x['iconName'],classes=classes[1].strip() if classes else None,
@@ -67,6 +72,6 @@ for x in json.loads(raw):
     items.append(row)
 items.sort(key=lambda x:x['id'])
 assert len(items)>5000 and len({x['id'] for x in items})==len(items)
-out=Path('HearthAndHustle/Data/GearCatalog.lua')
-out.write_text('-- Generated factual item reference. See tools/import-gear-catalog.py and THIRD_PARTY_NOTICES.txt.\nlocal _,FP=...\nFP.GearCatalog={revision='+lua(revision)+',date="2026-11-07",sha256='+lua(hashlib.sha256(raw).hexdigest())+',items={\n'+''.join(lua(x)+',\n' for x in items)+'}}\n')
+out=Path('HearthAndHustle_GearData/GearCatalog.lua')
+out.write_text('-- Generated factual item reference. See tools/import-gear-catalog.py and THIRD_PARTY_NOTICES.txt.\nlocal FP=HearthAndHustle\nFP.GearCatalog={revision='+lua(revision)+',date="2026-11-07",sha256='+lua(hashlib.sha256(raw).hexdigest())+',items={\n'+''.join(lua(x)+',\n' for x in items)+'}}\n')
 print(len(items),'Forever item records;',out.stat().st_size,'bytes;',revision)

@@ -78,7 +78,7 @@ GEAR_CASES = {
 local rows=G:Rows({slot="HEAD",level=30});assert(#rows==2 and rows[1].key==1002)
 a.stats.ITEM_MOD_INTELLECT_SHORT=20
 rows=G:Rows({slot="HEAD",level=30});assert(rows[1].key==1001)
-a.minLevel=nil;b.minLevel=31
+a.minLevel=nil;a.level=nil;b.minLevel=31
 rows=G:Rows({slot="HEAD",level=30});assert(#rows==0)
 rows=G:Rows({slot="HEAD",level=30,unknown=true});assert(#rows==1 and rows[1].key==1001)
 rows=G:Rows({slot="HEAD",level=30,unknown=true,source="Quest"});assert(#rows==0)
@@ -181,7 +181,8 @@ assert(#API.GetGearQuestSources(1001)==0)
 ''',
  "gear_catalog_forever_integrity_and_coverage": r'''
 local seen,slots,classes={}, {}, {}
-assert(#FP.GearCatalog.items>7000)
+assert(FP.API.EnsureGearCatalog())
+assert(#FP.GearCatalog.items>8000)
 for _,item in ipairs(FP.GearCatalog.items) do
  assert(not seen[item.id]);seen[item.id]=true
  assert(#item.sources==#item.sourceTypes and #item.sources>0)
@@ -3045,7 +3046,7 @@ assert(FP.cdb.nextId==901 and active() and active().title=="Legacy waypoint" and
 
 # Corrupt an actual XML file in an ephemeral copy; never change the real checkout.
 with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
-    for name in ("HearthAndHustle", "tests", "tools"):
+    for name in ("HearthAndHustle", "HearthAndHustle_GearData", "tests", "tools"):
         shutil.copytree(name, Path(tmp) / name)
     (Path(tmp) / "HearthAndHustle/Nav/MapPins.xml").write_text("<Ui><broken></Ui>\n")
     result = subprocess.run(["bash", "tools/check.sh"], cwd=tmp, text=True, capture_output=True)
@@ -3060,7 +3061,7 @@ with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
 # Missing TOC entries, compiler failure, and bypass attempts must also reject.
 for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
     with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
-        for name in ("HearthAndHustle", "tests", "tools"):
+        for name in ("HearthAndHustle", "HearthAndHustle_GearData", "tests", "tools"):
             shutil.copytree(name, Path(tmp) / name)
         env = os.environ.copy()
         command = ["bash", "tools/check.sh"]

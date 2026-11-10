@@ -129,7 +129,14 @@ C_VignetteInfo = { GetVignettes = function() local out = {}; for _, v in ipairs(
 	GetVignetteInfo = function(guid) for _, v in ipairs(M.vignettes or {}) do if v.guid == guid then return { vignetteGUID = guid, name = v.name, atlasName = v.atlas or "VignetteKill", type = 0, onMinimap = true, isDead = false } end end end }
 INSTANCE_RESET_SUCCESS = "%s has been reset."
 SlashCmdList = {}
-C_AddOns = { GetAddOnMetadata = function() return "0.1.0-test" end }
+local addonRoot=debug.getinfo(1,"S").source:sub(2):match("^(.*)/tests/wowmock.lua$") or "."
+C_AddOns = { GetAddOnMetadata = function() return "0.1.0-test" end,
+ LoadAddOn=function(name)
+  if name~="HearthAndHustle_GearData" then return nil end
+  assert(loadfile(addonRoot.."/HearthAndHustle_GearData/GearCatalog.lua"))(name,{})
+  return true
+ end }
+CanDualWield=function() return M.dualWield or false end
 C_Timer = {
 	After = function(sec, fn) table.insert(M.timers, { at = M.now + sec, fn = fn }) end,
 	NewTicker = function(sec, fn)

@@ -102,3 +102,41 @@ assert(#FP.db.errors==1 and FP.db.errors[1].where=="ADDON_ACTION_BLOCKED")
 FP.db.errors={}
 ''',
 })
+
+REVIEW_CASES.update({
+"review_gear_catalog_loads_only_on_demand_and_has_missing_stats": r'''
+assert(not FP.GearCatalog,"catalog loaded at login")
+local old=C_AddOns.LoadAddOn;local loads=0
+C_AddOns.LoadAddOn=function(...) loads=loads+1;return old(...) end
+M.combatLockdown=true;assert(not FP.API.EnsureGearCatalog() and loads==0)
+M.combatLockdown=false;assert(FP.API.EnsureGearCatalog() and loads==1)
+assert(FP.API.EnsureGearCatalog() and loads==1)
+local slots,stats={},{}
+for _,item in ipairs(FP.GearCatalog.items) do
+ slots[item.equipLoc]=(slots[item.equipLoc] or 0)+1
+ for k in pairs(item.stats) do stats[k]=(stats[k] or 0)+1 end
+end
+assert(slots.INVTYPE_CLOAK==375 and slots.INVTYPE_THROWN==13)
+assert(stats.ITEM_MOD_ATTACK_POWER_SHORT>=320 and stats.ITEM_MOD_MANA_REGENERATION_SHORT>=260 and stats.ITEM_MOD_SPELL_HEALING_DONE_SHORT>=550)
+''',
+"review_gear_level_proxy_stays_bounded_and_offhand_checks_skill": r'''
+FP.API.GetCharInfo=function() return {class="SHAMAN",level=40} end
+local item={id=1,name="Reward",equipLoc="INVTYPE_CLOAK",classID=4,subclassID=1,level=30,stats={},sources={},sourceTypes={}}
+FP.GearCatalog={items={item}}
+assert(#FP.Gear:Rows({slot="CLOAK",level=30})==1)
+assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0)
+item.level=nil;assert(#FP.Gear:Rows({slot="CLOAK",level=20})==0)
+assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==1)
+assert(not FP.Gear:SlotMatches({equipLoc="INVTYPE_WEAPON"},"OFF"))
+M.dualWield=true;assert(FP.Gear:SlotMatches({equipLoc="INVTYPE_WEAPON"},"OFF"))
+''',
+"review_gear_dungeon_alias_and_wings_are_explicit": r'''
+local P=FP.GearPanel
+local function row(name) return {item={sourceTypes={"Dungeon"},sources={name}}} end
+assert(#P:Dungeons(row("Scarlet Monastery"))==4)
+assert(#P:Dungeons(row("Blackrock Spire"))==2)
+assert(#P:Dungeons(row("Stratholme"))==2)
+assert(P:Dungeons(row("Temple of Atal'Hakkar"))[1].key=="sunken-temple")
+assert(#P:Dungeons(row("Unmapped dungeon"))==0)
+''',
+})

@@ -1880,7 +1880,9 @@ function API.GetRewardContext(mode)
 		else
 			if kind=="choice" then countFn=_G.GetNumQuestLogChoices else countFn=_G.GetNumQuestLogRewards end
 		end
-		local count=rewardNumber(rewardFirst(countFn))
+		local count
+		if not dialog and kind=="choice" then count=rewardNumber(rewardFirst(countFn,id,true))
+		else count=rewardNumber(rewardFirst(countFn)) end
 		if not count or count>64 or count~=math.floor(count) then
 			out.countsKnown=false
 		else
@@ -1910,6 +1912,21 @@ function API.GetRewardContext(mode)
 end
 
 -- Optional provider links; reading a gear source does not alter selected quests.
+function API.EnsureGearCatalog()
+ if FP.GearCatalog then return true end
+ if API.InCombat() then return false end
+ local loader=has(C_AddOns,"LoadAddOn") and C_AddOns.LoadAddOn or _G.LoadAddOn
+ if type(loader)~="function" then return false end
+ pcall(loader,"HearthAndHustle_GearData")
+ return type(FP.GearCatalog)=="table" and type(FP.GearCatalog.items)=="table"
+end
+
+function API.CanDualWield()
+ if API.InCombat() or not hasg("CanDualWield") then return false end
+ local ok,value=pcall(CanDualWield)
+ return ok and safe(value)==true
+end
+
 function API.GetGearQuestSources(itemID)
  if API.InCombat() or not U.Finite(itemID) or itemID<=0 or not API.QuestDatabaseStatus() then return {} end
  local db=LibQuestieDB.Item

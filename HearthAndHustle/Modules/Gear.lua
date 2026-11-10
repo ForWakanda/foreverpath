@@ -26,8 +26,8 @@ G.classProfiles={WARRIOR={"melee","tank"},PALADIN={"melee","healer","tank"},HUNT
  MAGE={"caster"},WARLOCK={"caster"},DRUID={"agility","tank","caster","healer"}}
 local armorMax={WARRIOR=4,PALADIN=4,HUNTER=3,ROGUE=2,PRIEST=1,SHAMAN=3,MAGE=1,WARLOCK=1,DRUID=2}
 local weapons={WARRIOR={0,1,2,3,4,5,6,7,8,10,13,15,16,18},PALADIN={0,1,4,5,6,7,8},
- HUNTER={0,1,2,3,6,7,8,10,13,15,18},ROGUE={0,2,3,4,7,13,15,16,18},
- PRIEST={4,10,15,19},SHAMAN={0,1,4,5,10,13,15},MAGE={7,10,15,19},WARLOCK={7,10,15,19},DRUID={4,5,6,10,13,15}}
+ HUNTER={0,1,2,3,6,7,8,10,13,15,18},ROGUE={2,3,4,7,13,15,16,18},
+ PRIEST={4,10,15,19},SHAMAN={0,1,4,5,10,13,15},MAGE={7,10,15,19},WARLOCK={7,10,15,19},DRUID={4,5,10,13,15}}
 local function contains(list,value) for _,v in ipairs(list or {}) do if v==value then return true end end return false end
 function G:Profile()
  local class=API.GetCharInfo().class
@@ -65,7 +65,7 @@ end
 function G:SlotMatches(item,slot)
  local loc=item.equipLoc
  if slot=="MAIN" then return loc=="INVTYPE_WEAPON" or loc=="INVTYPE_WEAPONMAINHAND" or loc=="INVTYPE_2HWEAPON" end
- if slot=="OFF" then return loc=="INVTYPE_WEAPON" or loc=="INVTYPE_WEAPONOFFHAND" or loc=="INVTYPE_SHIELD" or loc=="INVTYPE_HOLDABLE" end
+ if slot=="OFF" then return loc=="INVTYPE_SHIELD" or loc=="INVTYPE_HOLDABLE" or (API.CanDualWield() and (loc=="INVTYPE_WEAPON" or loc=="INVTYPE_WEAPONOFFHAND")) end
  if slot=="RANGED" then return loc=="INVTYPE_RANGED" or loc=="INVTYPE_RANGEDRIGHT" or loc=="INVTYPE_THROWN" or loc=="INVTYPE_RELIC" end
  return loc=="INVTYPE_"..slot or (slot=="CHEST" and loc=="INVTYPE_ROBE")
 end
@@ -90,6 +90,7 @@ end
 function G:Rows(filter)
  local rows={}
  if API.InCombat() then return rows,"Gear browsing resumes after combat." end
+ if not API.EnsureGearCatalog() then return rows,"Gear data unavailable. Install both Hearth & Hustle folders and restart WoW." end
  local char=API.GetCharInfo()
  if not U.Finite(char.level) or not armorMax[char.class] then return rows,"Character information unavailable." end
  local max=filter.level or char.level
@@ -97,9 +98,10 @@ function G:Rows(filter)
  local weights=self:Weights()
  for _,item in ipairs(FP.GearCatalog.items) do
   local known=U.Finite(item.minLevel)
+  local proxy=not known and U.Finite(item.level) and item.level or nil
   local source=filter.source or "All"
   if self:SlotMatches(item,filter.slot or "HEAD") and self:ClassMatches(item,char)
-   and ((known and item.minLevel<=max) or (not known and filter.unknown))
+   and ((known and item.minLevel<=max) or (proxy and proxy<=max) or (not known and not proxy and filter.unknown))
    and (source=="All" or contains(item.sourceTypes,source))
    and (query=="" or item.name:lower():find(query,1,true) or tostring(item.id)==query or table.concat(item.sources," "):lower():find(query,1,true)) then
    rows[#rows+1]={key=item.id,item=item,score=self:Score(item.stats,weights,filter.slot)}
@@ -117,6 +119,7 @@ function G:Details(row,slot)
   "Reference score: "..string.format("%.1f",row.score or 0).." · rank "..row.rank.." in this filtered list",
   "Requires level: "..tostring(item.minLevel or "unknown").." · "..item.subtype.." · item level "..tostring(item.level or "?"),
   "Source reference: "..table.concat(item.sources,", ")}
+ if not item.minLevel and item.level then lines[#lines+1]="Level filter uses item level as an estimate; check the quest/source requirements before pursuing it." end
  if #item.bosses>0 then lines[#lines+1]="Boss / container: "..table.concat(item.bosses,", ") end
  if item.classes then lines[#lines+1]="Classes: "..item.classes end
  if item.restrictions then lines[#lines+1]="Check tooltip for additional skill, reputation, race or unique restrictions." end
