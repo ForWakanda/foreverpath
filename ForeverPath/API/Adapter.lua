@@ -1631,3 +1631,140 @@ function API.StoreCheck(rows, manual)
 	U.Push(FP.db.apicheckHistory, result, 10)
 	return result
 end
+
+-------------------------------------------------------------------------------
+-- Quest reward comparison: read the native selected log quest or open dialog.
+-- Verified source 1.60.1.70888: QuestInfo.lua uses these context-bound queries.
+-- No selection changes: browsing must not disturb quest tracking/navigation.
+-------------------------------------------------------------------------------
+local function rewardCall(fn, ...)
+	if type(fn) ~= "function" then return nil end
+	local v = {pcall(fn, ...)}
+	if not v[1] then return nil end
+	for i = 2, 20 do v[i] = safe(v[i]) end
+	return v
+end
+local function rewardNumber(v)
+	return U.Finite(v) and v >= 0 and v or nil
+end
+local function rewardString(v) return type(v)=="string" and v~="" and v or nil end
+local function rewardFirst(fn, ...)
+	local v=rewardCall(fn,...);return v and v[2]
+end
+
+local rewardItemRequests={}
+local rewardItemRequestCount=0
+local function requestRewardItem(link)
+	local id=tonumber(link:match("item:(%d+)"))
+	if id and id>0 and not rewardItemRequests[id] and rewardItemRequestCount<128 and has(C_Item,"RequestLoadItemDataByID") then
+		rewardItemRequests[id]=true;rewardItemRequestCount=rewardItemRequestCount+1
+		pcall(C_Item.RequestLoadItemDataByID,id)
+	end
+end
+
+function API.GetRewardItem(link)
+	link=rewardString(safe(link))
+	if not link then return nil end
+	local fn=has(C_Item,"GetItemInfo") and C_Item.GetItemInfo or _G.GetItemInfo
+	local v=rewardCall(fn,link)
+	if not v or not rewardString(v[2]) then requestRewardItem(link);return nil end
+	local item={link=link,name=v[2],level=rewardNumber(v[5]),minLevel=rewardNumber(v[6]),
+		subtype=rewardString(v[8]),equipLoc=rewardString(v[10]),price=rewardNumber(v[12])}
+	local stats=rewardFirst(has(C_Item,"GetItemStats") and C_Item.GetItemStats or _G.GetItemStats,link)
+	if type(stats)=="table" then
+		-- A partially unreadable table cannot safely supply zero for omitted stats.
+		local clean,valid={},true
+		local ok=pcall(function()
+			for k,value in pairs(stats) do
+				k,value=safe(k),safe(value)
+				if type(k)~="string" or not U.Finite(value) then valid=false else clean[k]=value end
+			end
+		end)
+		if ok and valid then item.stats=clean end
+	end
+	return item
+end
+
+function API.GetRewardEquipment(slot)
+	if not U.Finite(slot) or slot<1 or slot>19 then return {status="unknown"} end
+	if not hasg("GetInventoryItemID") then return {status="unknown"} end
+	local ok,raw=pcall(GetInventoryItemID,"player",slot)
+	if not ok or FP.issecret(raw) then return {status="unknown"} end
+	if raw==nil then return {status="empty",stats={}} end
+	local id=rewardNumber(safe(raw))
+	if not id or id==0 then return {status="unknown"} end
+	local link=rewardString(rewardFirst(_G.GetInventoryItemLink,"player",slot))
+	if not link then return {status="unknown"} end
+	local item=API.GetRewardItem(link)
+	if not item then return {status="loading",link=link} end
+	item.status="equipped";return item
+end
+
+function API.GetRewardStatLabel(key)
+	local label=safe(_G[key])
+	return rewardString(label) or key:gsub("_", " ")
+end
+
+function API.GetRewardContext(mode)
+	local out={items={},mode=mode=="dialog" and "dialog" or "log"}
+	if API.InCombat() then out.message="Reward comparisons resume after combat.";return out end
+	local dialog=out.mode=="dialog"
+	if dialog then
+		local f=_G.QuestFrame
+		if not f or not f.IsShown or not f:IsShown() then out.message="Open a quest offer or turn-in to compare its rewards.";return out end
+	end
+	local function contextFn(dialogFn,logFn)
+		if dialog then return dialogFn else return logFn end
+	end
+	local function identity()
+		return rewardNumber(rewardFirst(contextFn(_G.GetQuestID,has(C_QuestLog,"GetSelectedQuest") and C_QuestLog.GetSelectedQuest)))
+	end
+	local id=identity()
+	if not id or id==0 then out.message="Select a quest in Blizzard's quest log, then return here.";return out end
+	out.questID=id
+	local title
+	if dialog then title=rewardFirst(_G.GetTitleText)
+	else title=rewardFirst(has(C_QuestLog,"GetTitleForQuestID") and C_QuestLog.GetTitleForQuestID,id) end
+	out.title=rewardString(title) or ("Quest #"..id)
+	if not dialog and hasg("HaveQuestRewardData") and rewardFirst(HaveQuestRewardData,id)~=true then
+		out.message="Reward data is loading or unavailable. Open this quest in the quest log and refresh."
+		return out
+	end
+	out.xp=rewardNumber(rewardFirst(contextFn(_G.GetRewardXP,_G.GetQuestLogRewardXP)))
+	out.money=rewardNumber(rewardFirst(contextFn(_G.GetRewardMoney,_G.GetQuestLogRewardMoney)))
+	out.countsKnown=true
+	for _,kind in ipairs({"choice","reward"}) do
+		local countFn
+		if dialog then
+			if kind=="choice" then countFn=_G.GetNumQuestChoices else countFn=_G.GetNumQuestRewards end
+		else
+			if kind=="choice" then countFn=_G.GetNumQuestLogChoices else countFn=_G.GetNumQuestLogRewards end
+		end
+		local count=rewardNumber(rewardFirst(countFn))
+		if not count or count>64 or count~=math.floor(count) then
+			out.countsKnown=false
+		else
+			for i=1,count do
+				local info
+				if dialog then info=rewardCall(_G.GetQuestItemInfo,kind,i)
+				elseif kind=="choice" then info=rewardCall(_G.GetQuestLogChoiceInfo,i)
+				else info=rewardCall(_G.GetQuestLogRewardInfo,i) end
+				local link=rewardString(rewardFirst(contextFn(_G.GetQuestItemLink,_G.GetQuestLogItemLink),kind,i))
+				local item=link and API.GetRewardItem(link) or nil
+				local qty=info and rewardNumber(info[4])
+				if qty and (qty==0 or qty~=math.floor(qty)) then qty=nil end
+				local row={key=kind..":"..i,kind=kind,index=i,link=link,item=item,count=qty,
+					name=info and rewardString(info[2]) or (item and item.name) or "Item data loading",
+					usable=info and type(info[6])=="boolean" and info[6] or nil}
+				-- Preserve an explicit false from Blizzard's usability read.
+				if info and info[6]==false then row.usable=false end
+				row.value=rewardNumber(item and item.price and qty and item.price*qty or nil)
+				out.items[#out.items+1]=row
+			end
+		end
+	end
+	if identity()~=id then return {items={},mode=out.mode,message="Quest changed; refresh to view its rewards."} end
+	if not out.countsKnown then out.message="Some reward lists are unavailable; vendor ranking is incomplete."
+	elseif #out.items==0 then out.message="No item rewards listed for this quest." end
+	return out
+end

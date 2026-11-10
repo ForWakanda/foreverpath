@@ -2214,6 +2214,160 @@ for _,row in ipairs(rows)do if row.id==207 and row.label:find("Follow-up",1,true
 assert(found and #rows<=100,"ancestor list hid direct follow-up")
 '''
 
+REWARDS = r'''
+local R,A=FP.QuestRewards,FP.API
+local selected=9001
+C_QuestLog.GetSelectedQuest=function() return selected end
+C_QuestLog.GetTitleForQuestID=function(id) return "Reward quest "..id end
+HaveQuestRewardData=function() return true end
+GetQuestLogRewardXP=function() return 1200 end
+GetQuestLogRewardMoney=function() return 321 end
+GetNumQuestLogChoices=function() return 2 end
+GetNumQuestLogRewards=function() return 1 end
+GetQuestLogChoiceInfo=function(i) return "Choice "..i,nil,i,2,i~=2,100+i end
+GetQuestLogRewardInfo=function(i) return "Fixed",nil,1,2,true,103 end
+GetQuestLogItemLink=function(kind,i) return "item:"..(kind=="choice" and 100+i or 103) end
+local items={
+ [101]={loc="INVTYPE_FINGER",price=100,stats={ITEM_MOD_STRENGTH_SHORT=5,ITEM_MOD_STAMINA_SHORT=2}},
+ [102]={loc="INVTYPE_FINGER",price=75,stats={ITEM_MOD_STRENGTH_SHORT=2}},
+ [103]={loc="",price=9999,stats={}},
+ [201]={loc="INVTYPE_FINGER",price=50,stats={ITEM_MOD_STRENGTH_SHORT=3}},
+ [202]={loc="INVTYPE_FINGER",price=50,stats={ITEM_MOD_STRENGTH_SHORT=7}},
+}
+local gear={[11]=201,[12]=202,[16]=201,[17]=202}
+C_Item.GetItemInfo=function(link)
+ local id=tonumber(tostring(link):match("item:(%d+)"));local item=items[id]
+ if not item or item.loading then return nil end
+ return "Item "..id,link,2,30,20,"Armor","Mail",20,item.loc,nil,item.price
+end
+C_Item.GetItemStats=function(link) local id=tonumber(link:match("item:(%d+)"));return items[id].stats end
+GetInventoryItemID=function(unit,slot) return gear[slot] end
+GetInventoryItemLink=function(unit,slot) return gear[slot] and ("item:"..gear[slot]) end
+local function rewards() local s=A.GetRewardContext("log");R:Rank(s);return s end
+'''
+CASES.update({
+"rewards_counts_stack_value_and_fixed_vs_choice":REWARDS+r'''
+local s=rewards()
+assert(s.questID==9001 and s.xp==1200 and s.money==321 and #s.items==3)
+assert(s.items[1].value==100 and s.items[2].value==150 and s.items[3].value==9999)
+assert(not s.items[1].bestVendor and s.items[2].bestVendor and not s.items[3].bestVendor)
+assert(s.items[2].usable==false)
+items[101].price=150;s=rewards();assert(s.items[1].bestVendor and s.items[2].bestVendor)
+''',
+"rewards_incomplete_data_never_claims_best_value":REWARDS+r'''
+items[102].loading=true
+local s=rewards();assert(s.items[2].value==nil and not s.items[1].bestVendor)
+items[102].loading=false
+GetQuestLogChoiceInfo=function() return "Mystery",nil,nil,2,true end
+s=rewards();assert(s.items[1].count==nil and s.items[1].value==nil and not s.items[1].bestVendor)
+GetNumQuestLogRewards=nil;s=rewards();assert(not s.countsKnown and s.message)
+''',
+"rewards_ring_alternatives_and_positive_negative_stats":REWARDS+r'''
+local row=rewards().items[1];local comparisons=R:Comparisons(row)
+assert(#comparisons==2 and comparisons[1].stats.ITEM_MOD_STRENGTH_SHORT==3 and comparisons[2].stats.ITEM_MOD_STRENGTH_SHORT==7)
+local text=R:Details(row);assert(text:find("5 / 3 (+2)",1,true) and text:find("5 / 7 (-2)",1,true))
+gear[11]=nil;comparisons=R:Comparisons(row);assert(next(comparisons[1].stats)==nil)
+''',
+"rewards_two_handed_replaces_both_equipped_hands":REWARDS+r'''
+items[101].loc="INVTYPE_2HWEAPON"
+local row=rewards().items[1];local c=R:Comparisons(row)
+assert(#c==1 and c[1].stats.ITEM_MOD_STRENGTH_SHORT==10)
+assert(R:Details(row):find("5 / 10 (-5)",1,true))
+items[202].loading=true;c=R:Comparisons(row);assert(c[1].stats==nil)
+''',
+"rewards_secret_or_error_reads_stay_unknown":REWARDS+r'''
+GetInventoryItemID=function() return M.Secret() end
+assert(A.GetRewardEquipment(11).status=="unknown")
+GetInventoryItemID=function() error("restricted") end
+assert(A.GetRewardEquipment(11).status=="unknown")
+items[101].stats={ITEM_MOD_STRENGTH_SHORT=M.Secret()}
+assert(rewards().items[1].item.stats==nil)
+GetNumQuestLogChoices=function() return M.Secret() end
+local s=rewards();assert(not s.countsKnown and #s.items==1)
+GetNumQuestLogChoices=function() return 1000000 end
+assert(#rewards().items==1)
+''',
+"rewards_dialog_failures_never_fall_back_to_log":REWARDS+r'''
+QuestFrame=CreateFrame("Frame");QuestFrame:Show()
+GetQuestID=function() return 9100 end
+GetTitleText=function() return "Dialog quest" end
+GetNumQuestChoices=function() return 1 end
+GetNumQuestRewards=function() return 0 end
+GetQuestItemInfo=function() error("not ready") end
+GetQuestItemLink=nil;GetRewardMoney=nil;GetRewardXP=nil
+local s=A.GetRewardContext("dialog")
+assert(s.questID==9100 and s.title=="Dialog quest" and #s.items==1)
+assert(not s.items[1].item and not s.items[1].count and not s.money and not s.xp)
+GetNumQuestChoices=nil;s=A.GetRewardContext("dialog");assert(#s.items==0 and not s.countsKnown)
+QuestFrame:Hide();assert(not A.GetRewardContext("dialog").questID)
+''',
+"rewards_combat_and_missing_reward_data_stop_reads":REWARDS+r'''
+local reads=0;GetNumQuestLogChoices=function() reads=reads+1;return 0 end
+A.InCombat=function()return true end
+assert(not rewards().questID and reads==0)
+A.InCombat=function()return false end
+HaveQuestRewardData=function()return false end
+assert(rewards().message and reads==0)
+HaveQuestRewardData=function()return M.Secret() end
+assert(rewards().message and reads==0)
+''',
+"rewards_identity_change_discards_mixed_snapshot":REWARDS+r'''
+GetQuestLogRewardInfo=function()selected=9002;return "Fixed",nil,1 end
+local s=rewards();assert(not s.questID and #s.items==0 and s.message:find("changed"))
+''',
+"rewards_ui_selection_equipment_and_item_load_refresh":REWARDS+HUB+r'''
+cmd("way 60 60 Preserve")
+local before=snapshot(FP.Waypoints.list)
+page("rewards");selectRow("rewardItems",2)
+assert(FP.RewardPanel.details:GetText():find("Choice 2"))
+items[102].loading=true;M.FireEvent("GET_ITEM_INFO_RECEIVED",102,false);M.RunTimers(1)
+assert(FP.RewardPanel.details:GetText():find("loading"))
+items[102].loading=false;gear[11]=nil
+M.FireEvent("PLAYER_EQUIPMENT_CHANGED",11);M.RunTimers(1)
+assert(FP.RewardPanel.details:GetText():find("Empty slot"))
+assert(H.controls.rewardItems.selected=="choice:2" and snapshot(FP.Waypoints.list)==before)
+selected=9002;M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(1)
+assert(FP.RewardPanel.snapshot.questID==9002 and H.controls.rewardItems.selected=="choice:1")
+assert(#FP.db.errors==0)
+''',
+"rewards_hidden_page_does_not_read_or_create_frames":REWARDS+HUB+r'''
+page("rewards");page("town");local count=#M.frames
+local calls=0;A.GetRewardContext=function()calls=calls+1;return {items={}} end
+M.FireEvent("GET_ITEM_INFO_RECEIVED",101,true);M.FireEvent("PLAYER_EQUIPMENT_CHANGED",11);M.RunTimers(1)
+assert(calls==0 and #M.frames==count)
+H.frame:Hide();M.FireEvent("QUEST_LOG_UPDATE");M.RunTimers(1);assert(calls==0)
+''',
+"rewards_dialog_compare_button_requires_click":REWARDS+HUB+r'''
+QuestFrame=CreateFrame("Frame");QuestFrame:Show()
+page("navigation");M.dialogQuest=9001;M.FireEvent("QUEST_DETAIL");M.RunTimers(1)
+assert(H.selected=="navigation" and R.button:IsShown())
+local count=#M.frames;R.button:GetScript("OnClick")()
+assert(H.selected=="rewards" and FP.RewardPanel.mode=="dialog")
+M.FireEvent("QUEST_FINISHED");assert(not R.button:IsShown())
+M.FireEvent("QUEST_DETAIL");assert(R.button:IsShown())
+assert(#FP.db.errors==0)
+''',
+"rewards_empty_stats_unsellable_and_missing_api":REWARDS+r'''
+items[101].price=0;items[102].price=0
+local s=rewards();assert(s.items[1].value==0 and not s.items[1].bestVendor)
+C_Item.GetItemStats=nil;assert(rewards().items[1].item.stats==nil)
+C_QuestLog.GetSelectedQuest=nil;s=rewards();assert(not s.questID and #s.items==0)
+''',
+})
+
+CASES["rewards_item_cache_requests_are_bounded_and_values_finite"] = REWARDS+r'''
+local requests=0
+C_Item.RequestLoadItemDataByID=function()requests=requests+1 end
+items[101].loading=true
+for i=1,10 do rewards() end
+assert(requests==1)
+for i=1000,1300 do A.GetRewardItem("item:"..i) end
+assert(requests==128)
+items[101].loading=false;items[101].price=1e300
+GetQuestLogChoiceInfo=function()return "Huge",nil,1e300,2,true end
+local s=rewards();assert(s.items[1].value==nil and not s.items[2].bestVendor)
+'''
+
 failed = 0
 for name, body in CASES.items():
     result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
