@@ -19,6 +19,8 @@ function C:Decode(msg)
 	if tag ~= "PT" then return nil end
 	local seconds, id = tonumber(duration), tonumber(spellID)
 	local kinds = { cc = true, root = true, lockout = true, trap = true }
+	-- Shown in the receiver's HUD: colour, texture and link codes are dropped.
+	spell, target, drText = U.PlainText(spell), U.PlainText(target), U.PlainText(drText)
 	if not U.Finite(seconds) or seconds <= 0 or seconds > 120 or not U.Finite(id) or id < 1 or id > 2147483647 or id ~= math.floor(id)
 		or #spell == 0 or #spell > 80 or #target > 80 or #drText > 32 or not kinds[kind] then return nil end
 	return { spellID = tonumber(spellID), spell = spell, duration = tonumber(duration) or 0, target = target ~= "" and target or nil, drText = drText ~= "" and drText or nil, kind = kind }

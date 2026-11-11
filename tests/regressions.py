@@ -3288,6 +3288,14 @@ M.mapID=1414;update();local first=calls;update()
 assert(calls-first<=shown(),"projection repeated for every source on every update")
 Q:Refresh(true);update();assert(shown()==zone,"sources lost after a source refresh on the parent map")
 ''',
+"party_cast_timer_text_is_plain": r'''
+local C=FP.Coordination
+local d=assert(C:Decode("PT;118;|cffff0000FAKE ALERT|r;30;|TInterface\\Icons\\Spell_Nature_Polymorph:20|t;|Hitem:1|h[x]|h;cc"))
+for _,field in ipairs({"spell","target","drText"}) do assert(not d[field]:find("[|%c]"),field.." keeps escape codes: "..d[field]) end
+assert(d.spell=="cffff0000FAKE ALERTr" and d.duration==30 and d.kind=="cc")
+assert(C:Decode("PT;118;||;30;;;cc")==nil,"a name made only of escape bytes is rejected")
+assert(C:Decode("PT;118;Polymorph;30;Bob;DR 1/2;cc").target=="Bob")
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)

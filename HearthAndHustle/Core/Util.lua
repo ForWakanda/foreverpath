@@ -63,6 +63,11 @@ function U.ObjectiveText(text)
  return label
 end
 
+-- Text received from another player: no escape sequences or control bytes.
+function U.PlainText(s)
+	return (tostring(s or ""):gsub("[|%c]", ""))
+end
+
 function U.Split(s, sep)
 	local out = {}
 	sep = sep or "%s"
