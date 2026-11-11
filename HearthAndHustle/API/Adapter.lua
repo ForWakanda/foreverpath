@@ -474,14 +474,16 @@ local function referencePoints(db,maps,spawns,name,id,role)
 	return out
 end
 
-function API.GetQuestReference(questID)
-	if not U.Finite(questID) or questID<=0 or questID~=math.floor(questID) or not API.QuestDatabaseStatus() then return nil end
+local function buildQuestReference(questID, entityKind, entityID)
+	if not API.QuestDatabaseStatus() then return nil end
 	local ok, result = pcall(function()
 		local db, groups = LibQuestieDB, {}
 		local maps = referenceZones(db)
 		if not maps then return nil end
 		local function get(kind, id, field) return db[kind].Get(id, field) end
-		local objectives = get("Quest", questID, "objectives")
+		local function questField(field) if questID then return get("Quest", questID, field) end end
+		local objectives = questField("objectives")
+		if entityKind then objectives = { [({Npc=1,Object=2,Item=3})[entityKind]] = {{entityID}} } end
 		if objectives==nil then objectives={} end
 		if type(objectives) ~= "table" then return nil end
 		local function validID(id) return U.Finite(id) and id>0 and id==math.floor(id) end
@@ -548,7 +550,7 @@ function API.GetQuestReference(questID)
 			end
 		end end
 		-- triggerEnd is a completion area, not an escort starting point or path.
-		local trigger=get("Quest",questID,"triggerEnd")
+		local trigger=questField("triggerEnd")
 		if type(trigger)=="table" and type(trigger[1])=="string" and trigger[1]~="" then
 			local group={kind="Event",id=questID,key="Event",name=trigger[1],text=trigger[1],points={}}
 			coordinates(group,trigger[2],trigger[1],questID,"event")
@@ -557,7 +559,7 @@ function API.GetQuestReference(questID)
 		-- Only unbound extra notes (index 0) can be shown without assuming the
 		-- provider's ordering matches the client's objective ordering. They are
 		-- quest-level hints, never completed-objective counts or auto-route inputs.
-		local extras=get("Quest",questID,"extraObjectives")
+		local extras=questField("extraObjectives")
 		if type(extras)=="table" then for i,row in ipairs(extras) do
 			if i>64 then break end
 			if type(row)=="table" and row[4]==0 and type(row[3])=="string" and row[3]~="" then
@@ -582,6 +584,48 @@ function API.GetQuestReference(questID)
 	if ok then return result end
 	-- Missing/broken providers degrade this feature, not the route or other tools.
 	return nil
+end
+
+function API.GetQuestReference(questID)
+	if not U.Finite(questID) or questID<=0 or questID~=math.floor(questID) then return nil end
+	return buildQuestReference(questID)
+end
+
+-- Missing/new quest IDs can still have known item/creature sources. Only use a
+-- unique exact localized entity name; never fuzzy-match or choose one duplicate.
+-- Warm the provider's shared index incrementally, outside combat, on demand.
+local objectiveIndexes, objectiveProvider = {}, nil
+function API.GetObjectiveNameReference(objective)
+	local kind = ({item="Item",monster="Npc",object="Object"})[objective.type]
+	local name = U.ObjectiveText(objective.text)
+	if not kind or not name or API.InCombat() or not API.QuestDatabaseStatus() then return nil end
+	if kind=="Npc" then name=name:gsub(" slain$", ""):gsub(" killed$", ""):gsub(" defeated$", "") end
+	local provider = LibQuestieDB
+	if objectiveProvider ~= provider then objectiveProvider,objectiveIndexes=provider,{} end
+	local entity = provider[kind]
+	if not has(entity,"IdsByName") or not has(entity,"BuildNameIndexAsync") then return nil end
+	local state = objectiveIndexes[kind]
+	if not state then
+		state={}; objectiveIndexes[kind]=state
+		local co=coroutine.create(function() entity.BuildNameIndexAsync(150) end)
+		local function batch()
+			if objectiveProvider~=provider then return end
+			if API.InCombat() then FP.After(.5,batch); return end
+			local ok=coroutine.resume(co)
+			if not ok then state.failed=true; return end
+			if coroutine.status(co)=="dead" then
+				state.ready=true; FP:Fire("QUEST_SOURCE_INDEX_READY")
+			else FP.After(.01,batch) end
+		end
+		FP.After(.01,batch)
+	end
+	if not state.ready then return nil end
+	local ok,ids=pcall(entity.IdsByName,name)
+	if not ok or type(ids)~="table" or #ids~=1 or not U.Finite(ids[1]) or ids[1]<=0 or ids[1]~=math.floor(ids[1]) then return nil end
+	local refs=buildQuestReference(nil,kind,ids[1])
+	local ref=refs and refs[1]
+	if ref then ref.fallback=true; ref.key="Name:"..kind..":"..ids[1] end
+	return ref
 end
 
 -- Quest chain reads are separate from objective/source decoding: opening the

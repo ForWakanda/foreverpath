@@ -469,3 +469,37 @@ repeatables. Map coordinates win when both sources report the same quest.
 
 No remote availability inference from historical giver records or the provider
 catalog; no automatic interactions. Mock verification is not client proof.
+
+### Quest map and missing-ID sources — v0.18.0 (2026-11-11, Codex)
+
+User client report: quest98192 Skin Careful, Skin Sharp has no markers and all
+source markers look alike. Fresh saved v0.17.1 evidence includes objective
+Intact Raptor Hide x8; one unchanged historical error. Installed QuestieDB1.0.13
+has no quest98192 but contains Item279601 with npcDrops4356/4357, Bloodfen
+Razormaw/Lashtail: 14+16 outdoor points in Area15 -> UiMap1445.
+
+The existing Forever QuestObjectiveInfo API has text/type/counts but no entity ID.
+Missing/unlocated quest references now fall back only to a unique exact localized
+entity name of the live objective's type, using the provider's public IdsByName
+and BuildNameIndexAsync(150) APIs. The index is caller-driven through small timer
+batches outside combat. No fuzzy matches, duplicate-ID selection, unknown event
+inference or Classic database substitution. Successful sources are cached only
+for active objective keys and marked as name-based in tooltips. Explicit refresh
+rechecks them. Existing native guidance retains priority.
+
+Quest colors/numbers are per-character and stable while a quest remains active.
+Type icons reuse client art; map and minimap share style, shared locations have a
+white + badge. A paged/collapsible map legend controls focus and hidden quests
+without changing navigation; Show all resets those filters and selected-only.
+Contacts are confirmed map/NPC offers and known enders of completed active quests,
+not inferred prerequisite-based availability. Default world clustering uses a
+60x60 grid/cap150; Dense uses125x125/cap350. Round-robin allocation retains fairness
+across quests; source arrays stay intact for nearest guidance. Minimap clustering
+scales to icon size (18 pixels), capped40 with no distant-rim clamping.
+
+Validation includes the real installed QuestieDB and 98192, all source locations,
+world/minimap/legend/completion, duplicate names, async/combat index behavior,
+stable/repaired color assignments, overlapping quests, focus/hide and manual
+route preservation, pickup/turn-in lifecycle, density and legend pagination.
+Client rendering/behavior still needs user verification. Questie icon convention
+reference: https://github.com/Questie/Questie/wiki/Icons (no Questie UI/code/art copied).

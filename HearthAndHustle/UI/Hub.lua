@@ -273,7 +273,7 @@ function H:BuildPage(key)
 		self:Actions(p,{{"recoverGuide","Restore arrow and compact panel",function() command("guide") end}})
 		self:Section(p,"Quest locations")
 		self:Text(p,"",function() return FP.QuestObjectives:Summary() end)
-		self:Text(p,"Small orange dots mark known sources for unfinished quests. Hover for details; click to guide there. Nearby sources appear on the minimap. Dense world-map points are grouped, with up to 350 markers; the minimap shows the nearest 40. Some event and new Forever objectives have no locations yet.")
+		self:Text(p,"Quest colors and numbers match the map legend and this list. Sword: kill; bag: loot; gear: interact; spyglass: event; ! pickup; ? turn-in. Click a legend quest to focus it, right-click to hide it, or Show all to restore everything. A white + marks shared locations. Hover for progress; click a marker to guide. Some objectives still lack known sources.")
 		self:Section(p,"Quest destinations")
 		local search=self:Field(p,"questSearch","Find a quest","")
 		local list=self:List(p,"quests",function()
@@ -284,7 +284,7 @@ function H:BuildPage(key)
 				end
 			end
 			return out
-		end,function(item) local s=item.step; return (s.deferred and "[Deferred] " or "")..tostring(s.title).." — "..tostring(s.text or s.kind) end)
+		end,function(item) local s=item.step; return (s.deferred and "[Deferred] " or "")..(s.questID and FP.QuestObjectives:QuestLabel(s.questID,s.title) or tostring(s.title)).." — "..tostring(s.text or s.kind) end)
 		search:SetScript("OnTextChanged",function() list.page=1; self:Refresh() end)
 		self:Actions(p,{
 			{"goQuest","Guide to selected quest",function()
@@ -488,7 +488,7 @@ function H:BuildPage(key)
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end
-		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"},{"questEventHints","Show quest hints (separate from objective progress)"}}) do
+		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"},{"questEventHints","Show quest hints (separate from objective progress)"},{"questContactPins","Show confirmed pickups and known turn-ins"},{"questMapLegend","Show clickable quest legend on world map"},{"questDensePins","Dense world-map markers (350 instead of 150)"}}) do
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end
