@@ -1209,7 +1209,7 @@ for i=1,4 do
     assert(not pin:IsMouseMotionEnabled(), "planned pin blocks quest hover")
     assert(not pin:IsMouseClickEnabled(), "planned pin blocks quest click")
     assert(pin:ShouldMouseButtonBePassthrough("RightButton"), "planned pin consumes map zoom-out")
-    assert(pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT", "pin still covers native quest markers")
+    assert(pin:GetFrameLevel()<WorldMapFrame:GetPinFrameLevelsManager():GetFrameLevelStart("PIN_FRAME_LEVEL_ACTIVE_QUEST"), "pin still covers native quest markers")
     local id=active().id
     pin:OnClick("RightButton")
     assert(active() and active().id==id, "passive pin removed the route")
@@ -1244,7 +1244,7 @@ assert(not FP.Waypoints:Get(manual.id) and active()==other)
 cmd("way 60 60 Test")
 FP.Pins.provider:RefreshAllData()
 local pin=assert(WorldMapFrame._pins[1])
-assert(pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT", "manual pin still covers native quest markers")
+assert(pin:GetFrameLevel()<WorldMapFrame:GetPinFrameLevelsManager():GetFrameLevelStart("PIN_FRAME_LEVEL_ACTIVE_QUEST"), "manual pin still covers native quest markers")
 assert(pin:IsMouseMotionEnabled() and pin:IsMouseClickEnabled())
 ''',
     "map_pin_callbacks_do_not_replace_or_hide_native_tooltips": r'''
@@ -2231,7 +2231,7 @@ M.mapID=1445;FP.Pos:Refresh(true)
 FP.Pins.provider:RefreshAllData()
 local pin
 for _,p in ipairs(WorldMapFrame._pins)do if p._pinTemplate=="HearthAndHustleObjectivePinTemplate"then pin=p;break end end
-assert(pin and pin.pinFrameLevelType=="PIN_FRAME_LEVEL_DEFAULT" and pin:IsMouseClickEnabled())
+assert(pin and pin:GetFrameLevel()<WorldMapFrame:GetPinFrameLevelsManager():GetFrameLevelStart("PIN_FRAME_LEVEL_ACTIVE_QUEST") and pin:IsMouseClickEnabled())
 pin:OnMouseEnter();assert(GameTooltip:IsOwned(pin))
 pin:OnClick("RightButton");assert(not active())
 pin:OnClick("LeftButton");assert(active().source.type=="quest-location")
@@ -2263,7 +2263,7 @@ assert(#Q:WorldPins(1445)==0)
 "quest_locations_minimap_nearby_only_rotation_pool_and_settings": OBJECTIVES+r'''
 M.mapID=1445;M.px=.34;M.py=.25;FP.Pos:Refresh(true)
 FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
-local pool=FP.Pins.objectiveMini;assert(#pool>0 and #pool<=40)
+local pool=FP.Pins.objectiveMini;assert(#pool>0 and #pool<=24)
 for _,f in ipairs(pool)do if f:IsShown()then assert(f.point.d<=FP.API.GetMinimapViewRadius())end end
 local count=#pool
 FP.Pins.lastObjectiveMini=nil;FP.API.IsMinimapRotating=function()return true end
@@ -3116,6 +3116,99 @@ FP.settings.questContactPins=false;FP.settings.questSelectedOnly=true;C_SuperTra
 assert(#Q:WorldPins(1445)==0)
 Q:Focus(9101);assert(#Q:WorldPins(1445)>0,"explicit focus works without native tracking")
 assert(#FP.db.errors==0)
+''',
+})
+
+CASES.update({
+"quest_map_above_terrain_on_open_focus_browse_reopen": OBJECTIVES+r'''
+M.mapID=1445;M.px=.32;M.py=.23;FP.Pos:Refresh(true)
+WorldMapFrame:Hide()
+M.AddQuest({questID=9102,title="Second quest",objectives={objective("0/1 Lost Key","item")}})
+Q:Refresh(true)
+WorldMapFrame:RemoveAllPinsByTemplate("HearthAndHustleObjectivePinTemplate")
+WorldMapFrame:Show()
+local levels=WorldMapFrame:GetPinFrameLevelsManager()
+local function visiblePins(qid)
+ local n=0
+ for _,pin in ipairs(WorldMapFrame._pins) do
+  local level=pin:GetFrameLevel()
+  assert(level>levels:GetFrameLevelStart("PIN_FRAME_LEVEL_MAP_EXPLORATION"),"terrain covers marker")
+  assert(level>levels:GetFrameLevelStart("PIN_FRAME_LEVEL_FOG_OF_WAR"),"fog covers marker")
+  assert(level>levels:GetFrameLevelStart("PIN_FRAME_LEVEL_QUEST_BLOB"),"quest blob covers marker")
+  assert(level<levels:GetFrameLevelStart("PIN_FRAME_LEVEL_QUEST_OFFER"),"native quest icon covered")
+  if pin.point then
+   n=n+1
+   assert(pin.point.mapID==WorldMapFrame:GetMapID())
+   assert(pin.questBadge:IsShown() and pin:GetWidth()==18)
+   if qid then for _,e in ipairs(pin.point.entries) do assert(e.group.questID==qid) end end
+  end
+ end
+ return n
+end
+assert(visiblePins()>0,"opening map did not draw quests")
+local f=FP.Pins.legend
+assert(f.rows[2].questID==9102)
+f.rows[2]:GetScript("OnClick")(f.rows[2],"LeftButton")
+assert(Q.focusedQuest==9102 and visiblePins(9102)>0,"legend did not focus drawn pins")
+WorldMapFrame:Hide();WorldMapFrame:Show();assert(visiblePins(9102)>0)
+f.all:GetScript("OnClick")();assert(not Q.focusedQuest and visiblePins()>0)
+WorldMapFrame:SetMapID(1413);assert(visiblePins()>0,"browsed zone should show its sources")
+WorldMapFrame:SetMapID(1445);assert(visiblePins()>0)
+cmd("way 50 50 Manual");visiblePins()
+WorldMapFrame:Hide();M.complete[9101]=true;M.complete[9102]=true;Q:Refresh(true)
+WorldMapFrame:Show();assert(visiblePins()==0,"completed objectives survived reopen")
+''',
+"quest_minimap_compact_spaced_shared_and_bounded": OBJECTIVES+r'''
+M.mapID=1445;M.px=.5;M.py=.5;FP.Pos:Refresh(true)
+local points={}
+-- Two different grid cells almost touching at the center, plus a dense field.
+local radius=FP.API.GetMinimapViewRadius()
+local cell=radius*18/70/10000
+local boundary=math.ceil(.5/cell)*cell
+points[1]={mapID=1445,x=boundary-.0001,y=.5,name="Left",entityID=11,role="kill"}
+points[2]={mapID=1445,x=boundary+.0001,y=.5,name="Right",entityID=12,role="kill"}
+local second=table.remove(points,2)
+Q.groups={{questID=9101,kind="Npc",points=points},{questID=9102,kind="Npc",points={second}}};Q.contacts={}
+FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+local shared=FP.Pins.objectiveMini[1]
+assert(shared and shared:IsShown() and shared.sharedQuests==2,"adjacent cells were not merged")
+assert(#shared.point.entries==2,"merged marker lost a quest")
+for i=-10,10 do for j=-10,10 do
+ points[#points+1]={mapID=1445,x=.5+i*.002,y=.5+j*.002,name="Target",entityID=11,role="kill"}
+end end
+FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+local shown={}
+for _,f in ipairs(FP.Pins.objectiveMini) do if f:IsShown() then
+ assert(f:GetWidth()==11 and f:GetHeight()==11 and not f.questBadge:IsShown(),"minimap icon/badge too large")
+ assert(f.point.d<=radius)
+ local _,_,_,x,y=f:GetPoint()
+ for _,other in ipairs(shown) do
+  local _,_,_,ox,oy=other:GetPoint()
+  assert((x-ox)^2+(y-oy)^2>=14^2-.001,"neighboring minimap markers overlap")
+ end
+ shown[#shown+1]=f
+end end
+assert(#shown>1 and #shown<=24)
+M.rotateMinimap=true;FP.Pos.cache.facing=1.2;FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+assert(#FP.Pins.objectiveMini==#shown,"rotation grew pool")
+Q.groups={};FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+for _,f in ipairs(shown) do assert(not f:IsShown(),"stale pooled marker still shown") end
+''',
+"quest_map_native_callback_errors_recorded_and_legend_isolated": OBJECTIVES+r'''
+M.mapID=1445
+local legend=FP.Pins.UpdateLegend
+FP.Pins.UpdateLegend=function() error("legend fixture failure") end
+FP.Pins.provider:RefreshAllData()
+assert(#WorldMapFrame._pins>0,"legend failure prevented map pins")
+assert(#FP.db.errors==1 and FP.db.errors[1].where=="worldmap-legend")
+FP.Pins.UpdateLegend=legend
+local acquire=WorldMapFrame.AcquirePin
+WorldMapFrame.AcquirePin=function() error("pin fixture failure") end
+FP.Pins.provider:OnMapChanged()
+assert(#FP.db.errors==2 and FP.db.errors[2].where=="worldmap-refresh")
+WorldMapFrame.AcquirePin=acquire
+FP.Pins.provider:RefreshAllData();assert(#WorldMapFrame._pins>0)
+FP.db.errors={} -- expected fault injection; normal callbacks recovered
 ''',
 })
 

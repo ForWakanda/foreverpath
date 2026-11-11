@@ -503,3 +503,10 @@ stable/repaired color assignments, overlapping quests, focus/hide and manual
 route preservation, pickup/turn-in lifecycle, density and legend pagination.
 Client rendering/behavior still needs user verification. Questie icon convention
 reference: https://github.com/Questie/Questie/wiki/Icons (no Questie UI/code/art copied).
+
+### Map layer and minimap repair — v0.18.1 (2026-11-11, Codex)
+
+- Verified against Forever UI build70888, revision `4cd0ab752a77164f654ccbca9d0c1fe8dafceebe`: `WorldMapMixin:OnLoad` registers MAP_EXPLORATION, FOG_OF_WAR and QUEST_BLOB above PIN_FRAME_LEVEL_DEFAULT. `MapExplorationPinMixin` draws explored terrain textures there, so DEFAULT can hide addon markers. Previous mock assertions requiring DEFAULT were wrong.
+- Both addon pin types now use an explicit level inserted above MAP_HIGHLIGHT and below native POI/quest markers. Existing pin levels are reapplied after insertion. Native map refresh callbacks record errors; legend errors cannot prevent marker drawing.
+- Minimap quest icons11px (was16), no numeric badges,14px minimum center spacing after merging adjacent cells, nearest24 maximum (was40). Shared markers retain all merged objective tooltip entries. World markers remain18px with numbers.
+- Mock coverage now models layer ordering and map open/map-change/reopen, plus legend focus, completion cleanup, spacing and error recovery. These checks and source verification do not establish fresh in-game rendering; reload and user verification remain required.

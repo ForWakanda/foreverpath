@@ -56,7 +56,8 @@ function Frame:SetPoint(point, rel, relPoint, x, y)
 	self._point = { point, rel, relPoint or point, x or 0, y or 0 }
 end
 function Frame:GetPoint() local p = self._point or { "CENTER", nil, "CENTER", 0, 0 }; return p[1], p[2], p[3], p[4], p[5] end
-function Frame:GetFrameLevel() return 1 end
+function Frame:SetFrameLevel(level) self._frameLevel=level end
+function Frame:GetFrameLevel() return self._frameLevel or 1 end
 function Frame:SetScript(name, fn) self._scripts[name] = fn end
 function Frame:GetScript(name) return self._scripts[name] end
 function Frame:RegisterEvent(ev) self._events[ev] = true end
@@ -195,12 +196,38 @@ MapCanvasPinMixin = {
 MapCanvasDataProviderMixin = {
 	OnAdded = function(self, map) self._map = map end,
 	GetMap = function(self) return self._map end,
+	OnShow = noop,
+	OnMapChanged = function(self) self:RefreshAllData() end,
 }
 WorldMapFrame = M.NewFrame("Frame", "WorldMapFrame")
 WorldMapFrame._providers = {}
 WorldMapFrame._pins = {}
 WorldMapFrame.AddDataProvider = function(self, p) p:OnAdded(self); table.insert(self._providers, p) end
-WorldMapFrame.GetMapID = function() return M.mapID end
+WorldMapFrame.GetMapID = function(self) return self.mapID or M.mapID end
+-- Relative order from Forever WorldMapMixin:OnLoad (build 70888). Terrain is
+-- drawn by pins too: DEFAULT is not a safe level for visible addon markers.
+local levels={definitions={}}
+for i,name in ipairs({"DEFAULT","MAP_EXPLORATION","FOG_OF_WAR","QUEST_BLOB","SCENARIO_BLOB","MAP_HIGHLIGHT","AREA_POI","QUEST_OFFER","ACTIVE_QUEST","SUPER_TRACKED_QUEST"}) do
+ levels.definitions["PIN_FRAME_LEVEL_"..name]=2000+i
+end
+function levels:GetFrameLevelStart(name) return self.definitions[name] or self.definitions.PIN_FRAME_LEVEL_DEFAULT end
+function levels:InsertFrameLevelAbove(name,relative)
+ if self.definitions[name] or not self.definitions[relative] then return false end
+ local value=self.definitions[relative]+1
+ for key,old in pairs(self.definitions) do if old>=value then self.definitions[key]=old+1 end end
+ self.definitions[name]=value;return true
+end
+WorldMapFrame.GetPinFrameLevelsManager=function() return levels end
+WorldMapFrame.ReapplyPinFrameLevels=function(self)
+ for _,pin in ipairs(self._pins) do pin:SetFrameLevel(self:GetPinFrameLevelsManager():GetFrameLevelStart(pin.pinFrameLevelType)) end
+end
+WorldMapFrame.Show=function(self)
+ local shown=self:IsShown();Frame.Show(self)
+ if not shown then for _,p in ipairs(self._providers) do p:RefreshAllData(true);p:OnShow() end end
+end
+WorldMapFrame.SetMapID=function(self,id)
+ if self:GetMapID()~=id then self.mapID=id;for _,p in ipairs(self._providers) do p:OnMapChanged() end end
+end
 WorldMapFrame.RemoveAllPinsByTemplate = function(self, template)
 	for i=#self._pins,1,-1 do if self._pins[i]._pinTemplate == template then table.remove(self._pins,i) end end
 end
@@ -212,6 +239,7 @@ WorldMapFrame.AcquirePin = function(self, template, ...)
 	pin:OnLoad()
 	pin:OnAcquired(...)
 	pin:CheckMouseButtonPassthrough("RightButton")
+	pin:SetFrameLevel(self:GetPinFrameLevelsManager():GetFrameLevelStart(pin.pinFrameLevelType))
 	table.insert(self._pins, pin)
 	return pin
 end
