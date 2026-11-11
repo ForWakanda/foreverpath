@@ -174,7 +174,8 @@ assert(names.HearthAndHustleDungeons and names.HearthAndHustleExport)
 
 REVIEW_CASES.update({
 "review_fresh_defaults_opt_out_and_observations_are_bounded": r'''
-assert(FP.defaults.settings.record==false and FP.defaults.settings.probe.enabled==false)
+assert(FP.settings.record==false and FP.settings.probe.enabled==false)
+assert(next(FP.data.quests)==nil and not FP.GearCatalog)
 local records={old={last=1},new={last=5},middle={last=3}}
 FP.Util.TrimRecords(records,2);assert(not records.old and records.new and records.middle)
 for i=1,510 do FP.data.pvp.players["Player"..i]={last=i} end
@@ -207,3 +208,40 @@ M.FireEvent("UNIT_AURA","target",{})
 M.FireEvent("PLAYER_TARGET_CHANGED");M.RunTimers(1)
 assert(snapshot(FP.db.probe)==before)
 '''
+
+REVIEW_CASES.update({
+"review_party_full_identity_surname_and_realm_are_preserved": r'''
+M.inGroup=true
+UnitFullName=function(unit) if unit=="party1" then return "First Surname","Their Realm" end end
+C_NameUtil={ReplaceSurnameSeparatorWithLinkSeparator=function(name) return name:gsub(" ",":") end}
+assert(FP.API.IsPartySender("First:Surname-TheirRealm"))
+assert(not FP.API.IsPartySender("First:Surname-OtherRealm"))
+assert(not FP.API.IsPartySender("First:Surname"))
+UnitFullName=function() error("identity unavailable") end
+assert(not FP.API.IsPartySender("First:Surname-TheirRealm"))
+''',
+"review_source_cache_and_login_labels_preserve_clicked_destination": r'''
+local q=addQuest(9001);q.waypoint=nil
+local point={mapID=1413,x=.6,y=.6,entityID=11,role="kill",name="Mob"}
+local calls=0
+FP.API.QuestDatabaseStatus=function() return true,"fixture" end
+FP.API.GetQuestReference=function() calls=calls+1;return {{kind="Npc",name="Mob",key="Npc:11",points={point}}} end
+local Q=FP.QuestObjectives;Q:Refresh(true);assert(calls==1)
+assert(Q:Guide(Q:WorldPins(1413)[1]));local wp=active()
+q.objectives[1].text="0/1  slain";Q:Refresh();assert(active()==wp and calls==1)
+q.objectives[1].text="0/1 Mob slain";Q:Refresh();assert(active()==wp and Q.matched==1 and calls==1)
+q.objectives[1].finished=true;Q:Refresh();assert(not active())
+''',
+"review_continent_source_projects_to_zone_and_far_pickup_is_retained": r'''
+local p={mapID=1414,x=.3,y=.4,entityID=12,role="kill",name="Cave source"}
+FP.QuestObjectives.groups={{questID=9,objIndex=1,points={p}}};FP.QuestObjectives.worldCache={}
+local pins=FP.QuestObjectives:WorldPins(1413)
+assert(#pins==1 and pins[1].entries[1].point.original==p)
+FP.Pos.DistanceTo=function() return nil end
+local C=FP.QuestChains
+C.Context=function() return {offers={},State=function() return {onQuest=false,completed=false} end} end
+C.Starters=function() return {{points={{mapID=1417,x=.2,y=.3,name="Far pickup"}}}} end
+C.Title=function() return "Far quest" end
+assert(C:GuidePickup(9));assert(active().mapID==1417)
+''',
+})

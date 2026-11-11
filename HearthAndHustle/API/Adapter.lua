@@ -393,6 +393,9 @@ referenceZones=function(db)
 	setfenv(chunk, {})
 	local ok, maps = pcall(chunk)
 	if not ok or type(maps) ~= "table" then return nil end
+	local valid=false
+	for area,map in pairs(maps) do if U.Finite(area) and U.Finite(map) and map>0 and map==math.floor(map) then valid=true;break end end
+	if not valid then return nil end
 	zoneProvider, zoneMap, zoneRaw = db, maps, raw
 	return maps
 end
@@ -1488,16 +1491,30 @@ function API.InGroup()
 end
 
 function API.IsPartySender(sender)
-	if not API.InGroup() or type(sender) ~= "string" then return false end
-	for i = 1, 4 do
-		local name, realm = UnitName("party" .. i)
-		name, realm = safe(name), safe(realm)
-		if name then
-			local full = name .. "-" .. ((realm and realm ~= "" and realm) or GetRealmName()):gsub("%s+", "")
-			if sender == full or (sender == name and (not realm or realm == "")) then return true end
-		end
-	end
-	return false
+ if not API.InGroup() or type(sender)~="string" then return false end
+ local function canonical(name)
+  if type(name)~="string" then return nil end
+  if has(C_NameUtil,"ReplaceSurnameSeparatorWithLinkSeparator") then
+   local ok,value=pcall(C_NameUtil.ReplaceSurnameSeparatorWithLinkSeparator,name)
+   if ok and type(safe(value))=="string" then return value end
+  end
+  return name
+ end
+ sender=canonical(sender)
+ for i=1,4 do
+  local read=hasg("UnitFullName") and UnitFullName or _G.UnitName
+  if type(read)=="function" then
+   local ok,name,realm=pcall(read,"party"..i)
+   name,realm=safe(name),safe(realm)
+   if ok and type(name)=="string" then
+    local ownRealm=hasg("GetRealmName") and safe(GetRealmName()) or nil
+    local server=type(realm)=="string" and realm~="" and realm or ownRealm
+    local full=type(server)=="string" and canonical(name.."-"..server:gsub("%s+",""))
+    if sender==full or (sender==canonical(name) and (not realm or realm=="" or realm==ownRealm)) then return true end
+   end
+  end
+ end
+ return false
 end
 
 function API.SendPartyMessage(msg)

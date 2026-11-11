@@ -2375,7 +2375,7 @@ C_QuestLog.GetTitleForQuestID=function(id) return "Reward quest "..id end
 HaveQuestRewardData=function() return true end
 GetQuestLogRewardXP=function() return 1200 end
 GetQuestLogRewardMoney=function() return 321 end
-GetNumQuestLogChoices=function() return 2 end
+GetNumQuestLogChoices=function(id,allowComplete) assert(id==selected and allowComplete==true);return 2 end
 GetNumQuestLogRewards=function() return 1 end
 GetQuestLogChoiceInfo=function(i) return "Choice "..i,nil,i,2,i~=2,100+i end
 GetQuestLogRewardInfo=function(i) return "Fixed",nil,1,2,true,103 end
@@ -2898,7 +2898,10 @@ CASES.update(REVIEW_CASES)
 
 failed = 0
 for name, body in CASES.items():
-    result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    boot = BOOT
+    if name == "review_fresh_defaults_opt_out_and_observations_are_bounded":
+        boot = boot.replace('if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,probe={enabled=true}}} end', '')
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
     print(("FAIL " if result.returncode else "PASS ") + name)
     if result.returncode:
         failed += 1
