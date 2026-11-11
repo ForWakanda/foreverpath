@@ -18,6 +18,16 @@ Developers on WSL: `tools/migrate-from-foreverpath.py` does steps 2 and 3 (`--dr
 
 Party features (quest sync, shared timers, rare alerts) only reach party members who are also on v0.17.0 or later.
 
+## NPC pickup reporting (v0.17.2)
+
+Map quest listings can omit available NPC quests. The pickup diagnostic now
+reports map-listed and recently NPC-confirmed offers separately; zero reported
+pickups is not proof that the zone has no available quests. Talking to a quest
+giver adds its offered quests to guidance, even with recording off. These
+session-only observations use your interaction position, expire after five
+minutes, and clear on acceptance, turn-in, or map change. A repeat visit refreshes
+the giver's list. Standing nearby alone does not confirm an NPC's offers.
+
 ## Review fixes (v0.17.1)
 
 Fully restart WoW after installing this update: the bundled `HearthAndHustle_GearData`

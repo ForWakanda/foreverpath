@@ -448,3 +448,24 @@ and wishlist; pull SavedVariables after normal flush. No new media or dependency
 - Automated/provider/saved-data replays are not fresh client gameplay evidence.
   Verify map hover/clicks in combat, layout/focus, party surnames and item/gear UI
   after a full restart; then pull newly flushed SavedVariables.
+
+### NPC offers and map coverage — v0.17.2 (2026-11-11, Codex)
+
+The user reports standing beside Melisara offering The Crown of Will while the
+map-only questOffers probe reports zero. This is a client observation of incomplete
+map coverage, not proof of an empty zone. Current SavedVariables have not yet
+flushed that interaction. `C_QuestLine.GetAvailableQuestLines(uiMapID)` and
+`C_QuestLog.GetQuestsOnMap` remain map-list sources, not a nearby-NPC census.
+
+`GOSSIP_SHOW` / `QUEST_GREETING` snapshot the actual dialog NPC's available quests;
+`QUEST_DETAIL` supplements single-quest offers. Blizzard's Forever UI at
+`4cd0ab752a77164f654ccbca9d0c1fe8dafceebe` confirms the greeting quest ID is the
+fifth `GetAvailableQuestInfo` return and QUEST_DETAIL carries questStartItemID.
+Item/area/adventure-map details and an unrelated selected target cannot supply NPC
+locations. Observations work with recording off, use the interaction position,
+expire after 300 seconds, cap at 100, and clear on quest acceptance/removal/turn-in
+or map transition. Current offers can override an earlier completion flag for
+repeatables. Map coordinates win when both sources report the same quest.
+
+No remote availability inference from historical giver records or the provider
+catalog; no automatic interactions. Mock verification is not client proof.
