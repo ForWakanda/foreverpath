@@ -3242,6 +3242,105 @@ assert(restrictedCalls==0)
 -- Our override must never replace the native shared function.
 assert(MapCanvasPinMixin.CheckMouseButtonPassthrough~=native)
 ''',
+"quest_map_never_writes_native_pin_frame_levels": OBJECTIVES+r'''
+-- Client report: ADDON_ACTION_BLOCKED Button:SetPassThroughButtons() twice on
+-- 0.18.1. The blocked object is a Button; our pins are Frames. Inserting a
+-- level rewrites startLevel on every native level above it, and native quest
+-- pins (Buttons) read that value in ApplyFrameLevel before their restricted
+-- passthrough call. Our pins must sit on an existing level, with no writes.
+M.mapID=1445;M.px=.32;M.py=.23;FP.Pos:Refresh(true)
+local levels=WorldMapFrame:GetPinFrameLevelsManager()
+local before={};for k,v in pairs(levels.definitions) do before[k]=v end
+WorldMapFrame:Hide();WorldMapFrame:RemoveAllPinsByTemplate("HearthAndHustleObjectivePinTemplate")
+WorldMapFrame:Show();FP.Pins.provider:RefreshAllData()
+local manual=WorldMapFrame:AcquirePin("HearthAndHustleMapPinTemplate",{id=335,mapID=1445,x=.32,y=.23,title="Manual"},true)
+assert(#WorldMapFrame._pins>1,"no quest pins drawn")
+assert(levels.writes==nil,"addon inserted a level into the native manager")
+local n=0
+for k,v in pairs(levels.definitions) do n=n+1;assert(before[k]==v,"native level moved: "..k) end
+for k in pairs(before) do n=n-1 end
+assert(n==0,"native level list changed")
+assert(before[FP.Pins.questPinLevel],"quest pins use an unregistered level")
+for _,pin in ipairs(WorldMapFrame._pins) do
+ assert(pin.pinFrameLevelType==FP.Pins.questPinLevel)
+ assert(pin:GetFrameLevel()>levels:GetFrameLevelStart("PIN_FRAME_LEVEL_MAP_HIGHLIGHT"),"highlight covers marker")
+ assert(pin:GetFrameLevel()<levels:GetFrameLevelStart("PIN_FRAME_LEVEL_AREA_POI"),"native icon covered")
+end
+''',
+"quest_minimap_sources_follow_the_parent_map_the_client_reports": OBJECTIVES+r'''
+-- Client data: outdoor caves report the continent map while sources are stored
+-- on the zone map. The world map projected them; the minimap showed none.
+local function shown() local n=0;for _,f in ipairs(FP.Pins.objectiveMini or {}) do if f:IsShown() then n=n+1 end end;return n end
+local function update() FP.Pos:Refresh(true);FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache) end
+M.mapID=1445;M.px=.34;M.py=.25;update()
+local zone=shown();assert(zone>0)
+M.mapID=1414;update()
+assert(shown()==zone,"sources vanished on the parent map: "..shown().." of "..zone)
+for _,f in ipairs(FP.Pins.objectiveMini) do if f:IsShown() then
+ assert(f.point.mapID==1445 and f.point.mx and f.point.entries[1].point.mapID==1445,"tooltip/guide must keep the source point")
+end end
+-- An unrelated map shows nothing, and the answer is cached per reported map.
+local info=C_Map.GetMapInfo
+C_Map.GetMapInfo=function(id) if id==1999 then return {mapID=id,name="Elsewhere",mapType=3,parentMapID=946} end return info(id) end
+M.mapID=1999;update();assert(shown()==0,"unrelated map drew sources")
+local calls=0;local world=FP.Pos.WorldOf;FP.Pos.WorldOf=function(...) calls=calls+1;return world(...) end
+M.mapID=1414;update();local first=calls;update()
+assert(calls-first<=shown(),"projection repeated for every source on every update")
+Q:Refresh(true);update();assert(shown()==zone,"sources lost after a source refresh on the parent map")
+''',
+"party_cast_timer_text_is_plain": r'''
+local C=FP.Coordination
+local d=assert(C:Decode("PT;118;|cffff0000FAKE ALERT|r;30;|TInterface\\Icons\\Spell_Nature_Polymorph:20|t;|Hitem:1|h[x]|h;cc"))
+for _,field in ipairs({"spell","target","drText"}) do assert(not d[field]:find("[|%c]"),field.." keeps escape codes: "..d[field]) end
+assert(d.spell=="cffff0000FAKE ALERTr" and d.duration==30 and d.kind=="cc")
+assert(C:Decode("PT;118;||;30;;;cc")==nil,"a name made only of escape bytes is rejected")
+assert(C:Decode("PT;118;Polymorph;30;Bob;DR 1/2;cc").target=="Bob")
+''',
+"rare_hud_text_stays_current_in_combat_without_moving_the_frame": r'''
+local RW=FP.RareWatch
+FP.settings.rare.enabled=true;FP.settings.rare.manual="show";RW:Refresh()
+assert(RW.frame:IsShown())
+local moved=0
+for _,name in ipairs({"SetHeight","SetPoint","ClearAllPoints","Show","Hide","SetScale"}) do
+ local native=RW.frame[name];RW.frame[name]=function(...) moved=moved+1;return native(...) end
+end
+local scan=0
+for _,name in ipairs({"Show","Hide"}) do local native=RW.scan[name];RW.scan[name]=function(...) scan=scan+1;return native(...) end end
+local lines=RW.StatusLines
+RW.StatusLines=function() return "RARE UP","level 33 elite","Runs 4" end
+FP.API.InCombat=function() return true end
+RW.layoutPending,RW.scanPending=nil,nil
+RW:Refresh()
+assert(RW.status:GetText()=="RARE UP" and RW.detail:GetText()=="level 33 elite" and RW.stats:GetText()=="Runs 4","HUD text frozen in combat")
+assert(moved==0 and scan==0,"frame or secure button changed in combat")
+assert(RW.layoutPending and RW.scanPending)
+-- hidden HUD stays hidden and untouched in combat
+FP.settings.rare.manual="hide";RW.StatusLines=function() error("no text read for a hidden HUD") end;RW:Refresh();assert(moved==0)
+FP.API.InCombat=function() return false end;RW.StatusLines=lines;RW:Refresh();assert(not RW.frame:IsShown())
+''',
+"gear_unlisted_level_tick_widens_item_level_estimate_by_a_bounded_margin": r'''
+FP.API.GetCharInfo=function() return {class="SHAMAN",level=40} end
+local item={id=1,name="Reward",equipLoc="INVTYPE_CLOAK",classID=4,subclassID=1,level=24,stats={},sources={},sourceTypes={}}
+FP.GearCatalog={items={item}}
+assert(#FP.Gear:Rows({slot="CLOAK",level=20})==0)
+assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==1,"tick did not widen the estimate")
+item.level=25;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==1)
+item.level=26;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0,"margin is unbounded")
+item.level=24;item.minLevel=22;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0,"a listed requirement was widened")
+''',
+"skill_up_without_profession_window_starts_no_recipe_scan": r'''
+local scanned=0;FP:On("RECIPES_SCANNED",function() scanned=scanned+1 end)
+local function settle(n) for _=1,n do M.RunTimers(.1) end end
+M.FireEvent("CHAT_MSG_SKILL","Your skill in Maces has increased to 55.");M.FireEvent("SKILL_LINES_CHANGED");settle(60)
+assert(scanned==0,"scan + retries without a profession window: "..scanned)
+M.FireEvent("TRADE_SKILL_SHOW");settle(20)
+local opened=scanned;assert(opened>0,"opening the window must scan")
+M.FireEvent("CHAT_MSG_SKILL","Your skill in Leatherworking has increased to 101.");settle(20)
+assert(scanned>opened,"skill-up with the window open must rescan")
+M.FireEvent("TRADE_SKILL_CLOSE");settle(60);local closed=scanned
+M.FireEvent("CHAT_MSG_SKILL","Your skill in Maces has increased to 56.");settle(60)
+assert(scanned==closed,"scan after the window closed")
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)

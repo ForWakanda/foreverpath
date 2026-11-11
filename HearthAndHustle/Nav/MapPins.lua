@@ -5,7 +5,14 @@ local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local Pins = FP:NewModule("Pins")
 
-local QUEST_PIN_LEVEL = "PIN_FRAME_LEVEL_HEARTH_AND_HUSTLE"
+-- Quest pins borrow an existing Blizzard level: above terrain, fog, quest blobs
+-- and map highlights, below every native icon. Never add or move a level in
+-- Blizzard's manager: InsertFrameLevelAbove rewrites startLevel on each native
+-- level above the insertion point from addon code. Native pins read that value
+-- while they are acquired, and their restricted calls are then blocked in combat
+-- (ADDON_ACTION_BLOCKED Button:SetPassThroughButtons(), builds 0.18.1-0.18.2).
+local QUEST_PIN_LEVELS = { "PIN_FRAME_LEVEL_DIG_SITE", "PIN_FRAME_LEVEL_DUNGEON_ENTRANCE", "PIN_FRAME_LEVEL_AREA_POI" }
+local questPinLevel = QUEST_PIN_LEVELS[1]
 local PIN_TEMPLATE = "HearthAndHustleMapPinTemplate"
 local PIN_ATLAS = "Waypoint-MapPin-Untracked"
 local PIN_ATLAS_ACTIVE = "Waypoint-MapPin-Tracked"
@@ -34,7 +41,7 @@ end
 
 function HearthAndHustleMapPinMixin:OnLoad()
 	-- Above terrain overlays, below native quest markers and their hit targets.
-	if self.UseFrameLevelType then self:UseFrameLevelType(QUEST_PIN_LEVEL) end
+	if self.UseFrameLevelType then self:UseFrameLevelType(questPinLevel) end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1.0, 1.2) end
 end
 
@@ -84,7 +91,7 @@ end
 -- Small source markers sit below Blizzard quest markers, with their own pool.
 HearthAndHustleObjectivePinMixin = {CheckMouseButtonPassthrough=checkPassthrough}
 function HearthAndHustleObjectivePinMixin:OnLoad()
-	if self.UseFrameLevelType then self:UseFrameLevelType(QUEST_PIN_LEVEL) end
+	if self.UseFrameLevelType then self:UseFrameLevelType(questPinLevel) end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1, 1.3) end
 end
 -- A colored border and quest number identify the quest; the inner icon
@@ -207,6 +214,7 @@ function Pins:OnEnable()
  FP:RegisterEvent("PLAYER_REGEN_ENABLED",function() self:OnWaypointsChanged() end)
 	FP:On("POSITION", function(pos) self:UpdateMinimap(pos); self:UpdateObjectiveMinimap(pos) end)
 	FP:On("QUEST_LOCATIONS_CHANGED", function()
+		self.miniProjection = nil
 		if FP.settings.questMinimapPins and FP.settings.minimapPin and #FP.QuestObjectives:VisibleGroups() > 0 then
 			FP.Pos:Acquire("quest-objective-minimap")
 		else FP.Pos:Release("quest-objective-minimap") end
@@ -233,12 +241,14 @@ function Pins:HookWorldMap()
 		if HearthAndHustleMapDataProviderMixin[k] == nil then HearthAndHustleMapDataProviderMixin[k] = v end
 	end
 	-- DEFAULT sits BELOW the explored-terrain and fog overlays in Forever.
-	-- Register an explicit level above all terrain/blob layers; keep Blizzard's
-	-- POI/quest icons above ours. Do this before any pooled pins are acquired.
+	-- Read-only choice of the first registered level above the map highlights;
+	-- an unregistered name reads as DEFAULT. Done before any pin is acquired.
 	local levels = WorldMapFrame:GetPinFrameLevelsManager()
-	if levels:InsertFrameLevelAbove(QUEST_PIN_LEVEL, "PIN_FRAME_LEVEL_MAP_HIGHLIGHT") then
-		WorldMapFrame:ReapplyPinFrameLevels()
+	local floor = levels:GetFrameLevelStart("PIN_FRAME_LEVEL_MAP_HIGHLIGHT")
+	for _, name in ipairs(QUEST_PIN_LEVELS) do
+		if levels:GetFrameLevelStart(name) > floor then questPinLevel = name; break end
 	end
+	Pins.questPinLevel = questPinLevel
 	self.provider = CreateFromMixins(HearthAndHustleMapDataProviderMixin)
 	local ok, err = pcall(WorldMapFrame.AddDataProvider, WorldMapFrame, self.provider)
 	if not ok then
@@ -276,6 +286,29 @@ function Pins:UpdateMinimap(pos)
 	m:Show()
 end
 
+-- The client can report a parent or child of the map a source is stored on
+-- (the continent map inside outdoor caves, a city inside its zone). Project
+-- the source once per reported map; false caches an unrelated map.
+local function minimapPoint(self, p, mapID)
+	if p.mapID == mapID then return p end
+	self.miniProjection = self.miniProjection or {}
+	local cache = self.miniProjection[mapID]
+	if not cache then cache = setmetatable({}, { __mode = "k" }); self.miniProjection[mapID] = cache end
+	local hit = cache[p]
+	if hit == nil then
+		hit = false
+		local target, source = API.GetMapInfo(mapID), API.GetMapInfo(p.mapID)
+		if (target and target.parentMapID == p.mapID) or (source and source.parentMapID == mapID) then
+			local cont, wx, wy = FP.Pos:WorldOf(p)
+			local id, x, y
+			if cont and wx and wy then id, x, y = API.GetMapPosFromWorld(cont, wx, wy, mapID) end
+			if id == mapID and U.ValidMapPoint(id, x, y) then hit = { x = x, y = y } end
+		end
+		cache[p] = hit
+	end
+	return hit or nil
+end
+
 -- Pool only nearby points (no clamping distant sources onto the minimap rim).
 -- Map-space prefilter avoids world conversions for every distant spawn.
 function Pins:UpdateObjectiveMinimap(pos)
@@ -291,15 +324,17 @@ function Pins:UpdateObjectiveMinimap(pos)
 	if not w or not h or not radius or radius <= 0 then hideAll(); return end
 	for _,group in ipairs(FP.QuestObjectives:VisibleGroups()) do
 		for _,p in ipairs(group.points) do
-			if p.mapID == pos.mapID then
-				local dx,dy=(p.x-pos.x)*w,(p.y-pos.y)*h
+			local at=minimapPoint(self,p,pos.mapID)
+			if at then
+				local dx,dy=(at.x-pos.x)*w,(at.y-pos.y)*h
 				if dx*dx+dy*dy <= radius*radius then
-					local key=math.floor(p.x*w/cellYards)..":"..math.floor(p.y*h/cellYards)
+					local key=math.floor(at.x*w/cellYards)..":"..math.floor(at.y*h/cellYards)
 					local pin=seen[key]
 					if not pin then
 						local d,bearing=FP.Pos:VectorTo(p)
 						if d and d <= radius then
-							pin={mapID=p.mapID,x=p.x,y=p.y,d=d,bearing=bearing,entries={}}
+							-- x/y stay the source's own coordinates for the tooltip; mx/my are on the reported map.
+							pin={mapID=p.mapID,x=p.x,y=p.y,mx=at.x,my=at.y,d=d,bearing=bearing,entries={}}
 							seen[key],nearby[#nearby+1]=pin,pin
 						end
 					end
@@ -316,7 +351,7 @@ function Pins:UpdateObjectiveMinimap(pos)
 	for _,pin in ipairs(nearby) do
 		local overlap
 		for _,shown in ipairs(spaced) do
-			local dx,dy=(pin.x-shown.x)*w*half/radius,(pin.y-shown.y)*h*half/radius
+			local dx,dy=(pin.mx-shown.mx)*w*half/radius,(pin.my-shown.my)*h*half/radius
 			if dx*dx+dy*dy < 14*14 then overlap=shown;break end
 		end
 		if overlap then
