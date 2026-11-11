@@ -3296,6 +3296,28 @@ assert(d.spell=="cffff0000FAKE ALERTr" and d.duration==30 and d.kind=="cc")
 assert(C:Decode("PT;118;||;30;;;cc")==nil,"a name made only of escape bytes is rejected")
 assert(C:Decode("PT;118;Polymorph;30;Bob;DR 1/2;cc").target=="Bob")
 ''',
+"rare_hud_text_stays_current_in_combat_without_moving_the_frame": r'''
+local RW=FP.RareWatch
+FP.settings.rare.enabled=true;FP.settings.rare.manual="show";RW:Refresh()
+assert(RW.frame:IsShown())
+local moved=0
+for _,name in ipairs({"SetHeight","SetPoint","ClearAllPoints","Show","Hide","SetScale"}) do
+ local native=RW.frame[name];RW.frame[name]=function(...) moved=moved+1;return native(...) end
+end
+local scan=0
+for _,name in ipairs({"Show","Hide"}) do local native=RW.scan[name];RW.scan[name]=function(...) scan=scan+1;return native(...) end end
+local lines=RW.StatusLines
+RW.StatusLines=function() return "RARE UP","level 33 elite","Runs 4" end
+FP.API.InCombat=function() return true end
+RW.layoutPending,RW.scanPending=nil,nil
+RW:Refresh()
+assert(RW.status:GetText()=="RARE UP" and RW.detail:GetText()=="level 33 elite" and RW.stats:GetText()=="Runs 4","HUD text frozen in combat")
+assert(moved==0 and scan==0,"frame or secure button changed in combat")
+assert(RW.layoutPending and RW.scanPending)
+-- hidden HUD stays hidden and untouched in combat
+FP.settings.rare.manual="hide";RW.StatusLines=function() error("no text read for a hidden HUD") end;RW:Refresh();assert(moved==0)
+FP.API.InCombat=function() return false end;RW.StatusLines=lines;RW:Refresh();assert(not RW.frame:IsShown())
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)

@@ -622,7 +622,18 @@ function RW:StatusLines()
 end
 
 function RW:Refresh()
- if API.InCombat() then self.scanPending=true;self.layoutPending=true;return end
+	if API.InCombat() then
+		-- The secure Scan button is anchored to this frame, so size, position and
+		-- visibility wait for the end of combat. Text is unrestricted.
+		self.scanPending=true;self.layoutPending=true
+		if self.frame:IsShown() and self:ShouldShow() then
+			local status, detail, stats = self:StatusLines()
+			self.status:SetText(status)
+			self.detail:SetText(detail)
+			self.stats:SetText(stats)
+		end
+		return
+	end
 	local f = self.frame
 	local show = self:ShouldShow()
 	if show then
