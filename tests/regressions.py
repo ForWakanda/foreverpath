@@ -3267,6 +3267,27 @@ for _,pin in ipairs(WorldMapFrame._pins) do
  assert(pin:GetFrameLevel()<levels:GetFrameLevelStart("PIN_FRAME_LEVEL_AREA_POI"),"native icon covered")
 end
 ''',
+"quest_minimap_sources_follow_the_parent_map_the_client_reports": OBJECTIVES+r'''
+-- Client data: outdoor caves report the continent map while sources are stored
+-- on the zone map. The world map projected them; the minimap showed none.
+local function shown() local n=0;for _,f in ipairs(FP.Pins.objectiveMini or {}) do if f:IsShown() then n=n+1 end end;return n end
+local function update() FP.Pos:Refresh(true);FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache) end
+M.mapID=1445;M.px=.34;M.py=.25;update()
+local zone=shown();assert(zone>0)
+M.mapID=1414;update()
+assert(shown()==zone,"sources vanished on the parent map: "..shown().." of "..zone)
+for _,f in ipairs(FP.Pins.objectiveMini) do if f:IsShown() then
+ assert(f.point.mapID==1445 and f.point.mx and f.point.entries[1].point.mapID==1445,"tooltip/guide must keep the source point")
+end end
+-- An unrelated map shows nothing, and the answer is cached per reported map.
+local info=C_Map.GetMapInfo
+C_Map.GetMapInfo=function(id) if id==1999 then return {mapID=id,name="Elsewhere",mapType=3,parentMapID=946} end return info(id) end
+M.mapID=1999;update();assert(shown()==0,"unrelated map drew sources")
+local calls=0;local world=FP.Pos.WorldOf;FP.Pos.WorldOf=function(...) calls=calls+1;return world(...) end
+M.mapID=1414;update();local first=calls;update()
+assert(calls-first<=shown(),"projection repeated for every source on every update")
+Q:Refresh(true);update();assert(shown()==zone,"sources lost after a source refresh on the parent map")
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)
