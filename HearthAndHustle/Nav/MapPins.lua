@@ -5,6 +5,7 @@ local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local Pins = FP:NewModule("Pins")
 
+local QUEST_PIN_LEVEL = "PIN_FRAME_LEVEL_HEARTH_AND_HUSTLE"
 local PIN_TEMPLATE = "HearthAndHustleMapPinTemplate"
 local PIN_ATLAS = "Waypoint-MapPin-Untracked"
 local PIN_ATLAS_ACTIVE = "Waypoint-MapPin-Tracked"
@@ -33,8 +34,8 @@ function HearthAndHustleMapPinMixin:ShouldMouseButtonBePassthrough(button)
 end
 
 function HearthAndHustleMapPinMixin:OnLoad()
-	-- Native quest markers must win both drawing and hit testing on overlap.
-	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_DEFAULT") end
+	-- Above terrain overlays, below native quest markers and their hit targets.
+	if self.UseFrameLevelType then self:UseFrameLevelType(QUEST_PIN_LEVEL) end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1.0, 1.2) end
 end
 
@@ -84,7 +85,7 @@ end
 -- Small source markers sit below Blizzard quest markers, with their own pool.
 HearthAndHustleObjectivePinMixin = {CheckMouseButtonPassthrough=checkPassthrough}
 function HearthAndHustleObjectivePinMixin:OnLoad()
-	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_DEFAULT") end
+	if self.UseFrameLevelType then self:UseFrameLevelType(QUEST_PIN_LEVEL) end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1, 1.3) end
 end
 -- A colored border and quest number identify the quest; the inner icon
@@ -100,7 +101,7 @@ function Pins:StyleObjectivePin(frame,pin,mini)
 	for _,entry in ipairs(pin.entries) do if not ids[entry.group.questID] then ids[entry.group.questID]=true;n=n+1 end end
 	local r,g,b,slot=Q:Style(first.questID)
 	if n>1 then r,g,b=1,1,1 end
-	local size=mini and 16 or 18
+	local size=mini and 11 or 18
 	frame:SetSize(size,size)
 	frame.Icon=frame.Icon or frame:CreateTexture(nil,"BACKGROUND")
 	frame.Icon:SetTexture("Interface\\Buttons\\WHITE8X8")
@@ -108,13 +109,14 @@ function Pins:StyleObjectivePin(frame,pin,mini)
 	if not frame.actionIcon then
 		frame.actionIcon=frame:CreateTexture(nil,"ARTWORK")
 		frame.actionIcon:SetPoint("CENTER")
-		frame.actionGlyph=frame:CreateFontString(nil,"OVERLAY","GameFontNormal")
+		frame.actionGlyph=frame:CreateFontString(nil,"OVERLAY",mini and "GameFontNormalSmall" or "GameFontNormal")
 		frame.actionGlyph:SetPoint("CENTER");frame.actionGlyph:SetTextColor(1,1,1)
 		frame.questBadge=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
 		frame.questBadge:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",3,-4)
 		frame.questBadge:SetTextColor(1,1,1);frame.questBadge:SetShadowColor(0,0,0,1);frame.questBadge:SetShadowOffset(1,-1)
 	end
-	frame.actionIcon:SetSize(size-4,size-4)
+	local inset=mini and 2 or 4
+	frame.actionIcon:SetSize(size-inset,size-inset)
 	local icon=objectiveIcons[first.kind]
 	if icon then
 		frame.actionIcon:SetTexture("Interface\\Icons\\"..icon)
@@ -125,6 +127,7 @@ function Pins:StyleObjectivePin(frame,pin,mini)
 		frame.actionGlyph:SetText(first.kind=="Pickup" and "!" or "?")
 	end
 	frame.questBadge:SetText(n>1 and "+" or tostring(slot))
+	frame.questBadge:SetShown(not mini)
 	frame.questID,frame.sharedQuests=first.questID,n
 end
 function HearthAndHustleObjectivePinMixin:OnAcquired(point)
@@ -149,9 +152,14 @@ function HearthAndHustleMapDataProviderMixin:RemoveAllData()
 end
 
 function HearthAndHustleMapDataProviderMixin:RefreshAllData(fromOnShow)
+	-- Native map callbacks do not pass through our event error sink.
+	FP.pcall("worldmap-refresh", self.RefreshPins, self, fromOnShow)
+end
+
+function HearthAndHustleMapDataProviderMixin:RefreshPins(fromOnShow)
 	self:RemoveAllData()
 	local mapID = self:GetMap():GetMapID()
-	Pins:UpdateLegend(self:GetMap(),mapID)
+	FP.pcall("worldmap-legend", Pins.UpdateLegend, Pins, self:GetMap(), mapID)
 	if FP.settings.questWorldPins and FP.settings.worldMapPins then
 		for _,point in ipairs(FP.QuestObjectives:WorldPins(mapID)) do
 			self:GetMap():AcquirePin("HearthAndHustleObjectivePinTemplate",point)
@@ -221,6 +229,13 @@ function Pins:HookWorldMap()
 	end
 	for k, v in pairs(MapCanvasDataProviderMixin) do
 		if HearthAndHustleMapDataProviderMixin[k] == nil then HearthAndHustleMapDataProviderMixin[k] = v end
+	end
+	-- DEFAULT sits BELOW the explored-terrain and fog overlays in Forever.
+	-- Register an explicit level above all terrain/blob layers; keep Blizzard's
+	-- POI/quest icons above ours. Do this before any pooled pins are acquired.
+	local levels = WorldMapFrame:GetPinFrameLevelsManager()
+	if levels:InsertFrameLevelAbove(QUEST_PIN_LEVEL, "PIN_FRAME_LEVEL_MAP_HIGHLIGHT") then
+		WorldMapFrame:ReapplyPinFrameLevels()
 	end
 	self.provider = CreateFromMixins(HearthAndHustleMapDataProviderMixin)
 	local ok, err = pcall(WorldMapFrame.AddDataProvider, WorldMapFrame, self.provider)
@@ -293,8 +308,22 @@ function Pins:UpdateObjectiveMinimap(pos)
 	end
 	table.sort(nearby,function(a,b) return a.d < b.d end)
 	local half=(Minimap:GetWidth() or 140)/2
+	-- Grid cells alone can leave two icons touching across a cell boundary.
+	-- Merge those into the nearest marker too, preserving every tooltip entry.
+	local spaced={}
+	for _,pin in ipairs(nearby) do
+		local overlap
+		for _,shown in ipairs(spaced) do
+			local dx,dy=(pin.x-shown.x)*w*half/radius,(pin.y-shown.y)*h*half/radius
+			if dx*dx+dy*dy < 14*14 then overlap=shown;break end
+		end
+		if overlap then
+			for _,entry in ipairs(pin.entries) do overlap.entries[#overlap.entries+1]=entry end
+		elseif #spaced<24 then spaced[#spaced+1]=pin end
+	end
+	nearby=spaced
 	local rotating=API.IsMinimapRotating()
-	for i=1,math.min(40,#nearby) do
+	for i=1,#nearby do
 		local pin,frame=nearby[i],self.objectiveMini[i]
 		if not frame then
 			frame=CreateFrame("Button",nil,Minimap)
@@ -318,7 +347,7 @@ function Pins:UpdateObjectiveMinimap(pos)
 		local x,y=U.RadialOffset(rel,pin.d*half/radius)
 		frame:ClearAllPoints(); frame:SetPoint("CENTER",Minimap,"CENTER",x,y); frame:Show()
 	end
-	for i=math.min(40,#nearby)+1,#self.objectiveMini do self.objectiveMini[i]:Hide() end
+	for i=#nearby+1,#self.objectiveMini do self.objectiveMini[i]:Hide() end
 end
 
 -- Compact, paged map key. Focusing/hiding changes markers only, never the route.
