@@ -3242,6 +3242,31 @@ assert(restrictedCalls==0)
 -- Our override must never replace the native shared function.
 assert(MapCanvasPinMixin.CheckMouseButtonPassthrough~=native)
 ''',
+"quest_map_never_writes_native_pin_frame_levels": OBJECTIVES+r'''
+-- Client report: ADDON_ACTION_BLOCKED Button:SetPassThroughButtons() twice on
+-- 0.18.1. The blocked object is a Button; our pins are Frames. Inserting a
+-- level rewrites startLevel on every native level above it, and native quest
+-- pins (Buttons) read that value in ApplyFrameLevel before their restricted
+-- passthrough call. Our pins must sit on an existing level, with no writes.
+M.mapID=1445;M.px=.32;M.py=.23;FP.Pos:Refresh(true)
+local levels=WorldMapFrame:GetPinFrameLevelsManager()
+local before={};for k,v in pairs(levels.definitions) do before[k]=v end
+WorldMapFrame:Hide();WorldMapFrame:RemoveAllPinsByTemplate("HearthAndHustleObjectivePinTemplate")
+WorldMapFrame:Show();FP.Pins.provider:RefreshAllData()
+local manual=WorldMapFrame:AcquirePin("HearthAndHustleMapPinTemplate",{id=335,mapID=1445,x=.32,y=.23,title="Manual"},true)
+assert(#WorldMapFrame._pins>1,"no quest pins drawn")
+assert(levels.writes==nil,"addon inserted a level into the native manager")
+local n=0
+for k,v in pairs(levels.definitions) do n=n+1;assert(before[k]==v,"native level moved: "..k) end
+for k in pairs(before) do n=n-1 end
+assert(n==0,"native level list changed")
+assert(before[FP.Pins.questPinLevel],"quest pins use an unregistered level")
+for _,pin in ipairs(WorldMapFrame._pins) do
+ assert(pin.pinFrameLevelType==FP.Pins.questPinLevel)
+ assert(pin:GetFrameLevel()>levels:GetFrameLevelStart("PIN_FRAME_LEVEL_MAP_HIGHLIGHT"),"highlight covers marker")
+ assert(pin:GetFrameLevel()<levels:GetFrameLevelStart("PIN_FRAME_LEVEL_AREA_POI"),"native icon covered")
+end
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)

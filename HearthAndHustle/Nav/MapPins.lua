@@ -5,7 +5,14 @@ local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local Pins = FP:NewModule("Pins")
 
-local QUEST_PIN_LEVEL = "PIN_FRAME_LEVEL_HEARTH_AND_HUSTLE"
+-- Quest pins borrow an existing Blizzard level: above terrain, fog, quest blobs
+-- and map highlights, below every native icon. Never add or move a level in
+-- Blizzard's manager: InsertFrameLevelAbove rewrites startLevel on each native
+-- level above the insertion point from addon code. Native pins read that value
+-- while they are acquired, and their restricted calls are then blocked in combat
+-- (ADDON_ACTION_BLOCKED Button:SetPassThroughButtons(), builds 0.18.1-0.18.2).
+local QUEST_PIN_LEVELS = { "PIN_FRAME_LEVEL_DIG_SITE", "PIN_FRAME_LEVEL_DUNGEON_ENTRANCE", "PIN_FRAME_LEVEL_AREA_POI" }
+local questPinLevel = QUEST_PIN_LEVELS[1]
 local PIN_TEMPLATE = "HearthAndHustleMapPinTemplate"
 local PIN_ATLAS = "Waypoint-MapPin-Untracked"
 local PIN_ATLAS_ACTIVE = "Waypoint-MapPin-Tracked"
@@ -34,7 +41,7 @@ end
 
 function HearthAndHustleMapPinMixin:OnLoad()
 	-- Above terrain overlays, below native quest markers and their hit targets.
-	if self.UseFrameLevelType then self:UseFrameLevelType(QUEST_PIN_LEVEL) end
+	if self.UseFrameLevelType then self:UseFrameLevelType(questPinLevel) end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1.0, 1.2) end
 end
 
@@ -84,7 +91,7 @@ end
 -- Small source markers sit below Blizzard quest markers, with their own pool.
 HearthAndHustleObjectivePinMixin = {CheckMouseButtonPassthrough=checkPassthrough}
 function HearthAndHustleObjectivePinMixin:OnLoad()
-	if self.UseFrameLevelType then self:UseFrameLevelType(QUEST_PIN_LEVEL) end
+	if self.UseFrameLevelType then self:UseFrameLevelType(questPinLevel) end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1, 1.3) end
 end
 -- A colored border and quest number identify the quest; the inner icon
@@ -233,12 +240,14 @@ function Pins:HookWorldMap()
 		if HearthAndHustleMapDataProviderMixin[k] == nil then HearthAndHustleMapDataProviderMixin[k] = v end
 	end
 	-- DEFAULT sits BELOW the explored-terrain and fog overlays in Forever.
-	-- Register an explicit level above all terrain/blob layers; keep Blizzard's
-	-- POI/quest icons above ours. Do this before any pooled pins are acquired.
+	-- Read-only choice of the first registered level above the map highlights;
+	-- an unregistered name reads as DEFAULT. Done before any pin is acquired.
 	local levels = WorldMapFrame:GetPinFrameLevelsManager()
-	if levels:InsertFrameLevelAbove(QUEST_PIN_LEVEL, "PIN_FRAME_LEVEL_MAP_HIGHLIGHT") then
-		WorldMapFrame:ReapplyPinFrameLevels()
+	local floor = levels:GetFrameLevelStart("PIN_FRAME_LEVEL_MAP_HIGHLIGHT")
+	for _, name in ipairs(QUEST_PIN_LEVELS) do
+		if levels:GetFrameLevelStart(name) > floor then questPinLevel = name; break end
 	end
+	Pins.questPinLevel = questPinLevel
 	self.provider = CreateFromMixins(HearthAndHustleMapDataProviderMixin)
 	local ok, err = pcall(WorldMapFrame.AddDataProvider, WorldMapFrame, self.provider)
 	if not ok then

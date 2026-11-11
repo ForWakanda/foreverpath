@@ -208,11 +208,12 @@ WorldMapFrame.GetMapID = function(self) return self.mapID or M.mapID end
 -- Relative order from Forever WorldMapMixin:OnLoad (build 70888). Terrain is
 -- drawn by pins too: DEFAULT is not a safe level for visible addon markers.
 local levels={definitions={}}
-for i,name in ipairs({"DEFAULT","MAP_EXPLORATION","FOG_OF_WAR","QUEST_BLOB","SCENARIO_BLOB","MAP_HIGHLIGHT","AREA_POI","QUEST_OFFER","ACTIVE_QUEST","SUPER_TRACKED_QUEST"}) do
+for i,name in ipairs({"DEFAULT","MAP_EXPLORATION","FOG_OF_WAR","QUEST_BLOB","SCENARIO_BLOB","MAP_HIGHLIGHT","DIG_SITE","DUNGEON_ENTRANCE","AREA_POI","QUEST_OFFER","ACTIVE_QUEST","SUPER_TRACKED_QUEST"}) do
  levels.definitions["PIN_FRAME_LEVEL_"..name]=2000+i
 end
 function levels:GetFrameLevelStart(name) return self.definitions[name] or self.definitions.PIN_FRAME_LEVEL_DEFAULT end
 function levels:InsertFrameLevelAbove(name,relative)
+ self.writes=(self.writes or 0)+1 -- addon code must never reach this
  if self.definitions[name] or not self.definitions[relative] then return false end
  local value=self.definitions[relative]+1
  for key,old in pairs(self.definitions) do if old>=value then self.definitions[key]=old+1 end end
