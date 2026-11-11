@@ -3328,6 +3328,19 @@ item.level=25;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==1)
 item.level=26;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0,"margin is unbounded")
 item.level=24;item.minLevel=22;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0,"a listed requirement was widened")
 ''',
+"skill_up_without_profession_window_starts_no_recipe_scan": r'''
+local scanned=0;FP:On("RECIPES_SCANNED",function() scanned=scanned+1 end)
+local function settle(n) for _=1,n do M.RunTimers(.1) end end
+M.FireEvent("CHAT_MSG_SKILL","Your skill in Maces has increased to 55.");M.FireEvent("SKILL_LINES_CHANGED");settle(60)
+assert(scanned==0,"scan + retries without a profession window: "..scanned)
+M.FireEvent("TRADE_SKILL_SHOW");settle(20)
+local opened=scanned;assert(opened>0,"opening the window must scan")
+M.FireEvent("CHAT_MSG_SKILL","Your skill in Leatherworking has increased to 101.");settle(20)
+assert(scanned>opened,"skill-up with the window open must rescan")
+M.FireEvent("TRADE_SKILL_CLOSE");settle(60);local closed=scanned
+M.FireEvent("CHAT_MSG_SKILL","Your skill in Maces has increased to 56.");settle(60)
+assert(scanned==closed,"scan after the window closed")
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)

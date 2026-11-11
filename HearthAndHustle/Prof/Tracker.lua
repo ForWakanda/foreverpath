@@ -19,13 +19,13 @@ function T:OnEnable()
 		FP.Throttle("prof-scan", 0.5, function() T:ScanRecipes() end)
 	end
 	local function skillChanged()
-		FP.Throttle("prof-snap", 1, function() T:Snapshot(); if not T.windowClosed then T:ScanRecipes() end end)
+		FP.Throttle("prof-snap", 1, function() T:Snapshot(); if T.windowOpen then T:ScanRecipes() end end)
 	end
-	FP:RegisterEvent("TRADE_SKILL_CLOSE", function() generation = generation + 1; queue = {}; self.windowClosed = true;recipeCache={} end)
+	FP:RegisterEvent("TRADE_SKILL_CLOSE", function() generation = generation + 1; queue = {}; self.windowClosed = true; self.windowOpen = false;recipeCache={} end)
 	FP:On("RECORDING_CHANGED", function() generation = generation + 1; queue = {}; self:Snapshot(); self:ScanRecipes() end)
 	FP:RegisterEvent("SKILL_LINES_CHANGED", skillChanged)
 	FP:RegisterEvent("CHAT_MSG_SKILL", skillChanged)
-	FP:RegisterEvent("TRADE_SKILL_SHOW", function() self.windowClosed = false; refresh() end)
+	FP:RegisterEvent("TRADE_SKILL_SHOW", function() self.windowClosed = false; self.windowOpen = true; refresh() end)
 	FP:RegisterEvent("TRADE_SKILL_DATA_SOURCE_CHANGING", function() generation = generation + 1; queue = {}; self.open = nil;recipeCache={} end)
 	for _, event in ipairs({ "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_NAME_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED" }) do
 		FP:RegisterEvent(event, refresh)
