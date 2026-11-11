@@ -80,7 +80,7 @@ R.inside=true;FP.settings.rare.enabled=false;assert(not R:Receive("RW;no","frien
 FP.settings.rare.enabled=true;assert(R:Receive("RW;kill;6490;x","friend"));assert(R:Current().kills[6490]==1)
 assert(not FP.Party:Parse("FP1;|Tfoo|t;MAGE;40;1"))
 ''',
-"review_pin_passthrough_and_secure_hud_wait_for_combat_end": r'''
+"review_pin_passthrough_unused_and_secure_hud_waits_for_combat_end": r'''
 local calls=0
 MapCanvasPinMixin.CheckMouseButtonPassthrough=function() calls=calls+1 end
 FP.API.InCombat=function() return true end
@@ -91,7 +91,7 @@ local R=FP.RareWatch
 local old=R.frame.SetHeight;R.frame.SetHeight=function() error("protected anchor resized") end
 R:Layout();R:ApplySettings();R:Refresh();assert(R.scanPending)
 R.frame.SetHeight=old;FP.API.InCombat=function() return false end
-HearthAndHustleMapPinMixin.CheckMouseButtonPassthrough({});assert(calls==1)
+HearthAndHustleMapPinMixin.CheckMouseButtonPassthrough({});assert(calls==0)
 M.FireEvent("PLAYER_REGEN_ENABLED");assert(not R.scanPending)
 ''',
 "review_blocked_actions_are_recorded": r'''

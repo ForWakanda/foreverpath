@@ -151,7 +151,26 @@ for _,event in ipairs({"ADDON_ACTION_BLOCKED","ADDON_ACTION_FORBIDDEN"}) do
  local kind=event
  FP:RegisterEvent(kind,function(_,addon,action)
   addon,action=FP.safe(addon),FP.safe(action)
-  if addon==ADDON then FP:ReportError(kind,tostring(action or "unknown action")) end
+  if addon==ADDON then
+   FP:ReportError(kind,tostring(action or "unknown action"))
+   -- Keep bounded context for recurrence; an event stack may not include the
+   -- original callback that caused the client to block an action.
+   FP.blockedSamples=FP.blockedSamples or {}
+   local key=kind..":"..tostring(action)
+   if FP.db and not FP.blockedSamples[key] then
+    FP.blockedSamples[key]=true
+    local trace
+    if type(debugstack)=="function" then
+     local ok,value=pcall(debugstack,2,12,0)
+     if ok and type(value)=="string" then trace=value:sub(1,4096) end
+    end
+    FP.db.blockedActions=FP.db.blockedActions or {}
+    local list=FP.db.blockedActions
+    list[#list+1]={event=kind,action=tostring(action),version=FP.version,
+     combat=FP.API.InCombat(),mapShown=WorldMapFrame and WorldMapFrame:IsShown() or false,trace=trace}
+    while #list>10 do table.remove(list,1) end
+   end
+  end
  end)
 end
 

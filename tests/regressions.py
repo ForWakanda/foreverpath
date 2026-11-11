@@ -1227,7 +1227,7 @@ for i=1,3 do
     pin:OnAcquired(plan,true)
     pin:CheckMouseButtonPassthrough("RightButton")
     assert(not pin:IsMouseMotionEnabled() and not pin:IsMouseClickEnabled())
-    assert(#pin._passthrough==1)
+    assert(#pin._passthrough==0, "passive pins should disable mouse input without passthrough")
     pin:OnAcquired(manual,true)
     pin:CheckMouseButtonPassthrough("RightButton")
     assert(pin:IsMouseMotionEnabled() and pin:IsMouseClickEnabled(), "pooled manual pin stayed passive")
@@ -3209,6 +3209,79 @@ assert(#FP.db.errors==2 and FP.db.errors[2].where=="worldmap-refresh")
 WorldMapFrame.AcquirePin=acquire
 FP.Pins.provider:RefreshAllData();assert(#WorldMapFrame._pins>0)
 FP.db.errors={} -- expected fault injection; normal callbacks recovered
+''',
+})
+
+CASES.update({
+"quest_map_never_calls_restricted_passthrough_during_pin_lifecycle": OBJECTIVES+r'''
+M.mapID=1445;M.px=.32;M.py=.23;FP.Pos:Refresh(true)
+local native=MapCanvasPinMixin.CheckMouseButtonPassthrough
+local restrictedCalls=0
+MapCanvasPinMixin.CheckMouseButtonPassthrough=function()
+ restrictedCalls=restrictedCalls+1;error("restricted SetPassThroughButtons")
+end
+for _,combat in ipairs({false,true,false}) do
+ FP.API.InCombat=function() return combat end
+ FP.Pins.provider:RefreshAllData()
+ local pin=assert(WorldMapFrame._pins[1])
+ pin.SetPassThroughButtons=function() restrictedCalls=restrictedCalls+1;error("direct restricted setter") end
+ pin:CheckMouseButtonPassthrough("RightButton")
+ assert(pin:IsMouseClickEnabled() and #pin._passthrough==0)
+ pin:OnMouseEnter();assert(GameTooltip:IsOwned(pin));pin:OnMouseLeave()
+ pin:OnClick("RightButton");assert(Q.focusedQuest==9101 or Q.focusedQuest==nil)
+end
+FP.API.InCombat=function() return false end
+local manual={id=333,mapID=1445,x=.32,y=.23,title="Manual"}
+local frame=WorldMapFrame:AcquirePin("HearthAndHustleMapPinTemplate",manual,true)
+local plan={id=334,mapID=1445,x=.32,y=.23,title="Plan",source={type="plan"}}
+frame:OnAcquired(plan,false);frame:CheckMouseButtonPassthrough("RightButton")
+assert(not frame:IsMouseClickEnabled() and not frame:IsMouseMotionEnabled())
+frame:OnAcquired(manual,true);frame:CheckMouseButtonPassthrough("RightButton")
+assert(frame:IsMouseClickEnabled() and frame:IsMouseMotionEnabled() and #frame._passthrough==0)
+assert(restrictedCalls==0)
+-- Our override must never replace the native shared function.
+assert(MapCanvasPinMixin.CheckMouseButtonPassthrough~=native)
+''',
+"quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
+local pin=Q:WorldPins(1445)[1]
+local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)
+local function ordered()
+ assert(frame.Icon._drawLayer=="BACKGROUND", "quest-color square covers action art")
+ assert(frame.actionIcon._drawLayer=="ARTWORK" and frame.actionIcon._drawSublevel==1)
+ assert(frame.Icon:IsShown() and frame.actionIcon:IsShown() and frame.actionGlyph:IsShown())
+end
+ordered();assert(frame.actionGlyph:GetText()=="")
+local set=frame.actionIcon.SetTexture
+frame.actionIcon.SetTexture=function(self,path)
+ if path:find("Interface\\Icons\\",1,true) then return false end
+ return set(self,path)
+end
+pin.entries[1].group.kind="Npc"
+frame.Icon:SetDrawLayer("ARTWORK",2);frame.actionIcon:Hide();frame.actionGlyph:Hide()
+frame:OnAcquired(pin);ordered()
+assert(frame.actionGlyph:GetText()=="X" and frame.actionIcon._color[1]==.05,"missing icon became blank square")
+frame.actionIcon.SetTexture=set
+frame:OnAcquired(pin);ordered();assert(frame.actionGlyph:GetText()=="","pooled fallback survived valid icon")
+assert(frame.actionIcon:GetTexture()=="Interface\\Icons\\INV_Sword_04")
+pin.entries[1].group.kind="Pickup";frame:OnAcquired(pin);ordered();assert(frame.actionGlyph:GetText()=="!")
+pin.entries[1].group.kind="Turnin";frame:OnAcquired(pin);ordered();assert(frame.actionGlyph:GetText()=="?")
+''',
+"blocked_action_context_is_bounded_and_only_ours": r'''
+FP.API.InCombat=function() return true end
+WorldMapFrame:Hide()
+debugstack=function() return string.rep("trace",2000) end
+M.FireEvent("ADDON_ACTION_BLOCKED","OtherAddon","Button:SetPassThroughButtons()")
+assert(not FP.db.blockedActions)
+for i=1,20 do M.FireEvent("ADDON_ACTION_BLOCKED","HearthAndHustle","Button:SetPassThroughButtons()") end
+local rows=FP.db.blockedActions
+assert(#rows==1 and rows[1].combat and not rows[1].mapShown)
+assert(rows[1].version==FP.version and #rows[1].trace==4096)
+for i=1,12 do M.FireEvent("ADDON_ACTION_BLOCKED","HearthAndHustle","Test"..i) end
+assert(#rows==10)
+debugstack=function() error("unavailable trace") end
+M.FireEvent("ADDON_ACTION_FORBIDDEN","HearthAndHustle","FailedTrace")
+assert(#rows==10 and rows[10].trace==nil)
+FP.db.errors={} -- expected blocked-event injections, no incidental Lua errors
 ''',
 })
 

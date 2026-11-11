@@ -66,6 +66,7 @@ function Frame:UnregisterEvent(ev) self._events[ev] = nil end
 function Frame:EnableMouse(enabled) self._mouseClick, self._mouseMotion = enabled, enabled end
 function Frame:IsMouseClickEnabled() return self._mouseClick ~= false end
 function Frame:IsMouseMotionEnabled() return self._mouseMotion ~= false end
+function Frame:SetDrawLayer(layer,sublevel) self._drawLayer,self._drawSublevel=layer,sublevel or 0 end
 function Frame:SetTexture(path) self._texture = path; return true end
 function Frame:GetTexture() return self._texture end
 function Frame:SetAtlas(name) self._atlas = name end
@@ -86,7 +87,7 @@ function Frame:GetAttribute(k) return self._attrs and self._attrs[k] end
 function Frame:RegisterForClicks(...) self._clicks = { ... } end
 
 function M.NewFrame(kind, name, parent, template)
-	local f = setmetatable({ _kind = kind, _shown = true, _scripts = {}, _events = {}, _name = name, _parent = parent, _template = template }, Frame)
+	local f = setmetatable({ _kind = kind, _passthrough = {}, _shown = true, _scripts = {}, _events = {}, _name = name, _parent = parent, _template = template }, Frame)
 	if name then _G[name] = f end
 	table.insert(M.frames, f)
 	return f
