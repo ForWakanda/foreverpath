@@ -197,7 +197,7 @@ function Panel:Refresh(positionOnly)
 	end
 	if n == 0 then
 		self.rows[1].dist:SetText("")
-		self.rows[1].label:SetText(FP.GREY .. "No known steps or available pickups on this map.|r")
+		self.rows[1].label:SetText(FP.GREY .. "No known steps. Talk to a quest giver to check pickups.|r")
 		self.rows[1]:Show()
 		n = 1
 	end

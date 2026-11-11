@@ -687,6 +687,112 @@ FP.settings.arrow.shown=true; FP.Waypoints:Clear(); M.Tick(4)
 assert(not FP.Arrow.frame:IsShown() and not active(), "respect deliberate stop")
 ''',
 
+    "npc_offers_fill_empty_map_list_without_recording": r"""
+FP.settings.record=false
+M.mapID=1424; M.px,M.py=.61,.20; FP.Pos:Refresh(true)
+M.SetUnit("npc",{guid="Creature-0-1-0-0-2319-00001",name="Melisara"})
+M.gossipAvailable={{questID=495,title="The Crown of Will",questLevel=39}}
+assert(#FP.API.GetQuestOffers(M.mapID)==0, "standing nearby is not an observation")
+M.FireEvent("GOSSIP_SHOW"); M.RunTimers(.2)
+local offers,counts=FP.API.GetQuestOffers(M.mapID)
+assert(#offers==1 and offers[1].questID==495 and counts.map==0 and counts.npc==1)
+assert(offers[1].title=="The Crown of Will" and offers[1].how:find("Melisara"))
+assert(offers[1].x==.61 and offers[1].y==.20)
+assert(#FP.Planner.steps==1 and FP.Planner.steps[1].kind=="pickup")
+M.FireEvent("GOSSIP_CLOSED"); M.units.npc=nil; M.px=.65
+local again=FP.API.GetQuestOffers(M.mapID)
+assert(#again==1 and again[1].x==.61, "must retain interaction position, not follow player")
+cmd("apicheck")
+local row=FP.db.apicheck["70124-manual"].rows["probe:questOffers"]
+assert(row.ok and row.note:find("1 recent NPC%-confirmed"))
+addQuest(495); M.FireEvent("QUEST_ACCEPTED",495)
+assert(#FP.API.GetQuestOffers(M.mapID)==0)
+M.RemoveQuest(495); assert(#FP.API.GetQuestOffers(M.mapID)==0,"abandon must not resurrect stale offer")
+assert(#FP.db.errors==0)
+""",
+    "npc_offers_greeting_detail_dedup_and_refresh": r"""
+FP.settings.record=false
+M.SetUnit("questnpc",{guid="Creature-0-1-0-0-2319-00001",name="Melisara"})
+C_GossipInfo=nil
+GetNumAvailableQuests=function() return 1 end
+GetAvailableQuestInfo=function() return false,0,false,false,495 end
+GetAvailableTitle=function() return "The Crown of Will" end
+M.FireEvent("QUEST_GREETING")
+assert(#FP.API.GetQuestOffers(M.mapID)==1)
+M.dialogQuest=496; M.FireEvent("QUEST_DETAIL")
+assert(#FP.API.GetQuestOffers(M.mapID)==2,"direct detail must supplement greeting")
+C_QuestLine={GetAvailableQuestLines=function() return {{questID=495,x=.7,y=.8,questName="The Crown of Will"}} end}
+local offers,c=FP.API.GetQuestOffers(M.mapID)
+assert(#offers==2 and c.map==1 and c.npc==2)
+assert(offers[1].x==.7,"prefer native coordinate for duplicate quest")
+C_QuestLine=nil
+GetNumAvailableQuests=function() return 0 end
+M.FireEvent("QUEST_GREETING")
+assert(#FP.API.GetQuestOffers(M.mapID)==0,"revisit must replace withdrawn offers")
+M.FireEvent("QUEST_DETAIL"); M.now=M.now+301
+assert(#FP.API.GetQuestOffers(M.mapID)==0,"expire historical sightings")
+M.FireEvent("QUEST_DETAIL"); M.mapID=1424
+assert(#FP.API.GetQuestOffers(M.mapID)==0)
+M.mapID=1413; assert(#FP.API.GetQuestOffers(M.mapID)==0,"map change discards old observation")
+assert(#FP.db.errors==0)
+""",
+    "npc_offers_do_not_infer_from_target_or_bad_context": r"""
+FP.settings.record=false
+M.SetUnit("target",{guid="Creature-0-1-0-0-2319-00001",name="Melisara"})
+M.dialogQuest=495; M.FireEvent("QUEST_DETAIL")
+assert(#FP.API.GetQuestOffers(M.mapID)==0,"item/remote quest cannot use unrelated target")
+M.units.npc=M.units.target; M.noPosition=true; M.FireEvent("QUEST_DETAIL")
+assert(#FP.API.GetQuestOffers(M.mapID)==0)
+M.noPosition=false; M.combatLockdown=true; M.FireEvent("QUEST_DETAIL")
+assert(#FP.API.GetQuestOffers(M.mapID)==0)
+M.combatLockdown=false; M.units.npc={guid="Creature-0-1-0-0-2319-00001",name="Melisara",secret=true}
+M.FireEvent("QUEST_DETAIL"); assert(#FP.API.GetQuestOffers(M.mapID)==0)
+M.units.npc=M.units.target
+M.gossipAvailable={{questID=0/0},{questID=math.huge},{questID=1.5},{questID=-2},{questID="495"}}
+M.FireEvent("GOSSIP_SHOW"); assert(#FP.API.GetQuestOffers(M.mapID)==0)
+M.gossipAvailable={{questID=495,title="The Crown of Will"}}
+cmd("way 80 80 My destination"); M.FireEvent("GOSSIP_SHOW"); M.RunTimers(.2)
+assert(active().title=="My destination","offer must preserve manual route")
+M.FireEvent("ZONE_CHANGED_NEW_AREA"); assert(#FP.API.GetQuestOffers(M.mapID)==0)
+assert(#FP.db.errors==0)
+""",
+    "npc_offer_repeatable_lifecycle_and_expired_route": r"""
+FP.settings.record=false
+M.SetUnit("npc",{guid="Creature-0-1-0-0-2319-00001",name="Melisara"})
+M.dialogQuest=495
+C_QuestLog.IsQuestFlaggedCompleted=function(id) return id==495 end
+M.FireEvent("QUEST_DETAIL",12345)
+assert(#FP.API.GetQuestOffers(M.mapID)==0,"item start cannot be attributed to open NPC")
+QuestIsFromAreaTrigger=function() return true end
+M.FireEvent("QUEST_DETAIL"); assert(#FP.API.GetQuestOffers(M.mapID)==0)
+QuestIsFromAreaTrigger=nil
+M.FireEvent("QUEST_DETAIL")
+assert(#FP.API.GetQuestOffers(M.mapID)==1,"current offer overrides prior completion for repeatables")
+M.RunTimers(.2); M.px=.1; FP.Pos:Refresh(true); cmd("pickups")
+assert(active() and active().source.questID==495)
+FP.Planner:CheckActive(); assert(active(),"completed repeatable remains an offered pickup")
+M.now=M.now+301; FP.Planner:CheckActive()
+assert(not active(),"expired NPC offer must clear even a pinned pickup route")
+M.FireEvent("QUEST_DETAIL"); M.FireEvent("QUEST_TURNED_IN",495,0,0)
+assert(#FP.API.GetQuestOffers(M.mapID)==0)
+assert(#FP.db.errors==0)
+""",
+    "npc_offer_cache_is_bounded": r"""
+FP.settings.record=false
+M.SetUnit("npc",{guid="Creature-0-1-0-0-2319-00001",name="Melisara"})
+M.gossipAvailable={}
+for id=10000,10110 do M.gossipAvailable[#M.gossipAvailable+1]={questID=id,title="Offer "..id} end
+M.FireEvent("GOSSIP_SHOW")
+assert(#FP.API.GetQuestOffers(M.mapID)==100)
+assert(#FP.db.errors==0)
+""",
+    "empty_pickup_probe_explains_incomplete_coverage": r"""
+cmd("apicheck")
+local row=FP.db.apicheck["70124-manual"].rows["probe:questOffers"]
+assert(not row.ok and row.note:find("0 map%-listed") and row.note:find("may be incomplete"))
+assert(not row.note:find("0 available pickups"))
+""",
+
     "quest_pickups_follow_client_offers_then_acceptance": r'''
 M.pois = {{questID=9100,x=.55,y=.55,isQuestStart=true}, {questID=9101,x=.65,y=.65,isQuestStart=false}}
 C_QuestLine = {GetAvailableQuestLines=function() return {

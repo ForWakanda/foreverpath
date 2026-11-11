@@ -24,7 +24,7 @@ function P:WaitingValid()
 	local s = self.waiting
 	if not s then return false end
 	if s.kind == "pickup" then
-		if API.IsOnQuest(s.questID) or API.IsQuestFlaggedCompleted(s.questID) then return false end
+		if API.IsOnQuest(s.questID) then return false end
 		local offered = false
 		for _, q in ipairs(API.GetQuestOffers(API.GetBestMap())) do if q.questID == s.questID then offered = true end end
 		if not offered then return false end
@@ -360,6 +360,7 @@ function P:Tick()
 end
 
 function P:OnEnable()
+	FP:On("QUEST_OFFERS_CHANGED", function() FP.Throttle("plan-offers", .1, function() P:CheckActive(); P:Build() end) end)
 	FP:On("QUESTLOG_SCANNED", function() FP.Throttle("plan-check", 1, function() P:CheckActive() end) end)
 	FP:On("QUEST_TURNED_IN", function() FP.After(1.5, function() P:Auto("turnin") end) end)
 	FP:On("QUEST_ACCEPTED", function() FP.After(1.5, function() P:Auto("accept") end) end)
@@ -413,7 +414,8 @@ function P:CheckActive()
 	local s = active.source
 	local invalid = false
 	if s.kind == "pickup" then
-		invalid = API.IsOnQuest(s.questID) or API.IsQuestFlaggedCompleted(s.questID)
+		invalid = true
+		for _, q in ipairs(API.GetQuestOffers(API.GetBestMap())) do if q.questID == s.questID then invalid = false; break end end
 	elseif not API.IsOnQuest(s.questID) then
 		invalid = true
 	elseif s.kind == "objective" then

@@ -746,9 +746,21 @@ end
 
 -- Current client offers, not historical giver sightings (which cannot establish
 -- prerequisites, class eligibility, or whether a quest is still available).
+-- NPC conversations supplement incomplete map listings. These observations are
+-- session-only, expire after five minutes, and use the interaction position.
+local npcOffers = {}
+local function pruneNPCOffers()
+	local now, mapID = API.Time(), API.GetBestMap()
+	for id, q in pairs(npcOffers) do
+		if q.mapID ~= mapID or now - q.observedAt >= 300 or now < q.observedAt
+			or API.IsOnQuest(id) or (not q.completedAtObservation and API.IsQuestFlaggedCompleted(id)) then npcOffers[id] = nil end
+	end
+end
+
 function API.GetQuestOffers(mapID)
 	local out, seen = {}, {}
-	if not mapID then return out end
+	local counts = { map = 0, npc = 0 }
+	if not mapID then return out, counts end
 	local function add(q, isLine)
 		if type(q) ~= "table" then return end
 		local id, x, y = safe(q.questID), safe(q.x), safe(q.y)
@@ -764,7 +776,15 @@ function API.GetQuestOffers(mapID)
 		if ok and type(list) == "table" then for _, q in ipairs(list) do add(q, true) end end
 	end
 	for _, q in ipairs(API.GetQuestsOnMap(mapID)) do add(q, false) end
-	return out
+	counts.map = #out
+	pruneNPCOffers()
+	for id, q in pairs(npcOffers) do
+		if q.mapID == mapID then
+			counts.npc = counts.npc + 1
+			if not seen[id] then out[#out + 1] = U.Copy(q); seen[id] = true end
+		end
+	end
+	return out, counts
 end
 
 local requestedQuestMap, requestedQuestAt
@@ -853,6 +873,58 @@ function API.GetNPCQuests()
 	end
 	return available, active
 end
+
+function API.ObserveNPCQuestOffers(event, questStartItemID)
+	if not FP.enabled or API.InCombat() then return end
+	if event == "QUEST_DETAIL" then
+		questStartItemID = safe(questStartItemID)
+		if U.Finite(questStartItemID) and questStartItemID > 0 then return end
+		for _, name in ipairs({"QuestIsFromAdventureMap", "QuestIsFromAreaTrigger"}) do
+			if hasg(name) then
+				local ok, remote = pcall(_G[name])
+				if ok and safe(remote) then return end
+			end
+		end
+	end
+	-- Never substitute the selected target: remote/item dialogs may leave an
+	-- unrelated creature targeted. Only the actual dialog unit is evidence.
+	local npc = API.UnitInfo("npc") or API.UnitInfo("questnpc")
+	if not npc or npc.kind ~= "Creature" or npc.isPlayer then return end
+	pruneNPCOffers()
+	local list
+	if event == "QUEST_DETAIL" then
+		list = {{ questID = API.GetDialogQuestID(), title = hasg("GetTitleText") and safe(GetTitleText()) }}
+	else
+		list = API.GetNPCQuests()
+		-- A new greeting replaces this giver's previous list, including zero.
+		for id, q in pairs(npcOffers) do if q.giverGUID == npc.guid then npcOffers[id] = nil end end
+	end
+	local mapID = API.GetBestMap()
+	local x, y = API.GetPlayerMapPosition(mapID)
+	if not U.ValidMapPoint(mapID, x, y) then return end
+	for _, q in ipairs(list) do
+		local id, title, level = safe(q.questID), safe(q.title), safe(q.level)
+		if U.Finite(id) and id > 0 and id == math.floor(id) and not API.IsOnQuest(id) then
+			npcOffers[id] = { questID = id, title = type(title) == "string" and title or ("Quest " .. id),
+				level = U.Finite(level) and level or nil, mapID = mapID, x = x, y = y,
+				giverGUID = npc.guid, observedAt = API.Time(), completedAtObservation = API.IsQuestFlaggedCompleted(id),
+				how = "recent NPC offer; near " .. (npc.name or "quest giver") .. " (interaction position)" }
+		end
+	end
+	-- Bound transient state even if a client/provider returns an oversized list.
+	local ids = {}; for id in pairs(npcOffers) do ids[#ids + 1] = id end
+	table.sort(ids, function(a,b) return npcOffers[a].observedAt > npcOffers[b].observedAt end)
+	for i = 101, #ids do npcOffers[ids[i]] = nil end
+	FP:Fire("QUEST_OFFERS_CHANGED")
+end
+
+for _, event in ipairs({"GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL"}) do
+	FP:RegisterEvent(event, API.ObserveNPCQuestOffers)
+end
+for _, event in ipairs({"QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN"}) do
+	FP:RegisterEvent(event, function(_, questID) npcOffers[questID] = nil end)
+end
+FP:RegisterEvent("ZONE_CHANGED_NEW_AREA", function() npcOffers = {} end)
 
 function API.GetGossipOptions()
 	local out = {}
@@ -1688,8 +1760,9 @@ function API.Check()
 		return #pois > 0, #pois .. " POIs on this map; zero alone does not prove unsupported API"
 	end)
 	probe("questOffers", function()
-		local offers = API.GetQuestOffers(mapID)
-		return #offers > 0, #offers .. " available pickups on this map"
+		API.RequestQuestOffers(mapID)
+		local offers, counts = API.GetQuestOffers(mapID)
+		return #offers > 0, string.format("%d map-listed; %d recent NPC-confirmed; %d known pickups. Map listings may be incomplete; talk to a quest giver to confirm offers.", counts.map, counts.npc, #offers)
 	end)
 	probe("navigationUI", function()
 		local active = FP.Waypoints and FP.Waypoints:GetActive()

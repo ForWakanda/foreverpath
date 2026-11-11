@@ -221,7 +221,7 @@ function C:Handle(msg)
 			end
 		end
 		if first then FP.Planner:Go(first)
-		else p("The client reports no available quest pickups on this map yet.") end
+		else p("No pickups reported yet. Map listings may be incomplete; talk to a quest giver to confirm offers.") end
 	elseif cmd == "next" then
 		FP.Planner:Build()
 		local s = FP.Planner:NextStep()
