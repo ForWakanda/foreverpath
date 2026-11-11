@@ -200,3 +200,27 @@ for _,o in ipairs(corpus) do
 end
 assert(total==516 and matched==227,string.format("recorded coverage regressed: %d/%d",matched,total))
 print("PASS recorded client objective corpus:",matched,total)
+
+-- New Forever quest ID absent from provider, but its exact unique objective
+-- item has known drop sources. No quest-ID override or guessed coordinates.
+M.instance=nil;M.quests={};M.pois={};M.mapID=1445;M.px=.50;M.py=.70
+local skin={questID=98192,title="Skin Careful, Skin Sharp",header="Dustwallow Marsh",objectives={
+ {text="0/8 Intact Raptor Hide",type="item",finished=false,numRequired=8,numFulfilled=0}}}
+M.AddQuest(skin);Q:Refresh(true)
+for i=1,1000 do M.RunTimers(.02); if Q.matched==1 then break end end
+assert(Q.matched==1 and Q.missing==0,Q:Summary())
+local raptor=Q.groups[1]
+assert(raptor.fallback and raptor.name=="Intact Raptor Hide" and #raptor.points==30)
+local creatures={};for _,p in ipairs(raptor.points) do
+ assert(p.mapID==1445);creatures[p.entityID]=p.name
+end
+assert(creatures[4356]=="Bloodfen Razormaw" and creatures[4357]=="Bloodfen Lashtail")
+assert(#Q:WorldPins(1445)>0)
+local legend=Q:Legend(1445);assert(#legend==1 and legend[1].questID==98192)
+FP.Pins.provider:RefreshAllData();assert(FP.Pins.legend.rows[1].questID==98192)
+local p=raptor.points[1];M.px=p.x;M.py=p.y;FP.Pos:Refresh(true);FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+assert(FP.Pins.objectiveMini[1]:IsShown() and FP.Pins.objectiveMini[1].questID==98192)
+skin.objectives[1].finished=true;Q:Refresh(true)
+assert(#Q:WorldPins(1445)==0,"completed item sources must disappear")
+assert(#FP.db.errors==0,"new quest mapping stored errors")
+print("PASS new Forever quest 98192: exact Item279601 -> Bloodfen Razormaw/Lashtail, 30 Dustwallow points, map/minimap/legend and completion")

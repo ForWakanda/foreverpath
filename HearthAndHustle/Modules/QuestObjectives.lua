@@ -47,11 +47,83 @@ function Q:Match(objective, references, liveObjectives)
 	end
 end
 
+-- Keep a quest's color/number stable across log reordering and reloads. Numbers
+-- also distinguish similar colors and make shared-location markers explicit.
+function Q:AssignStyles(log, offers)
+	FP.cdb.questMapStyles=FP.cdb.questMapStyles or {}
+	FP.cdb.questMapHidden=FP.cdb.questMapHidden or {}
+	local styles,live,used=FP.cdb.questMapStyles,{},{}
+	for _,list in ipairs({log,offers}) do for _,q in ipairs(list) do live[q.questID]=true end end
+	local ids={}; for id in pairs(live) do ids[#ids+1]=id end; table.sort(ids)
+	for id in pairs(styles) do if not live[id] then styles[id]=nil end end
+	for id in pairs(FP.cdb.questMapHidden) do if not live[id] then FP.cdb.questMapHidden[id]=nil end end
+	for _,id in ipairs(ids) do
+		local slot=styles[id]
+		if not U.Finite(slot) or slot<1 or slot>200 or slot~=math.floor(slot) or used[slot] then styles[id]=nil
+		else used[slot]=true end
+	end
+	for _,id in ipairs(ids) do
+		if not styles[id] then local slot=1; while used[slot] do slot=slot+1 end; styles[id]=slot;used[slot]=true end
+	end
+	if self.focusedQuest and not live[self.focusedQuest] then self.focusedQuest=nil end
+end
+
+function Q:Style(questID)
+	local slot=(FP.cdb.questMapStyles or {})[questID] or 1
+	local h=((slot-1)*.61803398875)%1*6
+	local x=1-math.abs(h%2-1)
+	local r,g,b
+	if h<1 then r,g,b=1,x,0 elseif h<2 then r,g,b=x,1,0 elseif h<3 then r,g,b=0,1,x
+	elseif h<4 then r,g,b=0,x,1 elseif h<5 then r,g,b=x,0,1 else r,g,b=1,0,x end
+	r,g,b=.25+.75*r,.25+.75*g,.25+.75*b
+	return r,g,b,slot,string.format("|cff%02x%02x%02x",math.floor(r*255),math.floor(g*255),math.floor(b*255))
+end
+function Q:QuestLabel(questID,title)
+	local _,_,_,slot,color=self:Style(questID)
+	return color.."["..slot.."] "..tostring(title).."|r"
+end
+function Q:Focus(questID)
+	self.focusedQuest=self.focusedQuest~=questID and questID or nil
+	if self.focusedQuest then FP.cdb.questMapHidden[self.focusedQuest]=nil end
+	self.worldCache={}; FP:Fire("QUEST_LOCATIONS_CHANGED")
+end
+function Q:ShowAll()
+	self.focusedQuest=nil; FP.settings.questSelectedOnly=false; FP.cdb.questMapHidden={}
+	self.worldCache={}; FP:Fire("QUEST_LOCATIONS_CHANGED")
+end
+function Q:ToggleHidden(questID)
+	local hidden=FP.cdb.questMapHidden; hidden[questID]=not hidden[questID] or nil
+	if hidden[questID] and self.focusedQuest==questID then self.focusedQuest=nil end
+	self.worldCache={}; FP:Fire("QUEST_LOCATIONS_CHANGED")
+end
+
+function Q:UpdateContacts(log, offers)
+	self.contacts={}
+	local function add(q,kind,mapID,x,y,how,entrance)
+		if not U.ValidMapPoint(mapID,x,y) then return end
+		local point={mapID=mapID,x=x,y=y,name=q.title,entityID=q.questID,role=kind,entrance=entrance,dungeonName=entrance and how or nil}
+		self.contacts[#self.contacts+1]={questID=q.questID,title=q.title,text=how,name=q.title,
+			kind=kind,refKey=kind..":"..q.questID,points={point}}
+	end
+	for _,offer in ipairs(offers) do add(offer,"Pickup",offer.mapID,offer.x,offer.y,offer.how) end
+	for _,q in ipairs(log) do
+		if q.isComplete and FP.Planner then
+			local mapID,x,y,how,entrance=FP.Planner:ResolveTurnIn(q.questID)
+			add(q,"Turnin",mapID,x,y,how,entrance)
+		end
+	end
+end
+
 function Q:Refresh(force)
 	local ready, status = API.QuestDatabaseStatus()
 	self.status = status
 	local log, signature = API.GetQuestLog(), {tostring(ready), status}
 	local live = {}
+	local mapID=API.GetBestMap()
+	API.RequestQuestOffers(mapID)
+	local offers=API.GetQuestOffers(mapID)
+	signature[#signature+1]=tostring(mapID)
+	for _,q in ipairs(offers) do signature[#signature+1]=q.questID..":"..q.x..":"..q.y end
 	for _, quest in ipairs(log) do
 		local objs = API.GetQuestObjectives(quest.questID)
 		live[quest.questID] = {info=quest, objectives=objs}
@@ -63,23 +135,36 @@ function Q:Refresh(force)
 	local key, now = table.concat(signature,"|"), API.Time()
 	if not force and key == self.signature and now < (self.expires or 0) then return end
 	self.signature, self.expires = key, now + 30
+	self:AssignStyles(log,offers)
+	self:UpdateContacts(log,offers)
 	local previous=self.references
+ local previousFallback=self.fallbackReferences or {}
+ self.fallbackReferences={}
+ self.coverage={}
  self.groups,self.references={},{} -- only current log; bounded session cache
 	self.matched, self.missing, self.events, self.hints = 0, 0, 0, 0
 	for _, quest in ipairs(log) do
 		if not quest.isComplete then
 			local refs = ready and ((not force and previous[quest.questID]) or API.GetQuestReference(quest.questID)) or nil
 			self.references[quest.questID] = refs
+			local coverage={questID=quest.questID,title=quest.title,header=quest.header,mapped=0,missing=0}
+			self.coverage[quest.questID]=coverage
 			for i,o in ipairs(live[quest.questID].objectives) do
 				if not o.finished then
 					local ref = self:Match(o, refs, live[quest.questID].objectives)
+					if not ref or #ref.points==0 then
+						local fallbackKey=tostring(quest.questID)..":"..objectiveKey(o)
+						local fallback=(not force and previousFallback[fallbackKey]) or API.GetObjectiveNameReference(o)
+						self.fallbackReferences[fallbackKey]=fallback
+						if fallback and #fallback.points>0 then ref=fallback end
+					end
 					if ref and (ref.kind=="Event" or ref.kind=="Credit") and o.finished~=false then ref=nil end
 					if ref and #ref.points > 0 then
-						self.matched = self.matched + 1
+						self.matched = self.matched + 1; coverage.mapped=coverage.mapped+1
 						if ref.kind=="Event" or ref.kind=="Credit" then self.events=self.events+1 end
 						self.groups[#self.groups+1] = {questID=quest.questID, objIndex=i, title=quest.title,
-							text=o.text, name=ref.name, kind=ref.kind, points=ref.points, refKey=ref.key, objectiveKey=objectiveKey(o)}
-					else self.missing = self.missing + 1 end
+							text=o.text, name=ref.name, kind=ref.kind, fallback=ref.fallback, points=ref.points, refKey=ref.key, objectiveKey=objectiveKey(o)}
+					else self.missing = self.missing + 1; coverage.missing=coverage.missing+1 end
 				end
 			end
 			for _,ref in ipairs(refs or {}) do
@@ -120,11 +205,17 @@ function Q:Refresh(force)
 	FP:Fire("QUEST_LOCATIONS_CHANGED")
 end
 
-function Q:VisibleGroups()
-	local selected = API.GetSelectedQuest()
+function Q:VisibleGroups(all)
+	local selected = self.focusedQuest or (FP.settings.questSelectedOnly and API.GetSelectedQuest())
 	local out = {}
-	for _, group in ipairs(self.groups) do
-		if (not FP.settings.questSelectedOnly or group.questID==selected) and (group.kind~="Hint" or FP.settings.questEventHints~=false) then out[#out+1]=group end
+	for _,list in ipairs({self.groups,self.contacts or {}}) do
+		for _,group in ipairs(list) do
+			local contact=group.kind=="Pickup" or group.kind=="Turnin"
+			if all or (((not self.focusedQuest and not FP.settings.questSelectedOnly) or group.questID==selected) and not (FP.cdb.questMapHidden or {})[group.questID]
+				and (group.kind~="Hint" or FP.settings.questEventHints~=false) and (not contact or FP.settings.questContactPins~=false)) then
+				out[#out+1]=group
+			end
+		end
 	end
 	return out
 end
@@ -168,6 +259,11 @@ function Q:Guide(pin)
 	end
 	if not entry then return false end
 	local g,p=entry.group,entry.point
+	if g.kind=="Pickup" or g.kind=="Turnin" then
+		return FP.Planner:Go({kind=g.kind=="Pickup" and "pickup" or "turnin",questID=g.questID,
+			title=(g.kind=="Pickup" and "Pick up: " or "Turn in: ")..g.title,text=g.title,
+			mapID=p.mapID,x=p.x,y=p.y,how=g.text,entrance=p.entrance,radius=12})~=nil
+	end
 	if p.entrance and API.InInstance() then return false end
 	local note="Known location; search nearby. Spawns and drops are not guaranteed."
 	if g.kind=="Event" then note="Event completion area; follow the quest instructions. Arrival alone does not complete an event or escort."
@@ -189,29 +285,31 @@ function Q:Tooltip(pin, owner)
 	for i,entry in ipairs(pin.entries) do
 		if i > 8 then GameTooltip:AddLine("More objectives share this area…", .7,.7,.7); break end
 		local p,g = entry.point,entry.group
-		local label=g.kind=="Event" and "Event completion area" or g.kind=="Hint" and "Quest hint" or g.kind=="Credit" and "Possible quest-credit target" or nil
+		local label=g.kind=="Pickup" and "Quest pickup" or g.kind=="Turnin" and "Quest turn-in" or g.kind=="Event" and "Event completion area" or g.kind=="Hint" and "Quest hint" or g.kind=="Credit" and "Possible quest-credit target" or nil
 		if p.entrance then label="Dungeon entrance: "..p.dungeonName end
 		GameTooltip:AddLine((label and (label..": ") or "")..p.name..(p.role=="vendor" and " (vendor)" or ""),1,1,1)
 		if p.entrance then GameTooltip:AddLine("Outdoor approach; the quest target is inside. Interior paths are not mapped.",.7,.8,1,true) end
 		if g.kind=="Hint" then GameTooltip:AddLine("Not tied to individual progress; remains until the quest is complete.",.7,.8,1,true)
 		elseif g.kind=="Event" then GameTooltip:AddLine("Follow the quest instructions; this is not an escort route or proof of completion.",.7,.8,1,true) end
-		GameTooltip:AddLine(tostring(g.title) .. " — " .. tostring(g.text), .8,.8,.8,true)
+		GameTooltip:AddLine(self:QuestLabel(g.questID,g.title) .. " — " .. tostring(g.text), .8,.8,.8,true)
+		if g.fallback then GameTooltip:AddLine("Matched by exact objective name; quest-specific source data is missing.",.7,.8,1,true) end
 	end
 	GameTooltip:AddLine("Known locations; not a live creature scan. Drops are not guaranteed.", .6,.8,1,true)
-	GameTooltip:AddLine(U.FormatCoords(pin.x,pin.y) .. " · Click: guide here", .6,.8,1)
+	GameTooltip:AddLine(U.FormatCoords(pin.x,pin.y) .. " · Click: guide first listed objective. Right-click: focus its quest.", .6,.8,1)
 	GameTooltip:Show()
 end
 
 -- Merge close source points into small area markers. Round-robin through each
 -- objective before applying the frame budget so a large spawn list cannot starve
 -- other quests. Keep all source points for nearest guidance/minimap distance.
-function Q:WorldPins(mapID)
+function Q:WorldPins(mapID,all)
+	local grid,limit=FP.settings.questDensePins and 125 or 60,FP.settings.questDensePins and 350 or 150
 	local selected = API.GetSelectedQuest()
-	local cacheKey = tostring(mapID)..":"..tostring(FP.settings.questSelectedOnly)..":"..tostring(selected)..":"..tostring(FP.settings.questEventHints)
+	local cacheKey = tostring(mapID)..":"..tostring(FP.settings.questSelectedOnly)..":"..tostring(selected)..":"..tostring(FP.settings.questEventHints)..":"..tostring(self.focusedQuest)..":"..tostring(FP.settings.questContactPins)..":"..tostring(all)..":"..tostring(FP.settings.questDensePins)
 	self.worldCache = self.worldCache or {}
 	if self.worldCache[cacheKey] then return self.worldCache[cacheKey] end
 	local queues = {}
-	for _,g in ipairs(self:VisibleGroups()) do
+	for _,g in ipairs(self:VisibleGroups(all)) do
 		local points, seen = {}, {}
 		for _,p in ipairs(g.points) do
 			local shown=p
@@ -224,7 +322,7 @@ function Q:WorldPins(mapID)
    end
    if shown.mapID == mapID then
     local p=shown
-    local key = math.floor(p.x*125)..":"..math.floor(p.y*125)..":"..p.entityID..":"..p.role
+    local key = math.floor(p.x*grid)..":"..math.floor(p.y*grid)..":"..p.entityID..":"..p.role
 				if not seen[key] then points[#points+1] = p; seen[key] = true end
 			end
 		end
@@ -237,9 +335,9 @@ function Q:WorldPins(mapID)
 			local p = queue.points[index]
 			if p then
 				more = true
-				local key = math.floor(p.x*125)..":"..math.floor(p.y*125)
+				local key = math.floor(p.x*grid)..":"..math.floor(p.y*grid)
 				local pin = cells[key]
-				if not pin and #out < 350 then
+				if not pin and #out < limit then
 					pin={mapID=mapID,x=p.x,y=p.y,entries={}}
 					out[#out+1], cells[key] = pin, pin
 				end
@@ -252,7 +350,31 @@ function Q:WorldPins(mapID)
 	return out
 end
 
+function Q:Legend(mapID)
+	local rows,byID={},{}
+	for _,pin in ipairs(self:WorldPins(mapID,true)) do
+		local seen={}
+		for _,entry in ipairs(pin.entries) do
+			local g=entry.group
+			if not byID[g.questID] then
+				local row={questID=g.questID,title=g.title,markers=0}
+				byID[g.questID]=row; rows[#rows+1]=row
+			end
+			if not seen[g.questID] then byID[g.questID].markers=byID[g.questID].markers+1;seen[g.questID]=true end
+		end
+	end
+	for id,c in pairs(self.coverage or {}) do
+		if not byID[id] and c.header==API.GetMapName(mapID) then
+			rows[#rows+1]={questID=id,title=c.title,markers=0,missing=c.missing}
+		end
+	end
+	table.sort(rows,function(a,b) local _,_,_,x=self:Style(a.questID);local _,_,_,y=self:Style(b.questID); return x<y end)
+	return rows
+end
+
 function Q:OnEnable()
+	FP:On("QUEST_OFFERS_CHANGED",function() self.signature=nil; FP.Throttle("contact-map-refresh",.1,function() self:Refresh() end) end)
+	FP:On("QUEST_SOURCE_INDEX_READY",function() self.signature=nil; FP.Throttle("source-index-refresh",.05,function() self:Refresh() end) end)
 	FP:On("QUESTLOG_SCANNED", function() FP.Throttle("quest-locations", .3, function() self:Refresh() end) end)
 	FP:RegisterEvent("SUPER_TRACKING_CHANGED", function() FP:Fire("QUEST_LOCATIONS_CHANGED") end)
 	FP:On("DISPLAY_SETTINGS_CHANGED", function() FP:Fire("QUEST_LOCATIONS_CHANGED") end)

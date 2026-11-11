@@ -2251,7 +2251,8 @@ assert(x==.5 and how=="waypoint", "database overrode native navigation")
 local points={};for i=1,500 do points[i]={mapID=1445,x=(i%100)/100,y=math.floor(i/100)/10,name="Many",entityID=11,role="kill"}end
 Q.groups={{questID=9101,objIndex=1,name="Many",points=points},
  {questID=9102,objIndex=1,name="One",points={{mapID=1445,x=.995,y=.995,name="One",entityID=12,role="kill"}}}}
-Q.worldCache={};local pins=Q:WorldPins(1445);assert(#pins==350)
+Q.worldCache={};local sparse=Q:WorldPins(1445);assert(#sparse==150)
+FP.settings.questDensePins=true;local pins=Q:WorldPins(1445);assert(#pins==350)
 local found=false;for _,p in ipairs(pins)do for _,e in ipairs(p.entries)do if e.group.questID==9102 then found=true end end end
 assert(found,"large objective starved another quest")
 FP.settings.questSelectedOnly=true;C_SuperTrack={GetSuperTrackedQuestID=function()return 9102 end}
@@ -2687,7 +2688,7 @@ assert(Q.matched==0 and Q.missing==1)
 ''',
 "events_quest_hints_are_separate_and_never_auto_route":EVENTS+r'''
 data.Quest[9101].extraObjectives={
- {{[15]={{46,56}}},4,"Use the brazier",0},
+ {{[15]={{49,59}}},4,"Use the brazier",0},
  {nil,4,"Talk to the scout",0,{{"monster",13}}},
  {nil,4,"Indexed hint not safely bound",1,{{"object",21}}},
 }
@@ -3000,6 +3001,124 @@ assert(prepRow("supply:999999").text:find("Item 999999",1,true))
 '''
 
 from review_cases import REVIEW_CASES
+CASES.update({
+"quest_map_unique_name_fallback_async_and_ambiguous_rejection": OBJECTIVES+r'''
+local built,lookups=0,0
+LibQuestieDB.Item.BuildNameIndexAsync=function(batch)
+ assert(batch<=250); coroutine.yield();built=built+1
+end
+LibQuestieDB.Item.IdsByName=function(name)
+ lookups=lookups+1;assert(built==1,"lookup must wait for the complete index")
+ if name=="Venom Sac" then return {31} elseif name=="Lost Key" then return {32,33} end
+end
+M.quests={}; M.AddQuest({questID=98192,title="New quest",objectives={objective("0/8 Venom Sac","item")}})
+Q:Refresh(true);assert(Q.matched==0 and Q.missing==1 and lookups==0)
+M.combatLockdown=true;M.RunTimers(.1);assert(built==0)
+M.combatLockdown=false;for i=1,5 do M.RunTimers(.6) end
+assert(Q.matched==1 and Q.groups[1].fallback and Q.groups[1].refKey=="Name:Item:31")
+local cachedCalls=sourceCalls;Q.signature=nil;Q:Refresh();assert(sourceCalls<cachedCalls+10,"reuse active objective sources")
+M.quests[1].objectives[1].text="0/1 Lost Key";Q:Refresh(true)
+assert(Q.matched==0 and Q.missing==1,"duplicate item names must not guess an ID")
+M.quests[1].objectives[1].text="0/1 Venom Sac fragment";Q:Refresh(true)
+assert(Q.matched==0,"substring matching must not infer a different item")
+M.quests[1].objectives[1].text="0/1   ";Q:Refresh(true);assert(Q.matched==0)
+assert(#FP.db.errors==0)
+''',
+"quest_map_unique_creature_and_object_names_use_correct_types": OBJECTIVES+r'''
+for _,kind in ipairs({"Npc","Object"}) do
+ LibQuestieDB[kind].BuildNameIndexAsync=function() end
+ local k=kind
+ LibQuestieDB[kind].IdsByName=function(name)
+  if k=="Npc" and name=="Cave Spider" then return {11} end
+  if k=="Object" and name=="Ancient Crate" then return {21} end
+ end
+end
+M.quests={}; M.AddQuest({questID=98193,title="New quest",objectives={
+ objective("0/3 Cave Spider slain","monster"),objective("0/1 Ancient Crate","object")}})
+Q:Refresh(true);for i=1,4 do M.RunTimers(.1) end
+assert(Q.matched==2 and Q.groups[1].kind=="Npc" and Q.groups[2].kind=="Object")
+M.quests[1].objectives[1].finished=true;Q:Refresh();assert(Q.matched==1)
+assert(#FP.db.errors==0)
+''',
+"quest_map_colors_stable_unique_and_saved": OBJECTIVES+r'''
+local other={questID=9102,title="Second quest",objectives={objective("0/1 Lost Key","item")}}
+M.AddQuest(other);Q:Refresh(true)
+local r,g,b,a,color=Q:Style(9101);local _,_,_,z,color2=Q:Style(9102)
+assert(a~=z and color~=color2)
+local saved=snapshot(FP.cdb.questMapStyles)
+M.quests={other,q};Q:Refresh(true)
+assert(snapshot(FP.cdb.questMapStyles)==saved,"log reorder changed colors/numbers")
+Q:AssignStyles({other,q},{})
+assert(snapshot(FP.cdb.questMapStyles)==saved,"reuse saved assignment after refresh")
+M.AddQuest({questID=9,title="Earlier ID",objectives={}});Q:Refresh(true)
+local _,_,_,after=Q:Style(9101);assert(after==a,"new quest recolored existing quest")
+FP.cdb.questMapStyles[9102]=a;Q:Refresh(true)
+local _,_,_,repaired=Q:Style(9102);assert(repaired~=a,"repair duplicate saved assignments")
+assert(#FP.db.errors==0)
+''',
+"quest_map_focus_hide_legend_and_shared_marker": OBJECTIVES+r'''
+M.mapID=1445;M.px=.32;M.py=.23;FP.Pos:Refresh(true)
+M.AddQuest({questID=9102,title="Second quest",objectives={objective("0/1 Lost Key","item")}})
+Q:Refresh(true);FP.Pins.provider:RefreshAllData()
+local f=FP.Pins.legend
+assert(f:IsShown() and f.rows[1].questID==9101 and f.rows[2].questID==9102)
+local shared
+for _,pin in ipairs(Q:WorldPins(1445)) do
+ local ids={};for _,e in ipairs(pin.entries) do ids[e.group.questID]=true end
+ if ids[9101] and ids[9102] then shared=pin end
+end
+assert(shared,"overlapping quest locations must be grouped")
+local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",shared)
+assert(frame.sharedQuests==2 and frame.questBadge:GetText()=="+" and frame.Icon._color[1]==1)
+cmd("way 80 80 Keep route");local before=snapshot(FP.Waypoints.list)
+f.rows[2]:GetScript("OnClick")(f.rows[2],"LeftButton")
+assert(Q.focusedQuest==9102 and snapshot(FP.Waypoints.list)==before)
+for _,g in ipairs(Q:VisibleGroups()) do assert(g.questID==9102) end
+f.rows[2]:GetScript("OnClick")(f.rows[2],"RightButton")
+assert(not Q.focusedQuest and FP.cdb.questMapHidden[9102])
+for _,g in ipairs(Q:VisibleGroups()) do assert(g.questID~=9102) end
+f.all:GetScript("OnClick")();assert(not next(FP.cdb.questMapHidden))
+f.collapse:GetScript("OnClick")();assert(f.collapsed and not f.rows[1]:IsShown())
+f.collapse:GetScript("OnClick")();assert(not f.collapsed and f.rows[1]:IsShown())
+FP.Pins.lastObjectiveMini=nil;FP.Pins:UpdateObjectiveMinimap(FP.Pos.cache)
+assert(#FP.Pins.objectiveMini>0 and FP.Pins.objectiveMini[1].questBadge)
+assert(#FP.db.errors==0)
+''',
+"quest_map_icons_recycle_and_contacts_clear": r'''
+FP.settings.record=false
+M.gossipAvailable={{questID=9100,title="Pickup quest"}}
+M.SetUnit("npc",{guid="Creature-0-1-0-0-2319-00001",name="Quest giver"})
+M.FireEvent("GOSSIP_SHOW");M.RunTimers(.5)
+local Q=FP.QuestObjectives
+local pins=Q:WorldPins(M.mapID);assert(#pins==1 and pins[1].entries[1].group.kind=="Pickup")
+local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pins[1])
+assert(frame.actionGlyph:GetText()=="!")
+assert(Q:Guide(pins[1]) and active().source.kind=="pickup")
+local q=addQuest(9100,true);M.FireEvent("QUEST_ACCEPTED",9100);Q:Refresh(true)
+pins=Q:WorldPins(M.mapID);assert(#pins==1 and pins[1].entries[1].group.kind=="Turnin")
+frame:OnAcquired(pins[1]);assert(frame.actionGlyph:GetText()=="?")
+assert(Q:Guide(pins[1]) and active().source.kind=="turnin")
+M.RemoveQuest(9100);M.FireEvent("QUEST_TURNED_IN",9100,0,0);Q:Refresh(true)
+assert(#Q:WorldPins(M.mapID)==0 and not Q:Guide(pins[1]),"stale completed pin must not route")
+assert(#FP.db.errors==0)
+''',
+"quest_map_legend_paging_and_filters": OBJECTIVES+HUB+r'''
+M.mapID=1445
+local oldLog=FP.API.GetQuestLog;FP.API.GetQuestLog=function() local log=oldLog();for _,q in ipairs(log) do q.header="Map 1445" end;return log end
+for i=1,9 do M.AddQuest({questID=9200+i,title="Quest "..i,header="Map 1445",objectives={objective("0/1 Unknown","item")}}) end
+Q:Refresh(true);FP.Pins.provider:RefreshAllData()
+local f=FP.Pins.legend;assert(f.pageLabel:GetText()=="1 / 2")
+f.next:GetScript("OnClick")();assert(f.pageLabel:GetText()=="2 / 2")
+f.next:GetScript("OnClick")();assert(f.page==2,"page must stay bounded")
+page("display");check("displayquestMapLegend",false);assert(not f:IsShown())
+check("displayquestMapLegend",true);assert(f:IsShown())
+FP.settings.questContactPins=false;FP.settings.questSelectedOnly=true;C_SuperTrack=nil;Q.worldCache={}
+assert(#Q:WorldPins(1445)==0)
+Q:Focus(9101);assert(#Q:WorldPins(1445)>0,"explicit focus works without native tracking")
+assert(#FP.db.errors==0)
+''',
+})
+
 CASES.update(REVIEW_CASES)
 
 failed = 0

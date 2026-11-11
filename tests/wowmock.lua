@@ -21,6 +21,10 @@ Frame.__index = function(t, k)
 	return nil
 end
 function Frame:Show() self._shown = true end
+function Frame:SetShown(show) if show then self:Show() else self:Hide() end end
+function Frame:SetTextColor(r,g,b,a) self._textColor={r,g,b,a} end
+function Frame:SetShadowColor(r,g,b,a) self._shadowColor={r,g,b,a} end
+function Frame:SetShadowOffset(x,y) self._shadowOffset={x,y} end
 function Frame:Hide()
 	local shown=self._shown; self._shown = false
 	if shown and self._scripts.OnHide then self._scripts.OnHide(self) end

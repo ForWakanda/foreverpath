@@ -18,6 +18,30 @@ Developers on WSL: `tools/migrate-from-foreverpath.py` does steps 2 and 3 (`--dr
 
 Party features (quest sync, shared timers, rare alerts) only reach party members who are also on v0.17.0 or later.
 
+## Quest map (v0.18.0)
+
+Quests now have stable colors and numbers shared by the world map, minimap,
+compact tracker and Navigation list. Sword icons mean kill targets, bags mean
+loot, gears mean objects and spyglasses mean events. Confirmed pickups use **!**
+and known turn-ins use **?**. A white **+** identifies locations shared by quests;
+hover for the full quest/objective list and live progress.
+
+The world-map **Hearth & Hustle quests** legend lets you click a quest to focus it,
+right-click to hide/show it, or **Show all** to restore the view. This only changes
+markers; your route is preserved. Click a marker to guide to its first listed
+objective, or right-click to focus that quest. The legend can collapse, and Display
+settings control it, contacts, hints and marker density. The default groups nearby
+sources into at most 150 world markers; Dense allows 350. The minimap groups nearby
+sources into at most 40 markers. These are known locations, not live spawn scans.
+
+New Forever quests can use the provider's existing source data even when their
+quest ID is missing: an exact, unique objective item/creature/object name supplies
+fallback locations, labeled in the tooltip. Duplicate names and unsupported
+objectives remain unavailable. Name indexes build in small batches outside combat
+only when needed. This fixes **Skin Careful, Skin Sharp** via Intact Raptor Hide's
+known Bloodfen Razormaw/Lashtail sources. It does not infer remote quest availability.
+Reload after updating; no new media or companion addon is introduced.
+
 ## NPC pickup reporting (v0.17.2)
 
 Map quest listings can omit available NPC quests. The pickup diagnostic now

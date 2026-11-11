@@ -188,7 +188,8 @@ function Panel:Refresh(positionOnly)
 		if step then
 			local d, label = FP.Planner:Describe(step)
 			row.dist:SetText(d)
-			row.label:SetText(label)
+			local _,_,_,slot,color=FP.QuestObjectives:Style(step.questID)
+			row.label:SetText(step.questID and (color.."["..slot.."]|r "..label) or label)
 			row:Show()
 			n = n + 1
 		else
