@@ -89,7 +89,7 @@ function P:Build(H,p)
   {"gearNextQuestSource","Next quest source",function() self.sourceIndex=self.sourceIndex%#self.questSources+1 end,
    enabled=function() return self.questSources and #self.questSources>1 end},
  })
- H:Check(p,"gearUnknown","Include items with no level data (check the source)",function() return self.filter.unknown end,function(v) self.filter.unknown=v;self.list.page=1 end)
+ H:Check(p,"gearUnknown","No required level listed: allow 5 item levels above the limit",function() return self.filter.unknown end,function(v) self.filter.unknown=v;self.list.page=1 end)
  self.status=H:Text(p,"")
  p.y=p.y+32
  H:Text(p,"Rankings use editable stat weights and a dated Forever reference catalog. They are estimates, not a complete BiS simulation. Source labels do not guarantee current availability. Hover an item for its live tooltip.")

@@ -3318,6 +3318,16 @@ assert(RW.layoutPending and RW.scanPending)
 FP.settings.rare.manual="hide";RW.StatusLines=function() error("no text read for a hidden HUD") end;RW:Refresh();assert(moved==0)
 FP.API.InCombat=function() return false end;RW.StatusLines=lines;RW:Refresh();assert(not RW.frame:IsShown())
 ''',
+"gear_unlisted_level_tick_widens_item_level_estimate_by_a_bounded_margin": r'''
+FP.API.GetCharInfo=function() return {class="SHAMAN",level=40} end
+local item={id=1,name="Reward",equipLoc="INVTYPE_CLOAK",classID=4,subclassID=1,level=24,stats={},sources={},sourceTypes={}}
+FP.GearCatalog={items={item}}
+assert(#FP.Gear:Rows({slot="CLOAK",level=20})==0)
+assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==1,"tick did not widen the estimate")
+item.level=25;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==1)
+item.level=26;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0,"margin is unbounded")
+item.level=24;item.minLevel=22;assert(#FP.Gear:Rows({slot="CLOAK",level=20,unknown=true})==0,"a listed requirement was widened")
+''',
 "quest_map_action_texture_above_border_and_recovers_missing_art": OBJECTIVES+r'''
 local pin=Q:WorldPins(1445)[1]
 local frame=WorldMapFrame:AcquirePin("HearthAndHustleObjectivePinTemplate",pin)

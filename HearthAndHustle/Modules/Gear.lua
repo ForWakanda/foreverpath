@@ -87,6 +87,9 @@ function G:ClassMatches(item,char)
  if sub==9 then return char.class=="SHAMAN" end
  return sub<=0
 end
+-- Quest rewards rarely list a required level and their item level tracks the
+-- quest level; quests a few levels above the character are routinely done.
+G.PROXY_MARGIN=5
 function G:Rows(filter)
  local rows={}
  if API.InCombat() then return rows,"Gear browsing resumes after combat." end
@@ -101,7 +104,7 @@ function G:Rows(filter)
   local proxy=not known and U.Finite(item.level) and item.level or nil
   local source=filter.source or "All"
   if self:SlotMatches(item,filter.slot or "HEAD") and self:ClassMatches(item,char)
-   and ((known and item.minLevel<=max) or (proxy and proxy<=max) or (not known and not proxy and filter.unknown))
+   and ((known and item.minLevel<=max) or (proxy and proxy<=max+(filter.unknown and G.PROXY_MARGIN or 0)) or (not known and not proxy and filter.unknown))
    and (source=="All" or contains(item.sourceTypes,source))
    and (query=="" or item.name:lower():find(query,1,true) or tostring(item.id)==query or table.concat(item.sources," "):lower():find(query,1,true)) then
    rows[#rows+1]={key=item.id,item=item,score=self:Score(item.stats,weights,filter.slot)}
