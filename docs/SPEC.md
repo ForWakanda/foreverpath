@@ -510,3 +510,11 @@ reference: https://github.com/Questie/Questie/wiki/Icons (no Questie UI/code/art
 - Both addon pin types now use an explicit level inserted above MAP_HIGHLIGHT and below native POI/quest markers. Existing pin levels are reapplied after insertion. Native map refresh callbacks record errors; legend errors cannot prevent marker drawing.
 - Minimap quest icons11px (was16), no numeric badges,14px minimum center spacing after merging adjacent cells, nearest24 maximum (was40). Shared markers retain all merged objective tooltip entries. World markers remain18px with numbers.
 - Mock coverage now models layer ordering and map open/map-change/reopen, plus legend focus, completion cleanup, spacing and error recovery. These checks and source verification do not establish fresh in-game rendering; reload and user verification remain required.
+
+### Restricted map button and icon layers — v0.18.2 (2026-11-11, Codex)
+
+- User reports0.18.1 improved map rendering, then `ADDON_ACTION_BLOCKED: Button:SetPassThroughButtons()`. Reload/pull20261111T031507Z confirms the error on build70888; original activity/combat state and call stack are unknown.
+- Forever's SimpleScriptRegionAPI marks SetPassThroughButtons protected/restricted. MapCanvasMixin:AcquirePin invokes CheckMouseButtonPassthrough on each acquire. Our combat-only guard still called the setter outside combat. Remove the unnecessary setter path entirely for our own mixins: interactive pins consume clicks by default; passive planner pins disable mouse input. Blizzard's shared mixin is untouched.
+- Store up to10 blocked-action context samples (one per distinct action/session, trace4096 bytes max) for recurrence. Event stacks may not contain the originating callback. No assumption that this record identifies the exact originating Button.
+- User screenshot shows solid cyan quest squares with badges. XML border and dynamically created action texture were both ARTWORK, making their order unspecified. Set border BACKGROUND and action ARTWORK sublevel1 on each reuse, explicitly show regions, and use a dark glyph fallback if the client's SetTexture reports a missing asset. Colors and quest IDs are preserved.
+- Tests cover restricted setter rejection in/out of combat, click/hover/pool reuse, layer order and missing-texture fallback. Fresh client error/visual verification remains necessary.

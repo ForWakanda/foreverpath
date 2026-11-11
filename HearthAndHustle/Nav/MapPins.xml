@@ -23,7 +23,7 @@
 	</Frame>
 	<Frame name="HearthAndHustleObjectivePinTemplate" enableMouse="true" enableMouseClicks="true" mixin="HearthAndHustleObjectivePinMixin" virtual="true">
 		<Size x="12" y="12"/>
-		<Layers><Layer level="ARTWORK"><Texture parentKey="Icon" file="Interface\AddOns\HearthAndHustle\Media\pin">
+		<Layers><Layer level="BACKGROUND"><Texture parentKey="Icon" file="Interface\AddOns\HearthAndHustle\Media\pin">
 			<Size x="12" y="12"/><Anchors><Anchor point="CENTER"/></Anchors>
 		</Texture></Layer></Layers>
 	</Frame>

@@ -21,12 +21,11 @@ end
 -- methods are merged in by Pins:HookWorldMap once the map system exists.
 HearthAndHustleMapPinMixin = {}
 
-local function checkPassthrough(self,...)
- if API.InCombat() then return end
- if MapCanvasPinMixin and MapCanvasPinMixin.CheckMouseButtonPassthrough then
-  return MapCanvasPinMixin.CheckMouseButtonPassthrough(self,...)
- end
-end
+-- AcquirePin asks every pin to configure passthrough. Our interactive pins
+-- own both buttons; passive planner pins disable mouse input in OnAcquired.
+-- Neither needs the restricted native setter, even outside combat. Override
+-- only our mixins; leave Blizzard's shared pin behavior untouched.
+local function checkPassthrough() end
 HearthAndHustleMapPinMixin.CheckMouseButtonPassthrough=checkPassthrough
 
 function HearthAndHustleMapPinMixin:ShouldMouseButtonBePassthrough(button)
@@ -104,6 +103,7 @@ function Pins:StyleObjectivePin(frame,pin,mini)
 	local size=mini and 11 or 18
 	frame:SetSize(size,size)
 	frame.Icon=frame.Icon or frame:CreateTexture(nil,"BACKGROUND")
+	frame.Icon:SetDrawLayer("BACKGROUND",0)
 	frame.Icon:SetTexture("Interface\\Buttons\\WHITE8X8")
 	frame.Icon:SetVertexColor(r,g,b);frame.Icon:SetSize(size,size)
 	if not frame.actionIcon then
@@ -116,16 +116,18 @@ function Pins:StyleObjectivePin(frame,pin,mini)
 		frame.questBadge:SetTextColor(1,1,1);frame.questBadge:SetShadowColor(0,0,0,1);frame.questBadge:SetShadowOffset(1,-1)
 	end
 	local inset=mini and 2 or 4
+	frame.actionIcon:SetDrawLayer("ARTWORK",1)
 	frame.actionIcon:SetSize(size-inset,size-inset)
 	local icon=objectiveIcons[first.kind]
-	if icon then
-		frame.actionIcon:SetTexture("Interface\\Icons\\"..icon)
+	if icon and frame.actionIcon:SetTexture("Interface\\Icons\\"..icon) then
 		frame.actionIcon:SetVertexColor(1,1,1);frame.actionGlyph:SetText("")
 	else
 		frame.actionIcon:SetTexture("Interface\\Buttons\\WHITE8X8")
 		frame.actionIcon:SetVertexColor(.05,.05,.05)
-		frame.actionGlyph:SetText(first.kind=="Pickup" and "!" or "?")
+		local glyphs={Npc="X",Item="L",Object="O",Event="E",Credit="C",Hint="?",Pickup="!",Turnin="?"}
+		frame.actionGlyph:SetText(glyphs[first.kind] or "?")
 	end
+	frame.Icon:Show();frame.actionIcon:Show();frame.actionGlyph:Show()
 	frame.questBadge:SetText(n>1 and "+" or tostring(slot))
 	frame.questBadge:SetShown(not mini)
 	frame.questID,frame.sharedQuests=first.questID,n
