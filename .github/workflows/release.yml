@@ -14,7 +14,7 @@ jobs:
           python3 - <<'PY'
           import zipfile, os
           with zipfile.ZipFile("HearthAndHustle.zip", "w", zipfile.ZIP_DEFLATED) as z:
-              for root, _, files in os.walk("HearthAndHustle"):
+              for root, _, files in (entry for addon in ("HearthAndHustle", "HearthAndHustle_GearData") for entry in os.walk(addon)):
                   for f in files:
                       p = os.path.join(root, f)
                       z.write(p, p)

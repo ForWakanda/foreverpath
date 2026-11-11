@@ -61,7 +61,7 @@ function H:Create()
 	local f = CreateFrame("Frame","HearthAndHustleHub",UIParent,"BackdropTemplate")
 	self.frame = f
 	local s=FP.settings.hub
-	f:SetSize(860,690); f:SetPoint(s.point,UIParent,s.point,s.x,s.y); f:SetFrameStrata("DIALOG")
+	f:SetSize(860,690); f:SetPoint(s.point,UIParent,s.point,s.x,s.y); f:SetFrameStrata("DIALOG");f:SetToplevel(true)
 	f:SetClampedToScreen(true); f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
 	f:SetScript("OnDragStart",function(frame) frame:StartMoving() end)
 	f:SetScript("OnDragStop",function(frame)
@@ -205,7 +205,7 @@ function H:HudControls(p,prefix,settings)
 		{prefix.."Auto","Automatic",function() command(prefix.." auto") end},
 	})
 	self:Check(p,prefix.."Lock","Lock HUD position",function() return settings.locked end,function(v) command(prefix.." "..(v and "lock" or "unlock")) end)
-	local size=self:Field(p,prefix.."Size","HUD size (50–200%)",math.floor(settings.scale*100+.5))
+	local size=self:Field(p,prefix.."Size","HUD size (50–200%)",function() return math.floor(settings.scale*100+.5) end)
 	self:Actions(p,{
 		{prefix.."ApplySize","Apply size",function() local n=self:Number(size,"size",50,200,true); if n then command(prefix.." scale "..n/100) end end},
 		{prefix.."ResetPosition","Reset HUD position",function() command(prefix.." reset") end},
@@ -258,11 +258,11 @@ function H:BuildPage(key)
 	elseif key=="navigation" then
 		self:Text(p,"",function()
 			local wp=FP.Waypoints:GetActive()
-			return (wp and ("Current: "..U.Truncate(wp.title,85)) or "No active destination.") .. "\nAutomatic selection: " .. (FP.settings.autoNext and not FP.Planner.paused and "on" or "paused/off")
+			return (wp and ("Current: "..U.Truncate(wp.title,85)) or "No active destination.") .. ((wp and (not wp.source or wp.source.type~="plan")) and "\nManual destination holds guidance. Resume guidance to return to quests; saved destinations are kept." or "") .. "\nAutomatic selection: " .. (FP.settings.autoNext and not FP.Planner.paused and "on" or "paused/off")
 		end)
 		self:Actions(p,{
-			{"resume","Resume guidance",function() command("auto on"); FP.settings.arrow.shown=true; FP.Arrow:Refresh() end},
-			{"pause","Pause selection",function() command("auto off") end},
+			{"resume","Resume guidance",function() FP.Waypoints:SuspendManual();command("auto on"); FP.settings.arrow.shown=true; FP.Arrow:Refresh() end},
+			{"pause","Pause selection",function() FP.Planner.paused=true;FP:Fire("WAYPOINTS_CHANGED");FP:Print("Guidance paused for this session.") end},
 			{"nextStep","Next suggestion",function() command("next") end},
 		})
 		self:Text(p,"Pause keeps your current destination. Clear route removes destinations and pauses guidance.")
@@ -379,14 +379,16 @@ function H:BuildPage(key)
 			return rows
 		end,function(row)return row.text end)
 		self:Actions(p,{
-			{"prepShow","Show checklist",function() command("pvp on"); command("pvp show"); command("prep show") end},
+			{"prepShow","Show checklist",function() command("prep show") end},
 			{"prepAuto","Automatic checklist",function() command("prep auto") end},
 			{"prepHide","Hide checklist",function() command("prep hide") end},
 		})
 		for _,entry in ipairs({{"food","Food target"},{"water","Drink target (mana classes)"},{"bandages","Bandage target"},{"reagents","Mage reagent target"}}) do
 			local key,name=entry[1],entry[2]
-			local field=self:Field(p,"prep"..key,name,FP.cdb.prep[key])
+			if key~="reagents" or API.GetCharInfo().class=="MAGE" then
+			local field=self:Field(p,"prep"..key,name,function() return FP.cdb.prep[key] end)
 			self:Actions(p,{{"applyPrep"..key,"Save "..name:lower(),function() local n=self:Number(field,name,0,200,true); if n then command("prep "..key.." "..n) end end}})
+			end
 		end
 		self:Actions(p,{{"prepReport","Check carried supplies",function() command("prep") end}})
 		self:Section(p,"Personal supplies")
@@ -421,8 +423,8 @@ function H:BuildPage(key)
 		self:Section(p,"Reminders")
 		self:Check(p,"remindersEnabled","Enable out-of-combat reminders",function() return FP.settings.reminders.enabled end,function(v) command("remind "..onoff(v)) end)
 		self:Check(p,"remindersBuffs","Include missing self-buffs",function() return FP.settings.reminders.buffs end,function(v) command("remind buffs "..onoff(v)) end)
-		local dura=self:Field(p,"durabilityThreshold","Durability threshold (0–90%)",FP.settings.reminders.durability)
-		local ammo=self:Field(p,"ammoThreshold","Ammo threshold (0–5000)",FP.settings.reminders.ammo)
+		local dura=self:Field(p,"durabilityThreshold","Durability threshold (0–90%)",function() return FP.settings.reminders.durability end)
+		local ammo=self:Field(p,"ammoThreshold","Ammo threshold (0–5000)",function() return FP.settings.reminders.ammo end)
 		self:Actions(p,{{"applyReminders","Save reminder thresholds",function()
 			local a=self:Number(dura,"durability",0,90,true); local b=self:Number(ammo,"ammo",0,5000,true)
 			if a and b then command("remind durability "..a); command("remind ammo "..b) end
@@ -435,7 +437,7 @@ function H:BuildPage(key)
 		self:Text(p,"Timers are estimates from your own actions. Battleground flag numbers identify map slots, not enemy teams.")
 		self:HudControls(p,"pvp",FP.settings.pvp)
 		self:Section(p,"Battleground navigation")
-		local flag=self:Field(p,"flagIndex","Flag map slot (1–10)",FP.settings.pvp.flagIndex or 1)
+		local flag=self:Field(p,"flagIndex","Flag map slot (1–10)",function() return FP.settings.pvp.flagIndex or 1 end)
 		self:Actions(p,{
 			{"trackFlag","Track flag slot",function() local n=self:Number(flag,"flag slot",1,10,true); if n then command("pvp track "..n) end end},
 			{"untrackFlag","Stop flag tracking",function() command("pvp track off") end},
@@ -464,13 +466,13 @@ function H:BuildPage(key)
 			{"rareNewRun","Start new run record",function() command("rare newrun") end,confirm="Close the current rare-watch record and open a new one? This does not reset the game instance."},
 		})
 		self:Section(p,"Watch list")
-		local instance=self:Field(p,"rareInstance","Instance name",FP.RareWatch:Watch().instance)
+		local instance=self:Field(p,"rareInstance","Instance name",function() return FP.RareWatch:Watch().instance end)
 		self:Actions(p,{{"rareSetInstance","Set watched instance",function()
 			local name=U.Trim(instance:GetText()); if name=="" then FP:Print("Enter an instance name."); return end
 			command("rare instance "..name)
 		end}})
 		local list=self:List(p,"rareList",function()
-			local out={}; for i,r in ipairs(FP.RareWatch:Watch().rares) do out[#out+1]={key=i,rare=r} end; return out
+			local out={}; for i,r in ipairs(FP.RareWatch:Watch().rares) do out[#out+1]={key=tostring(r.id or "")..":"..r.name,rare=r} end; return out
 		end,function(item) return item.rare.name .. (item.rare.id and ("  ("..item.rare.id..")") or "") end)
 		self:Actions(p,{{"rareRemove","Remove selected rare",function() local item=self:Selected(list); if item then command("rare rm "..item.rare.name); list.selected=nil end end,enabled=function() return self:Selected(list)~=nil end}})
 		local name=self:Field(p,"rareName","Exact rare name","")
@@ -503,7 +505,7 @@ function H:BuildPage(key)
 				self:Check(p,key.."Shown","Show "..title:lower(),function() return s.shown end,function(v) if key=="panel" then FP.Panel:Toggle(v) else FP.InfoBar:Toggle(v) end end)
 				self:Check(p,key.."Locked","Lock position",function() return s.locked end,function(v) command(key.." "..(v and "lock" or "unlock")) end)
 			end
-			local size=self:Field(p,key.."Scale",title.." size (%)",math.floor(s.scale*100+.5))
+			local size=self:Field(p,key.."Scale",title.." size (%)",function() return math.floor(s.scale*100+.5) end)
 			self:Actions(p,{
 				{key.."ApplyScale","Apply size",function() local n=self:Number(size,"size",min,max,true); if n then command(key.." scale "..n/100) end end},
 				{key.."Reset","Reset position & size",function() command(key.." reset"); size:SetText(tostring(math.floor(s.scale*100+.5))) end},
@@ -569,7 +571,15 @@ function H:Field(p,id,text,value,width)
 	label(p.body,text,0,-p.y-7,246)
 	local e=CreateFrame("EditBox",nil,p.body,"InputBoxTemplate")
 	e:SetSize(width or 334,24); e:SetPoint("TOPLEFT",260,-p.y); e:SetAutoFocus(false)
-	e:SetMaxLetters(4096); e:SetText(tostring(value or ""))
+	local get=type(value)=="function" and value or nil
+ e:SetMaxLetters(4096);e:SetText(tostring(get and get() or value or ""));e:ClearFocus()
+ if get then
+  local last=e:GetText()
+  table.insert(p.refreshers,function()
+   local current=tostring(get() or "")
+   if not e:HasFocus() and (e:GetText()==last or e:GetText()==current) then e:SetText(current);last=current end
+  end)
+ end
 	e:SetScript("OnEscapePressed",function(box) box:ClearFocus() end)
 	e:SetScript("OnEnterPressed",function(box) box:ClearFocus() end)
 	self.controls[id]=e; p.fields[#p.fields+1]=e

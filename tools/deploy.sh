@@ -16,6 +16,9 @@ if [ -f "$LEGACY/ForeverPath.toc" ] && grep -qF 'API\Adapter.lua' "$LEGACY/Forev
   echo "Close the game, run tools/migrate-from-foreverpath.py (carries saved data over, removes that folder), then deploy again."
   exit 1
 fi
+for addon in HearthAndHustle HearthAndHustle_GearData; do
+SRC="$ROOT/$addon"
+DEST="$ADDONS/$addon"
 mkdir -p "$DEST"
 if command -v rsync >/dev/null; then
   rsync -rlt --delete --exclude '.git' "$SRC/" "$DEST/"
@@ -24,4 +27,5 @@ else
 fi
 echo "deployed $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo uncommitted) -> $DEST"
 find "$DEST" -type f | sed "s|$DEST/||" | sort | tr '\n' ' '; echo
+done
 echo "First installation/media changes: fully restart the client. Then /hh status and /hh apicheck."

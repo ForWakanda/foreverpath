@@ -7,6 +7,14 @@ local U, API = FP.Util, FP.API
 local P = FP:NewModule("Planner")
 
 P.steps = {}
+function P.SortSteps(steps)
+ table.sort(steps,function(a,b)
+  if a.score~=b.score then return a.score<b.score end
+  if a.title~=b.title then return tostring(a.title)<tostring(b.title) end
+  if a.questID~=b.questID then return (a.questID or 0)<(b.questID or 0) end
+  return (a.objIndex or 0)<(b.objIndex or 0)
+ end)
+end
 -- Arrival is a navigation state, independent of the displayed waypoint.
 local function sameStep(a, b)
 	return a and b and a.questID == b.questID and a.kind == b.kind and a.objIndex == b.objIndex
@@ -68,7 +76,7 @@ function P:ResolveTurnIn(questID)
 	local q = FP.data.quests[questID]
 	if q and q.epos then return q.epos.m, q.epos.x, q.epos.y, "recorded" end
 	if q then
-		for npcID in pairs(q.enders) do
+		for npcID in pairs(q.enders or {}) do
 			local n = FP.data.npcs[npcID]
 			if n and n.pos[1] then return n.pos[1].m, n.pos[1].x, n.pos[1].y, "npc" end
 		end
@@ -76,14 +84,20 @@ function P:ResolveTurnIn(questID)
 	local best,distance
 	for _,contact in ipairs(API.GetQuestEnders(questID)) do
 		for _,p in ipairs(contact.points) do
-			local d=FP.Pos:DistanceTo(p)
+			local d=FP.Pos:DistanceTo(p) or math.huge
 			if (not p.entrance or not API.InInstance()) and d and (not distance or d<distance) then best,distance=p,d end
 		end
 	end
 	if best then return best.mapID,best.x,best.y,(best.entrance and "dungeon entrance: "..best.dungeonName or "known turn-in: "..best.name),best.entrance end
-	if q and q.gpos then return q.gpos.m, q.gpos.x, q.gpos.y, "giver" end
-	if q then
-		for npcID in pairs(q.givers) do
+	-- Acceptance position is not a destination for deliveries or item starters.
+ local countable=false
+ for _,o in ipairs(API.GetQuestObjectives(questID)) do
+  if (o.type=="monster" or o.type=="item" or o.type=="object") and (o.numRequired or 0)>0 then countable=true end
+ end
+ local canUseGiver=q and countable and not q.startItem and not (q.gpos and q.gpos.item)
+ if canUseGiver and q.gpos then return q.gpos.m,q.gpos.x,q.gpos.y,"giver (unconfirmed)" end
+ if canUseGiver then
+		for npcID in pairs(q.givers or {}) do
 			local n = FP.data.npcs[npcID]
 			if n and n.pos[1] then return n.pos[1].m, n.pos[1].x, n.pos[1].y, "giver-npc" end
 		end
@@ -116,13 +130,14 @@ function P:ResolveObjective(questID, i)
 	end
 	local point = FP.QuestObjectives:Nearest(questID, i)
 	if point then return point.mapID, point.x, point.y, (point.entrance and ("dungeon entrance: "..point.dungeonName) or ((point.role=="event" and "event completion area: " or "known source: ") .. point.name)), point.entrance end
+	if #API.GetQuestObjectives(questID)==0 then return self:ResolveTurnIn(questID) end
 	return nil
 end
 
 -- "Quilboar slain: 3/8" -> "Quilboar slain" (progress is shown separately)
 local function cleanObjectiveText(text)
 	if type(text) ~= "string" or text == "" then return "objective" end
-	return (text:gsub(":%s*%d+%s*/%s*%d+%s*$", ""))
+	return U.ObjectiveText(text) or "objective"
 end
 
 function P:Build()
@@ -209,12 +224,7 @@ function P:Build()
 		s.score = s.score - math.min(s.cluster, 3) * 60
 		if s.deferred then s.score = s.score + 2e9 end
 	end
-	table.sort(steps, function(a, b)
-		if a.score ~= b.score then return a.score < b.score end
-		if a.title ~= b.title then return tostring(a.title) < tostring(b.title) end
-		if a.questID ~= b.questID then return a.questID < b.questID end
-		return (a.objIndex or 0) < (b.objIndex or 0)
-	end)
+	self.SortSteps(steps)
 	-- hearth hint: several turn-ins near the bind point and hearth ready
 	local bind = FP.cdb.bind
 	if bind and bind.m and bind.x and API.HasHearthstone() then
@@ -240,7 +250,7 @@ end
 function P:NextStep()
 	local selected = API.GetSelectedQuest()
 	for _, s in ipairs(self.steps) do
-		if s.questID == selected and not s.deferred and not sameStep(s, self.waiting) and s.mapID and s.x then return s end
+		if selected and s.questID == selected and s.kind ~= "hearth" and not s.deferred and not sameStep(s, self.waiting) and s.mapID and s.x then return s end
 	end
 	for _, s in ipairs(self.steps) do
 		if not s.deferred and s.kind ~= "hearth" and not sameStep(s, self.waiting) and s.mapID and s.x and s.dist then return s end
@@ -303,13 +313,14 @@ function P:Auto(reason)
 	if s then
 		if active and sameStep(active.source, s) then
 			-- POIs can move and objective counts change without a new quest ID.
+   local oldMap,oldX,oldY,oldTitle,oldDesc,oldEntrance=active.mapID,active.x,active.y,active.title,active.desc,active.source.entrance
 			active.mapID, active.x, active.y = s.mapID, s.x, s.y
 			active.title = s.kind ~= "objective" and s.title or (s.text .. (s.progress and (" " .. s.progress) or ""))
 			if s.entrance then active.title="Entrance: "..active.title end
 			active.source.entrance=s.entrance
 			active.desc=tostring(s.title).." ("..tostring(s.how)..")"
 			self.current = s
-			FP:Fire("WAYPOINTS_CHANGED")
+   if oldMap~=active.mapID or oldX~=active.x or oldY~=active.y or oldTitle~=active.title or oldDesc~=active.desc or oldEntrance~=active.source.entrance then FP:Fire("WAYPOINTS_CHANGED") end
 			return
 		end
 		self:Go(s, true)

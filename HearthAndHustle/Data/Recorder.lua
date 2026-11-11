@@ -175,7 +175,8 @@ local function snapshotQuest(info)
 			q.obj[i] = q.obj[i] or {}
 			if o.text and not FP.issecret(o.text) then
 				-- store the text without the progress numbers: "Quilboar slain: 3/8" -> "Quilboar slain"
-				q.obj[i].text = (o.text:gsub(":%s*%d+%s*/%s*%d+%s*$", ""))
+				local label=U.ObjectiveText(o.text)
+				if label then q.obj[i].text=label end
 			end
 			q.obj[i].type = o.type
 			q.obj[i].req = o.numRequired
@@ -245,8 +246,8 @@ local function rescanLog(reason)
 	local seen = {}
 	for _, info in ipairs(log) do
 		seen[info.questID] = true
+		if recording() then snapshotQuest(info) end
 		if not objectiveSnapshot[info.questID] then
-			if recording() then snapshotQuest(info) end
 			objectiveSnapshot[info.questID] = objectiveSnapshotFor(info.questID)
 		else
 			diffObjectives(info.questID)
@@ -269,7 +270,18 @@ function R:OnInit()
 	seenLootGUID = FP.cdb.lootSeen
 end
 
+function R:TrimData()
+ for name,limit in pairs({quests=8000,npcs=6000,creatures=3000,objects=2000,items=10000,vendors=1000,trainers=1000,chars=100,zones=1000}) do
+  U.TrimRecords(FP.data[name],limit)
+ end
+ U.TrimRecords(FP.data.pvp.players,500)
+ U.TrimRecords(FP.db.apicheck,20);U.TrimRecords(FP.db.meta.builds,20)
+end
+
 function R:OnEnable()
+ self:TrimData()
+ FP:RegisterEvent("PLAYER_LOGOUT",function() self:TrimData() end)
+ self.trimTicker=C_Timer.NewTicker(60,function() self:TrimData() end)
 	local c = API.GetCharInfo()
 	char = c.key
 	R.char = char
@@ -653,9 +665,18 @@ function R:OnTrainer()
 	t.n = n.name
 	t.tradeskill = isTradeskill or nil
 	t.class = API.GetCharInfo().class   -- class trainers are class-specific; lets level-up notes pick the right ones
-	for _, s in ipairs(services) do
-		if s.name then
-			t.services[s.name] = { type = s.type, lvl = s.level, skill = s.skill, rank = s.skillRank, cost = s.cost, line = s.skillLine, item = s.itemID, sub = s.sub }
+	local function serviceKey(name,sub,level,rank)
+  return name.."\031"..tostring(sub or "").."\031"..tostring(level or "").."\031"..tostring(rank or "")
+ end
+ local ranked={}
+ for key,sv in pairs(t.services) do
+  sv.name=sv.name or key
+  ranked[serviceKey(sv.name,sv.sub,sv.lvl,sv.rank)]=sv
+ end
+ t.services=ranked
+ for _, s in ipairs(services) do
+  if s.name then
+   t.services[serviceKey(s.name,s.sub,s.level,s.skillRank)] = { name=s.name, type = s.type, lvl = s.level, skill = s.skill, rank = s.skillRank, cost = s.cost, line = s.skillLine, item = s.itemID, sub = s.sub }
 		end
 	end
 	bump("trainers")

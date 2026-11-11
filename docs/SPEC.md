@@ -379,12 +379,12 @@ weights atomically; cancel/navigation/close discards unsaved edits. Profile,
 custom weights and wishlist persist per character; browsing/filtering does not
 write route, quest tracking or character state.
 
-7,982 normalized factual Forever records from the pinned cache revision in
-Data/GearCatalog.lua. tools/import-gear-catalog.py regenerates deterministically;
+8,370 normalized factual Forever records from the pinned cache revision in
+HearthAndHustle_GearData/GearCatalog.lua (LoadOnDemand). tools/import-gear-catalog.py regenerates deterministically;
 no Classic fallback or copied BiS rankings. Reference data stays immutable. Scores
 use explicit authored starting weights for all nine class families and expose
 all weights. They omit proc/set/cap/weapon-speed interactions and are labeled
-estimates. Unknown required levels stay unknown, with an explicit include filter.
+estimates. Unknown required levels stay unknown; item level is a labeled conservative filter proxy. The optional unknown filter applies only when both levels are absent.
 Class armor/weapon/relic filters are reference compatibility rules; training,
 reputation/race/unique restrictions and current obtainability are not certified.
 
@@ -408,3 +408,43 @@ and wishlist; pull SavedVariables after normal flush. No new media or dependency
 - Saved data: `Core/Config.lua` adopts legacy globals once, only when they carry this addon's schema (`settings.arrow`, `data.quests`, `meta`; character: `waypoints`, `completed`, `nextId`), by reference when the file was merely copied and as a deep copy while the old addon is still loaded. `tools/migrate-from-foreverpath.py` renames the files byte-for-byte apart from the variable name, keeps the originals as `ForeverPath.lua.pre-rename`, refuses while the game runs, and stops before any change if a file is not recognised.
 - Client fact used: build 70888 writes SavedVariables with CRLF line endings and no indentation; closers are `},` or `}`.
 - Verification: 234 regressions (5 new: adoption, live-old-addon copy, foreign tables ignored, existing new data kept, file-tool fixture). The tool and both adoption paths were also run against a copy of a real 4.3 MB account file and a character file: every setting, dataset count and waypoint preserved. Not yet run in the client.
+
+
+## Review repair — v0.17.1 (2026-11-11 UTC, Codex)
+
+- Build 70888 saved objective labels are count-first. A shared cleaner handles both
+  formats and uncached blank names; immutable references are cached per live quest.
+  Source waypoints survive temporarily uncached names. Provider status validates
+  zone payload availability. Continent coordinates can project onto a child map;
+  cross-continent destinations remain selectable without invented distance.
+- Deliveries with no countable objectives and item-started quests cannot fall back
+  to their acceptance position. Known enders supply delivery destinations. Hearth
+  hints never enter automatic selection. Unchanged routes do not reacquire pins.
+- Native MapCanvas calls CheckMouseButtonPassthrough after acquisition. Both addon
+  pin mixins guard that method in combat and refresh on combat end. Rare HUD
+  geometry/show/hide and secure macro updates are deferred together. Blocked and
+  forbidden actions for this addon enter the bounded error sink.
+- Rare message numeric fields require bounded positive integers; text loses pipes
+  and control characters. All receive kinds require enabled/in-instance context.
+  Party sender checks preserve full realm identity and use UnitFullName plus
+  C_NameUtil's surname converter when available (70888 source; client unverified).
+- CanDualWield is a documented global in PlayerScriptDocumentation; only true
+  permits off-hand weapon ranking. GetNumQuestLogChoices receives questID,true,
+  matching Blizzard Mainline/QuestInfo.lua:633; fixed reward count remains argless.
+- Catalog importer strips comment markup, handles slot-only cloaks and thrown
+  weapons, and excludes set bonuses from scalar effect parsing. The companion
+  gear addon loads on demand outside combat. Checks, deployment and ZIP packaging
+  include both folders. A full restart discovers the companion addon.
+- Navigation Resume suspends manual destinations without deleting them; explicit
+  selection reactivates one. Pause is session-local. Stable top-left compact-panel
+  anchoring, UTF-8 truncation, focus clearing, live settings refresh with draft
+  preservation, Escape-close windows and stable rare-list keys repair UI state.
+- New profile recording/probes default off; existing choices survive. Optional
+  entity records are capped (quests 8000, NPCs 6000, creatures 3000, objects 2000,
+  items 10000, vendors/trainers 1000 each, characters 100, zones 1000, PvP players
+  500); existing bounded event lists stay bounded. Trainer keys include rank.
+  Complete recipe schematics cache during an open profession window; skill/data
+  changes refresh them, and identical records do not increment write counters.
+- Automated/provider/saved-data replays are not fresh client gameplay evidence.
+  Verify map hover/clicks in combat, layout/focus, party surnames and item/gear UI
+  after a full restart; then pull newly flushed SavedVariables.

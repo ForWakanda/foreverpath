@@ -10,8 +10,13 @@ local CONTENT_TOP = 72
 
 local function savePosition(frame)
 	local s = FP.settings.panel
-	local point, _, _, x, y = frame:GetPoint(1)
-	if point then s.point, s.x, s.y = point, x, y end
+	local left,top=frame:GetLeft(),frame:GetTop()
+ local scale,parentScale=frame:GetEffectiveScale(),UIParent:GetEffectiveScale()
+ if left and top and scale and parentScale then
+  local y=top-UIParent:GetHeight()*parentScale/scale
+  frame:ClearAllPoints();frame:SetPoint("TOPLEFT",UIParent,"TOPLEFT",left,y)
+  s.point,s.x,s.y="TOPLEFT",left,y
+ end
 end
 
 function Panel:OnInit()
@@ -129,6 +134,7 @@ function Panel:ApplySettings()
 	f:ClearAllPoints()
 	f:SetPoint(s.point or "TOPRIGHT", UIParent, s.point or "TOPRIGHT", s.x or -20, s.y or -160)
 	f:SetScale(s.scale or 1)
+	savePosition(f)
 end
 
 function Panel:ResetPosition()
@@ -174,7 +180,7 @@ function Panel:Refresh(positionOnly)
 	local pct = (xp and max and max > 0) and math.floor(xp / max * 100 + 0.5) or 0
 	local active = FP.Waypoints:GetActive()
 	self.status:SetText(string.format("Lvl %s · %d%% xp%s · %s", tostring(level or "?"), pct, rested and (" · rested " .. math.floor(rested / (max or 1) * 100 + 0.5) .. "%") or "",
-		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. (FP.Planner.waiting and ("Working here: " .. U.Truncate(FP.Planner.waiting.title or "quest", 24)) or (FP.Planner.paused and "route paused — /hh auto on" or (#steps > 0 and "No route coordinates available" or "No available quest locations reported"))) .. "|r"))
+		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. (FP.Planner.waiting and ("Working here: " .. U.Truncate(FP.Planner.waiting.title or "quest", 24)) or ((FP.Planner.paused or not FP.settings.autoNext) and "Guidance paused — Open tools to resume" or (#steps > 0 and "No route coordinates available" or "No available quest locations reported"))) .. "|r"))
 	local n = 0
 	for i, row in ipairs(self.rows) do
 		local step = steps[i]
@@ -245,7 +251,7 @@ function Panel:CreateSettings()
 	self.displayFrame = f
 	f:SetSize(400, 410)
 	f:SetPoint("CENTER", UIParent, "CENTER", -250, -20)
-	f:SetFrameStrata("DIALOG")
+	f:SetFrameStrata("DIALOG");f:SetToplevel(true)
 	f:SetClampedToScreen(true)
 	f:SetMovable(true)
 	f:EnableMouse(true)

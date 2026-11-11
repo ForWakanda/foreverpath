@@ -20,7 +20,7 @@ end
 function S:Parse(str)
 	if type(str) ~= "string" or #str > MAX_BYTES then return nil end
 	local name, class, level, list = str:match("^FP1;([^;]+);([^;]+);(%d+);(.*)$")
-	if not name or #name > 64 or #class > 24 or not U.Finite(tonumber(level)) then return nil end
+	if not name or #name>64 or #class>24 or name:find("[|%c]") or class:find("[|%c]") or not U.Finite(tonumber(level)) or tonumber(level)>255 then return nil end
 	local quests, complete, n = {}, {}, 0
 	for token in list:gmatch("[^,]+") do
 		local id, c = token:match("^(%d+)(c?)$")

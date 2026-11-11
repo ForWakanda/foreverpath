@@ -70,7 +70,7 @@ function T:NotesForLevel(level)
 			local list, total = {}, 0
 			for name, sv in pairs(t.services or {}) do
 				if U.Finite(sv.lvl) and sv.lvl == level then
-					list[#list + 1] = { name = name, cost = sv.cost, sub = sv.sub }
+					list[#list + 1] = { name = sv.name or name, cost = sv.cost, sub = sv.sub }
 					if U.Finite(sv.cost) then total = total + sv.cost end
 				end
 			end

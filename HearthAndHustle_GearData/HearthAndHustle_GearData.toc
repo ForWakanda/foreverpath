@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: Hearth & Hustle: Gear data
+## Notes: Item reference loaded only when opening the gear browser.
+## Version: 0.17.1
+## Dependencies: HearthAndHustle
+## LoadOnDemand: 1
+## X-License: MIT
+GearCatalog.lua

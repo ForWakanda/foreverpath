@@ -6,17 +6,37 @@ It shows you where to go. You play. Nothing in here moves your character, target
 
 ## Renamed from ForeverPath (v0.17.0)
 
-Hearth & Hustle is the same addon under a new name. An unrelated addon called "ForeverPath" now exists and uses the same folder, saved-variable names and `/fp` command, so everything moved: the folder is `HearthAndHustle`, and the commands are `/hh` and `/hustle` (`/way` is unchanged).
+Hearth & Hustle is the same addon under a new name. An unrelated addon called "ForeverPath" now exists and uses the same folder, saved-variable names and `/fp` command, so everything moved: the folder is `HearthAndHustle`, and the commands are `/hh` and `/hustle` (`/way` remains available when another addon or the client has not already claimed it; `/hh way` always works).
 
 Updating from ForeverPath:
 
 1. Close the game completely.
-2. Delete `Interface\AddOns\ForeverPath` and install the `HearthAndHustle` folder.
+2. Delete `Interface\AddOns\ForeverPath` and install both `HearthAndHustle` and `HearthAndHustle_GearData` folders.
 3. To keep your settings and recorded data, copy `ForeverPath.lua` to `HearthAndHustle.lua` in `WTF\Account\<account>\SavedVariables\` and in each `WTF\Account\<account>\<realm>\<character>\SavedVariables\`. No editing is needed: on first login the addon recognises its own old data and saves it under the new names. Skip this step to start fresh.
 
 Developers on WSL: `tools/migrate-from-foreverpath.py` does steps 2 and 3 (`--dry-run` prints the plan and changes nothing), then run `tools/deploy.sh`.
 
 Party features (quest sync, shared timers, rare alerts) only reach party members who are also on v0.17.0 or later.
+
+## Review fixes (v0.17.1)
+
+Fully restart WoW after installing this update: the bundled `HearthAndHustle_GearData`
+folder is new. It loads only when you open **Best in slot**.
+
+Quest guidance now reads Forever's count-first objectives, retains cross-continent
+sources, and avoids routing delivery quests back to their acceptance location.
+A saved manual destination is labeled in Navigation; **Resume guidance** returns to
+quests while keeping your saved places. **Pause selection** lasts for this login.
+Party reports reject malformed numbers. Combat-restricted map/HUD updates wait
+until combat ends, and blocked addon actions are retained in Diagnostics.
+
+New profiles start with observation recording and diagnostic probes off. Existing
+choices are preserved; enable either in Diagnostics when collecting evidence.
+Optional records are bounded, trainer notes retain separate ranks, and repeated
+profession events reuse recipe data. Supplies can be shown without changing your
+PvP display preference. Gear includes previously missing cloaks, thrown weapons,
+attack power, mana regeneration and healing; off-hand weapons require the client's
+dual-wield ability. Multi-wing dungeon sources offer an explicit wing selector.
 
 ## Gear browser and overview (v0.16.0)
 
@@ -25,7 +45,7 @@ The new **Overview** cards lead directly to quest navigation/event markers, rewa
 comparisons, quest chains, dungeon preparation and supplies for every class.
 All tools remain in the sidebar; no slash commands are required.
 
-**Best in slot** is a gear explorer with 7,982 Forever item references. Choose a
+**Best in slot** is a gear explorer with 8,370 Forever item references. Choose a
 slot, a role preset for your class, a maximum required level and a source category;
 search by item name, ID or source. Select a row for its source and equipped stat
 comparison; hover for the client tooltip. Save targets to your per-character
@@ -39,7 +59,7 @@ the detail pane separately shows current-client stats when loaded. Procs, sets,
 hit/crit caps, weapon speed and unmodeled stats are excluded. Class/type filters
 are reference rules, not checks of learned weapon skills or every equip restriction.
 An item source does not prove current availability. Missing level requirements are
-excluded unless you explicitly include them; quest rewards often fall in that group.
+filtered using item level as a clearly labeled estimate when available; the optional unknown filter includes only items with neither level. It never bypasses a known level limit.
 Hand comparisons show individual scores without a misleading swap delta. All gear
 reads pause in combat. No equipment or reward actions are automated.
 

@@ -42,6 +42,7 @@ function R:Observe(unit)
 		local p = d[name]
 		if not p then p = { first = now, seen = 0 }; d[name] = p end
 		p.class, p.race, p.level, p.last, p.seen = e.class, e.race, e.level, now, p.seen + 1
+		U.TrimRecords(d,500)
 	end
 	FP:Fire("PVP_CHANGED")
 	return e

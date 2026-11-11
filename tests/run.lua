@@ -4,6 +4,7 @@ local M = require("wowmock")
 M.verbose = os.getenv("VERBOSE") ~= nil
 local ADDON = "HearthAndHustle"
 local FP = {}
+HearthAndHustleDB={settings={record=true,probe={enabled=true}}}
 
 local files = {}
 for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
@@ -133,7 +134,7 @@ check(FP.data.taxi.edges["22>23"] and FP.data.taxi.edges["22>23"].cost == 220, "
 M.SetUnit("npc", { guid = "Creature-0-4379-1-13-3704-00003BB8F9", name = "Mahani", level = 30, reaction = 5 })
 M.FireEvent("TRAINER_SHOW")
 M.RunTimers(1)
-check(FP.data.trainers[3704] and FP.data.trainers[3704].services["Azure Silk Hood"].rank == 110, "trainer services recorded")
+check(FP.data.trainers[3704] and (function() for _,s in pairs(FP.data.trainers[3704].services) do if s.name=="Azure Silk Hood" and s.rank==110 then return true end end end)(), "trainer services recorded")
 M.FireEvent("PLAYER_XP_UPDATE", "player")
 M.level = 21
 M.FireEvent("PLAYER_LEVEL_UP", 21)
@@ -155,7 +156,7 @@ M.RunTimers(2)
 FP.Planner:Build()
 check(FP.Planner.steps[1].kind == "turnin" and FP.Planner.steps[1].questID == 1236, "complete quest ranks first as turn-in: " .. tostring(FP.Planner.steps[1].title))
 -- 1236 has no recorded ender yet -> falls back to the giver (most Classic quests return to the giver)
-check(FP.Planner.steps[1].how == "giver", "turn-in falls back to giver, got " .. tostring(FP.Planner.steps[1].how))
+check(FP.Planner.steps[1].how == "giver (unconfirmed)", "turn-in falls back to giver, got " .. tostring(FP.Planner.steps[1].how))
 -- Live POIs override an older recorded ender (release locations can change).
 local m, x, y, how = FP.Planner:ResolveTurnIn(1234)
 check(how == "poi" and m == 1413, "live turn-in POI preferred to old recorded position, got " .. tostring(how))

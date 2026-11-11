@@ -29,6 +29,11 @@ function Frame:IsShown() return self._shown and true or false end
 function Frame:SetSize(w, h) self._w, self._h = w, h end
 function Frame:SetScale(scale) self._scale = scale end
 function Frame:GetScale() return self._scale or 1 end
+function Frame:GetEffectiveScale() return self:GetScale()*(self._parent and self._parent:GetEffectiveScale() or 1) end
+function Frame:GetLeft() return self._left end
+function Frame:GetTop() return self._top end
+function Frame:HasFocus() return self._focused or false end
+function Frame:SetToplevel(v) self._toplevel=v end
 function Frame:SetChecked(checked) self._checked = checked and true or false end
 function Frame:GetChecked() return self._checked or false end
 function Frame:SetMaxLetters(n) self._maxLetters = n end
@@ -129,7 +134,14 @@ C_VignetteInfo = { GetVignettes = function() local out = {}; for _, v in ipairs(
 	GetVignetteInfo = function(guid) for _, v in ipairs(M.vignettes or {}) do if v.guid == guid then return { vignetteGUID = guid, name = v.name, atlasName = v.atlas or "VignetteKill", type = 0, onMinimap = true, isDead = false } end end end }
 INSTANCE_RESET_SUCCESS = "%s has been reset."
 SlashCmdList = {}
-C_AddOns = { GetAddOnMetadata = function() return "0.1.0-test" end }
+local addonRoot=debug.getinfo(1,"S").source:sub(2):match("^(.*)/tests/wowmock.lua$") or "."
+C_AddOns = { GetAddOnMetadata = function() return "0.1.0-test" end,
+ LoadAddOn=function(name)
+  if name~="HearthAndHustle_GearData" then return nil end
+  assert(loadfile(addonRoot.."/HearthAndHustle_GearData/GearCatalog.lua"))(name,{})
+  return true
+ end }
+CanDualWield=function() return M.dualWield or false end
 C_Timer = {
 	After = function(sec, fn) table.insert(M.timers, { at = M.now + sec, fn = fn }) end,
 	NewTicker = function(sec, fn)
@@ -247,7 +259,13 @@ C_Minimap = { GetViewRadius = function() return 233.3 end }
 C_CVar = { GetCVarBool = function() return M.rotateMinimap or false end }
 
 -- quest log
-function M.AddQuest(q) table.insert(M.quests, q) end
+function M.AddQuest(q)
+ -- Real Forever clients use count-first objective text.
+ for _,o in ipairs(q.objectives or {}) do
+  o.text=o.text and o.text:gsub("^(.-):%s*(%d+/%d+)$", "%2 %1")
+ end
+ table.insert(M.quests,q)
+end
 function M.RemoveQuest(id) for i, q in ipairs(M.quests) do if q.questID == id then table.remove(M.quests, i) return end end end
 local function questByID(id) for _, q in ipairs(M.quests) do if q.questID == id then return q end end end
 C_QuestLog = {

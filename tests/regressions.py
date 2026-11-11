@@ -11,6 +11,7 @@ BOOT = r'''
 package.path = "./tests/?.lua;" .. package.path
 local M = require("wowmock")
 local FP = {}
+if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,probe={enabled=true}}} end
 for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     line = line:gsub("\r", "")
     if line:match("%.lua$") then
@@ -78,7 +79,7 @@ GEAR_CASES = {
 local rows=G:Rows({slot="HEAD",level=30});assert(#rows==2 and rows[1].key==1002)
 a.stats.ITEM_MOD_INTELLECT_SHORT=20
 rows=G:Rows({slot="HEAD",level=30});assert(rows[1].key==1001)
-a.minLevel=nil;b.minLevel=31
+a.minLevel=nil;a.level=nil;b.minLevel=31
 rows=G:Rows({slot="HEAD",level=30});assert(#rows==0)
 rows=G:Rows({slot="HEAD",level=30,unknown=true});assert(#rows==1 and rows[1].key==1001)
 rows=G:Rows({slot="HEAD",level=30,unknown=true,source="Quest"});assert(#rows==0)
@@ -181,7 +182,8 @@ assert(#API.GetGearQuestSources(1001)==0)
 ''',
  "gear_catalog_forever_integrity_and_coverage": r'''
 local seen,slots,classes={}, {}, {}
-assert(#FP.GearCatalog.items>7000)
+assert(FP.API.EnsureGearCatalog())
+assert(#FP.GearCatalog.items>8000)
 for _,item in ipairs(FP.GearCatalog.items) do
  assert(not seen[item.id]);seen[item.id]=true
  assert(#item.sources==#item.sourceTypes and #item.sources>0)
@@ -241,7 +243,7 @@ assert(active().source.questID==9002 and FP.Planner.pinned)
 field("skipMinutes",5); click("skipQuest")
 assert(FP.Planner.deferred[9002] and active().source.questID==9001)
 click("restoreQuests"); assert(not FP.Planner.deferred[9002])
-click("pause"); assert(not FP.settings.autoNext and active())
+click("pause"); assert(FP.Planner.paused and FP.settings.autoNext and active())
 click("resume"); assert(FP.settings.autoNext and FP.settings.arrow.shown)
 assert(#FP.db.errors==0)
 ''',
@@ -318,7 +320,7 @@ local original=#FP.RareWatch:Watch().rares
 field("rareName","Test Rare"); field("rareID",1234); click("rareAdd")
 assert(#FP.RareWatch:Watch().rares==original+1)
 assert(FP.RareWatch:MacroText():find("/targetexact Test Rare",1,true))
-local list=H.controls.rareList; list.selected=original+1; H:Refresh(); click("rareRemove")
+local list=H.controls.rareList; list.selected=tostring(FP.RareWatch:Watch().rares[original+1].id or "")..":"..FP.RareWatch:Watch().rares[original+1].name; H:Refresh(); click("rareRemove")
 assert(#FP.RareWatch:Watch().rares==original)
 local scans=FP.RareWatch:Current() and FP.RareWatch:Current().scans
 click("rareScan")
@@ -396,7 +398,7 @@ page("town")
 field("prepwater",60); click("applyPrepwater"); assert(FP.cdb.prep.water==60)
 field("prepbandages",15); click("applyPrepbandages"); assert(FP.cdb.prep.bandages==15)
 field("prepreagents",8); click("applyPrepreagents"); assert(FP.cdb.prep.reagents==8)
-click("prepShow"); assert(FP.settings.pvp.manual=="show" and FP.cdb.prep.mode=="show")
+local pvpManual=FP.settings.pvp.manual;click("prepShow"); assert(FP.settings.pvp.manual==pvpManual and FP.cdb.prep.mode=="show")
 click("prepAuto"); assert(FP.cdb.prep.mode=="auto")
 click("prepHide"); assert(FP.cdb.prep.mode=="hide")
 for _,id in ipairs({"prepReport","junkValue","trainerLookup"}) do click(id) end
@@ -1530,7 +1532,7 @@ inv,why=FP.API.GetPrepInventory(); assert(not inv and why:find("unavailable",1,t
 ''',
     "mage_prep_does_not_override_pvp_hide_or_off": PREP_SETUP + r'''
 cmd("pvp hide"); cmd("prep show"); M.RunTimers(2)
-assert(not FP.PvP.frame:IsShown() and FP.settings.pvp.manual=="hide")
+assert(FP.PvP.frame:IsShown() and FP.settings.pvp.manual=="hide")
 cmd("pvp off"); cmd("prep on"); M.RunTimers(2)
 assert(not FP.PvP.frame:IsShown() and not FP.settings.pvp.enabled)
 cmd("pvp on"); cmd("pvp auto"); M.RunTimers(2)
@@ -1623,7 +1625,7 @@ assert(not RW.macroPending and RW.scan:GetAttribute("macrotext"):find("/targetex
 -- hiding/showing the protected button is also deferred
 M.combatLockdown = true
 M.instance = nil; M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
-assert(RW.scan:IsShown() and RW.scanPending and not RW.frame:IsShown(), "scan button untouched in combat; hud itself hidden")
+assert(RW.scan:IsShown() and RW.scanPending and RW.frame:IsShown(), "secure button and its anchor retain geometry in combat")
 M.combatLockdown = false
 M.FireEvent("PLAYER_REGEN_ENABLED")
 assert(not RW.scan:IsShown(), "scan button hidden once combat ends")
@@ -2373,7 +2375,7 @@ C_QuestLog.GetTitleForQuestID=function(id) return "Reward quest "..id end
 HaveQuestRewardData=function() return true end
 GetQuestLogRewardXP=function() return 1200 end
 GetQuestLogRewardMoney=function() return 321 end
-GetNumQuestLogChoices=function() return 2 end
+GetNumQuestLogChoices=function(id,allowComplete) assert(id==selected and allowComplete==true);return 2 end
 GetNumQuestLogRewards=function() return 1 end
 GetQuestLogChoiceInfo=function(i) return "Choice "..i,nil,i,2,i~=2,100+i end
 GetQuestLogRewardInfo=function(i) return "Fixed",nil,1,2,true,103 end
@@ -2891,9 +2893,15 @@ C_Item.GetItemInfo=old;M.FireEvent("GET_ITEM_INFO_RECEIVED",999999,true);M.RunTi
 assert(prepRow("supply:999999").text:find("Item 999999",1,true))
 '''
 
+from review_cases import REVIEW_CASES
+CASES.update(REVIEW_CASES)
+
 failed = 0
 for name, body in CASES.items():
-    result = subprocess.run([LUA, "-"], input=BOOT + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    boot = BOOT
+    if name == "review_fresh_defaults_opt_out_and_observations_are_bounded":
+        boot = boot.replace('if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,probe={enabled=true}}} end', '')
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
     print(("FAIL " if result.returncode else "PASS ") + name)
     if result.returncode:
         failed += 1
@@ -3042,7 +3050,7 @@ assert(FP.cdb.nextId==901 and active() and active().title=="Legacy waypoint" and
 
 # Corrupt an actual XML file in an ephemeral copy; never change the real checkout.
 with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
-    for name in ("HearthAndHustle", "tests", "tools"):
+    for name in ("HearthAndHustle", "HearthAndHustle_GearData", "tests", "tools"):
         shutil.copytree(name, Path(tmp) / name)
     (Path(tmp) / "HearthAndHustle/Nav/MapPins.xml").write_text("<Ui><broken></Ui>\n")
     result = subprocess.run(["bash", "tools/check.sh"], cwd=tmp, text=True, capture_output=True)
@@ -3057,7 +3065,7 @@ with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
 # Missing TOC entries, compiler failure, and bypass attempts must also reject.
 for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
     with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
-        for name in ("HearthAndHustle", "tests", "tools"):
+        for name in ("HearthAndHustle", "HearthAndHustle_GearData", "tests", "tools"):
             shutil.copytree(name, Path(tmp) / name)
         env = os.environ.copy()
         command = ["bash", "tools/check.sh"]

@@ -55,6 +55,14 @@ function U.Trim(s)
 	return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+-- Forever uses count-first labels; retain Classic suffix compatibility.
+function U.ObjectiveText(text)
+ local label=U.Trim((tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  :gsub("^%s*%d+%s*/%s*%d+%s*", ""):gsub(":%s*%d+%s*/%s*%d+%s*$", "")))
+ if label=="" or label=="slain" or label=="killed" or label=="defeated" then return nil end
+ return label
+end
+
 function U.Split(s, sep)
 	local out = {}
 	sep = sep or "%s"
@@ -72,6 +80,26 @@ function U.Copy(t)
 	local o = {}
 	for k, v in pairs(t) do o[k] = v end
 	return o
+end
+
+function U.Equal(a,b)
+ if type(a)~=type(b) then return false end
+ if type(a)~="table" then return a==b end
+ for k,v in pairs(a) do if not U.Equal(v,b[k]) then return false end end
+ for k in pairs(b) do if a[k]==nil then return false end end
+ return true
+end
+
+-- Bound optional observations by retaining the most recently seen records.
+function U.TrimRecords(records,limit)
+ if U.Count(records)<=limit then return end
+ local keys={}
+ for k,v in pairs(records) do
+  local t=type(v)=="table" and (v.last or v.t or v.first) or v
+  keys[#keys+1]={key=k,t=U.Finite(t) and t or 0}
+ end
+ table.sort(keys,function(a,b) if a.t~=b.t then return a.t>b.t end return tostring(a.key)<tostring(b.key) end)
+ for i=limit+1,#keys do records[keys[i].key]=nil end
 end
 
 function U.Finite(n)
@@ -160,6 +188,11 @@ end
 
 function U.Truncate(s, n)
 	s = tostring(s or "")
-	if #s <= n then return s end
-	return s:sub(1, n - 1) .. "…"
+	local ends={}
+ for i=1,#s do
+  local b=s:byte(i)
+  if b<128 or b>=192 then ends[#ends+1]=i end
+ end
+ if #ends<=n then return s end
+ return s:sub(1,(ends[math.max(1,n)] or 1)-1).."…"
 end

@@ -154,7 +154,7 @@ function P:OnEnable()
 	E(FP, "DUEL_FINISHED", function() P:Sample("duel-finished") end)
 	-- event payload secrecy counters (own casts vs target casts, target auras)
 	local uf = CreateFrame("Frame")
-	local function count(key) db.events[key] = (db.events[key] or 0) + 1 end
+	local function count(key) if FP.settings.probe.enabled then db.events[key]=(db.events[key] or 0)+1 end end
 	uf:SetScript("OnEvent", function(_, event, unit, a, b)
 		if event == "UNIT_SPELLCAST_SUCCEEDED" then
 			count(event .. ":" .. tostring(unit) .. ":" .. classify(b))

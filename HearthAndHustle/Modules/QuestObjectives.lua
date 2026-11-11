@@ -6,7 +6,7 @@ local Q = FP:NewModule("QuestObjectives")
 Q.groups, Q.references = {}, {}
 
 local function clean(text)
-	return U.Trim((tostring(text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub(":%s*%d+%s*/%s*%d+%s*$", ""))):lower()
+	return (U.ObjectiveText(text) or ""):lower()
 end
 
 local kinds = { monster="Npc", item="Item", object="Object", event="Event" }
@@ -63,11 +63,12 @@ function Q:Refresh(force)
 	local key, now = table.concat(signature,"|"), API.Time()
 	if not force and key == self.signature and now < (self.expires or 0) then return end
 	self.signature, self.expires = key, now + 30
-	self.groups, self.references = {}, {} -- only current log; bounded session cache
+	local previous=self.references
+ self.groups,self.references={},{} -- only current log; bounded session cache
 	self.matched, self.missing, self.events, self.hints = 0, 0, 0, 0
 	for _, quest in ipairs(log) do
 		if not quest.isComplete then
-			local refs = ready and API.GetQuestReference(quest.questID) or nil
+			local refs = ready and ((not force and previous[quest.questID]) or API.GetQuestReference(quest.questID)) or nil
 			self.references[quest.questID] = refs
 			for i,o in ipairs(live[quest.questID].objectives) do
 				if not o.finished then
@@ -101,7 +102,13 @@ function Q:Refresh(force)
 				for _,g in ipairs(self.groups) do
 					if g.questID==s.questID and g.refKey==s.refKey and g.objectiveKey==s.objectiveKey then current=g;break end
 				end
-				if current then s.objIndex=current.objIndex else FP.Waypoints:Remove(wp.id) end
+				if current then s.objIndex=current.objIndex
+    elseif not q or q.info.isComplete then FP.Waypoints:Remove(wp.id)
+    else
+     local o=q.objectives[s.objIndex or 1]
+     -- Uncached accept/login labels cannot disprove a persisted destination.
+     if o and (o.finished or (ready and U.ObjectiveText(o.text))) then FP.Waypoints:Remove(wp.id) end
+    end
 			else
 				local o=q and q.objectives[s.objIndex]
 				if not q or q.info.isComplete or not o or o.finished then FP.Waypoints:Remove(wp.id) end
@@ -132,7 +139,7 @@ function Q:Nearest(questID, index)
 	for _, group in ipairs(self.groups) do
 		if group.kind~="Hint" and group.questID == questID and group.objIndex == index then
 			for _, p in ipairs(group.points) do
-				local d = FP.Pos:DistanceTo(p)
+				local d = FP.Pos:DistanceTo(p) or math.huge
 				if (not p.entrance or not API.InInstance()) and d and (not distance or d < distance) then best, distance = p, d end
 			end
 		end
@@ -149,7 +156,7 @@ function Q:Guide(pin)
 			local old=candidate.group
 			if g.questID==old.questID and g.refKey==old.refKey and g.objectiveKey==old.objectiveKey then
 				for _,p in ipairs(g.points) do
-					local oldPoint=candidate.point
+					local oldPoint=candidate.point.original or candidate.point
 					if p.mapID==oldPoint.mapID and p.x==oldPoint.x and p.y==oldPoint.y and p.entityID==oldPoint.entityID and p.role==oldPoint.role then
 						entry={group=g,point=p};break
 					end
@@ -207,8 +214,17 @@ function Q:WorldPins(mapID)
 	for _,g in ipairs(self:VisibleGroups()) do
 		local points, seen = {}, {}
 		for _,p in ipairs(g.points) do
-			if p.mapID == mapID then
-				local key = math.floor(p.x*125)..":"..math.floor(p.y*125)..":"..p.entityID..":"..p.role
+			local shown=p
+   local targetInfo,sourceInfo=API.GetMapInfo(mapID),API.GetMapInfo(p.mapID)
+   if p.mapID~=mapID and ((targetInfo and targetInfo.parentMapID==p.mapID) or (sourceInfo and sourceInfo.parentMapID==mapID)) then
+    local cont,wx,wy=FP.Pos:WorldOf(p)
+    local id,x,y
+    if cont and wx and wy then id,x,y=API.GetMapPosFromWorld(cont,wx,wy,mapID) end
+    if id==mapID and U.ValidMapPoint(id,x,y) then shown=U.Copy(p);shown.mapID,shown.x,shown.y=mapID,x,y;shown.original=p end
+   end
+   if shown.mapID == mapID then
+    local p=shown
+    local key = math.floor(p.x*125)..":"..math.floor(p.y*125)..":"..p.entityID..":"..p.role
 				if not seen[key] then points[#points+1] = p; seen[key] = true end
 			end
 		end

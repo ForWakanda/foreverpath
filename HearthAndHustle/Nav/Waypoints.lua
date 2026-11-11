@@ -79,6 +79,7 @@ end
 
 function W:SetActive(id)
 	if self:Get(id) then
+		self:Get(id).suspended=nil
 		FP.cdb.activeId = id
 		FP:Fire("WAYPOINTS_CHANGED")
 		return true
@@ -86,10 +87,19 @@ function W:SetActive(id)
 	return false
 end
 
+function W:SuspendManual()
+ for _,wp in ipairs(self.list) do
+  if not wp.source or wp.source.type~="plan" then wp.suspended=true end
+ end
+ FP.cdb.activeId=nil
+ FP:Fire("WAYPOINTS_CHANGED")
+end
+
 function W:Next()
 	if #self.list == 0 then return nil end
 	local _, i = self:Get(FP.cdb.activeId or -1)
 	i = ((i or 0) % #self.list) + 1
+	self.list[i].suspended=nil
 	FP.cdb.activeId = self.list[i].id
 	FP:Fire("WAYPOINTS_CHANGED")
 	return self.list[i]
@@ -100,16 +110,16 @@ end
 function W:GetActive()
 	if #self.list == 0 then return nil end
 	local wp = self:Get(FP.cdb.activeId or -1)
-	if wp then return wp end
+	if wp and not wp.suspended then return wp end
 	if FP.settings.nearestFirst then
 		local best, bestD
 		for _, w in ipairs(self.list) do
 			local d = FP.Pos:DistanceTo(w)
-			if d and (not bestD or d < bestD) then best, bestD = w, d end
+			if not w.suspended and d and (not bestD or d < bestD) then best, bestD = w, d end
 		end
 		if best then return best end
 	end
-	return self.list[1]
+	for _,w in ipairs(self.list) do if not w.suspended then return w end end
 end
 
 function W:OnPosition(pos)

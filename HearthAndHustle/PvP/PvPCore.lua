@@ -128,8 +128,9 @@ end
 
 function PvP:Refresh()
 	local s = FP.settings.pvp
-	if not s.enabled or s.manual == "hide" then self:Hide(); return end
-	local rows = self:Collect()
+	local prepOnly=(not s.enabled or s.manual=="hide") and FP.cdb.prep.enabled and FP.cdb.prep.mode=="show"
+ if (not s.enabled or s.manual=="hide") and not prepOnly then self:Hide();return end
+ local rows=prepOnly and FP.ClassPrep:Lines() or self:Collect()
 	if #rows == 0 and s.manual ~= "show" then self:Hide(); return end
 	local f = self.frame
 	local n = 0

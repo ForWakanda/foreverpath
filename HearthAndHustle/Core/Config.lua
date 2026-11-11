@@ -21,7 +21,7 @@ FP.deepDefaults = deepDefaults
 FP.defaults = {
 	settings = {
 		debug = false,
-		record = true,
+		record = false,
 		recordQuestText = false,     -- long quest descriptions are opt-in
 		autoNext = true,             -- when a waypoint is done, arrow moves to the next planned step
 		nearestFirst = true,
@@ -35,7 +35,7 @@ FP.defaults = {
 		arrow = { shown = true, locked = false, scale = 1.0, flip = false, x = 0, y = 180, point = "CENTER" },
 		panel = { shown = true, locked = false, scale = 1.0, x = -20, y = -160, point = "TOPRIGHT", maxSteps = 10 },
 		hub = { point = "CENTER", x = 0, y = 0 },
-		probe = { enabled = true },                        -- beta diagnostic: records which values are secret and when
+		probe = { enabled = false },                        -- beta diagnostic: records which values are secret and when
 		pvp = { enabled = true, share = true, trackFlag = false, locked = false, scale = 1.0, x = 30, y = 120, point = "LEFT" },
 		rare = { enabled = true, share = true, sound = true, locked = false, scale = 1.0, x = 0, y = -200, point = "TOP" },   -- dungeon rare watch (/hh rare)
 		vendor = { enabled = true, tooltipPrice = true, rewardValues = true },   -- merchant strip, tooltip value, quest reward value (/hh vendor)
@@ -143,6 +143,14 @@ local function onAddonLoaded(event, name)
 	FP:Fire("DB_READY")
 end
 FP:RegisterEvent("ADDON_LOADED", onAddonLoaded)
+
+for _,event in ipairs({"ADDON_ACTION_BLOCKED","ADDON_ACTION_FORBIDDEN"}) do
+ local kind=event
+ FP:RegisterEvent(kind,function(_,addon,action)
+  addon,action=FP.safe(addon),FP.safe(action)
+  if addon==ADDON then FP:ReportError(kind,tostring(action or "unknown action")) end
+ end)
+end
 
 FP:RegisterEvent("PLAYER_LOGIN", function()
 	if not FP.dbReady then return end

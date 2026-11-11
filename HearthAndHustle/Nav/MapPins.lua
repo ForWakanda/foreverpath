@@ -20,6 +20,14 @@ end
 -- methods are merged in by Pins:HookWorldMap once the map system exists.
 HearthAndHustleMapPinMixin = {}
 
+local function checkPassthrough(self,...)
+ if API.InCombat() then return end
+ if MapCanvasPinMixin and MapCanvasPinMixin.CheckMouseButtonPassthrough then
+  return MapCanvasPinMixin.CheckMouseButtonPassthrough(self,...)
+ end
+end
+HearthAndHustleMapPinMixin.CheckMouseButtonPassthrough=checkPassthrough
+
 function HearthAndHustleMapPinMixin:ShouldMouseButtonBePassthrough(button)
 	return self.passive == true -- only manual pins own activation/removal
 end
@@ -74,7 +82,7 @@ function HearthAndHustleMapPinMixin:OnClick(button)
 end
 
 -- Small source markers sit below Blizzard quest markers, with their own pool.
-HearthAndHustleObjectivePinMixin = {}
+HearthAndHustleObjectivePinMixin = {CheckMouseButtonPassthrough=checkPassthrough}
 function HearthAndHustleObjectivePinMixin:OnLoad()
 	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_DEFAULT") end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1, 1.3) end
@@ -147,6 +155,7 @@ function Pins:OnInit()
 end
 
 function Pins:OnEnable()
+ FP:RegisterEvent("PLAYER_REGEN_ENABLED",function() self:OnWaypointsChanged() end)
 	FP:On("POSITION", function(pos) self:UpdateMinimap(pos); self:UpdateObjectiveMinimap(pos) end)
 	FP:On("QUEST_LOCATIONS_CHANGED", function()
 		if FP.settings.questMinimapPins and FP.settings.minimapPin and #FP.QuestObjectives.groups > 0 then

@@ -286,12 +286,12 @@ function C:GuidePickup(questID)
 		FP.Pos:Refresh(true)
 		for _,starter in ipairs(self:Starters(questID)) do
 			for _,point in ipairs(starter.points) do
-				local d=FP.Pos:DistanceTo(point)
+				local d=FP.Pos:DistanceTo(point) or math.huge
 				if (not point.entrance or not API.InInstance()) and d and (not distance or d<distance) then best,distance=point,d end
 			end
 		end
 	end
-	if not best then return false,"No pickup coordinates could be resolved on your current continent. Check the pickup details." end
+	if not best then return false,"No pickup coordinates could be resolved. Check the pickup details." end
 	FP.Waypoints:RemoveBySource("chain-pickup")
 	FP.Waypoints:Add(best.mapID,best.x,best.y,(best.entrance and "Entrance for pickup: " or "Pickup: ")..self:Title(questID),{
 		source={type="chain-pickup",questID=questID,entrance=best.entrance},radius=15,

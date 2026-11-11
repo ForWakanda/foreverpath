@@ -173,7 +173,8 @@ local function showExport(text)
 		exportFrame = CreateFrame("Frame", "HearthAndHustleExport", UIParent, "BackdropTemplate")
 		exportFrame:SetSize(420, 90)
 		exportFrame:SetPoint("CENTER")
-		exportFrame:SetFrameStrata("DIALOG")
+		exportFrame:SetFrameStrata("DIALOG");exportFrame:SetToplevel(true)
+		if UISpecialFrames then table.insert(UISpecialFrames,"HearthAndHustleExport") end
 		if exportFrame.SetBackdrop then
 			exportFrame:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
 			exportFrame:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
@@ -307,7 +308,11 @@ SlashCmdList["HEARTHANDHUSTLE"] = function(msg)
 	if not ok then FP:ReportError("command", err) end
 end
 
-SLASH_HEARTHANDHUSTLEWAY1 = "/way"
+local wayTaken=false
+for key,value in pairs(_G) do
+ if type(key)=="string" and key:match("^SLASH_") and type(value)=="string" and value:lower()=="/way" then wayTaken=true;break end
+end
+if not wayTaken then SLASH_HEARTHANDHUSTLEWAY1="/way" end
 SlashCmdList["HEARTHANDHUSTLEWAY"] = function(msg)
 	SlashCmdList["HEARTHANDHUSTLE"]("way " .. (msg or ""))
 end

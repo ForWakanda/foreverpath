@@ -186,7 +186,7 @@ function Prep:Command(rest)
 		return
 	end
 	self:Briefly()
-	if (sub == "show" or sub == "auto" or sub == "on") and (not FP.settings.pvp.enabled or FP.settings.pvp.manual == "hide") then
+	if (sub == "auto" or sub == "on") and (not FP.settings.pvp.enabled or FP.settings.pvp.manual == "hide") then
 		FP:Print("The HUD is hidden; Town tools still shows your supplies. Use Show checklist there to display the overlay.")
 	end
 	if sub == "" then
