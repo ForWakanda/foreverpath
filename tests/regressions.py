@@ -1204,7 +1204,9 @@ FP.Planner:Tick()
 for i=1,4 do
     M.RunTimers(3)
     FP.Pins.provider:RefreshAllData()
-    local pin=assert(WorldMapFrame._pins[1])
+    local pin
+    for _,candidate in ipairs(WorldMapFrame._pins) do if candidate.wp then pin=candidate;break end end
+    assert(pin)
     assert(pin.wp.source.type=="plan")
     assert(not pin:IsMouseMotionEnabled(), "planned pin blocks quest hover")
     assert(not pin:IsMouseClickEnabled(), "planned pin blocks quest click")
@@ -1249,7 +1251,9 @@ assert(pin:IsMouseMotionEnabled() and pin:IsMouseClickEnabled())
 ''',
     "map_pin_callbacks_do_not_replace_or_hide_native_tooltips": r'''
 addQuest(9001); FP.Planner:Tick(); FP.Pins.provider:RefreshAllData()
-local pin=assert(WorldMapFrame._pins[1])
+local pin
+for _,candidate in ipairs(WorldMapFrame._pins) do if candidate.wp then pin=candidate;break end end
+assert(pin)
 local owner="native quest"
 local hides=0
 GameTooltip.SetOwner=function(_,frame) owner=frame end
@@ -3139,7 +3143,7 @@ local function visiblePins(qid)
   if pin.point then
    n=n+1
    assert(pin.point.mapID==WorldMapFrame:GetMapID())
-   assert(pin.questBadge:IsShown() and pin:GetWidth()==18)
+   assert(pin.questBadge:IsShown() and pin:GetWidth()==(pin.point.attention and 22 or 18))
    if qid then for _,e in ipairs(pin.point.entries) do assert(e.group.questID==qid) end end
   end
  end
@@ -3385,6 +3389,9 @@ FP.db.errors={} -- expected blocked-event injections, no incidental Lua errors
 })
 
 CASES.update(REVIEW_CASES)
+
+from quest_guidance import cases as quest_guidance_cases
+CASES.update(quest_guidance_cases(OBJECTIVES, HUB))
 
 failed = 0
 for name, body in CASES.items():

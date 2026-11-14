@@ -2,7 +2,7 @@
 ## Title: Hearth & Hustle
 ## Notes: Quest GPS, route planner and Forever data recorder. Free, open source, no automation: it shows you where to go, you play.
 ## Author: Michael + Claude
-## Version: 0.21.1
+## Version: 0.22.0
 ## SavedVariables: HearthAndHustleDB
 ## SavedVariablesPerCharacter: HearthAndHustleCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Map_01
@@ -48,6 +48,7 @@ UI\Panel.lua
 UI\Dungeons.lua
 UI\QuestChains.lua
 UI\QuestRewards.lua
+UI\QuestLocations.lua
 UI\Gear.lua
 UI\Hub.lua
 UI\Commands.lua

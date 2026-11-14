@@ -20,6 +20,7 @@ local cases = {
 	{1322, "The Black Shield", "Acidic Venom Sac: 0/5", "item", 106, 1445},
 	{788, "Cutting Teeth", "Mottled Boar slain: 0/10", "monster", 64, 1411},
 	{815, "Break a Few Eggs", "Taillasher Egg: 0/3", "item", 19, 1411},
+	{2863, "Alpha Strike", "Woodpaw Alpha slain: 4/5", "monster", 12, 1444},
 }
 for _,case in ipairs(cases) do
 	M.quests = {}

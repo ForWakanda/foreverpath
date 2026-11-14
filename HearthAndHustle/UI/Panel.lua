@@ -89,8 +89,10 @@ function Panel:OnInit()
 		label:SetJustifyH("LEFT")
 		label:SetWordWrap(false)
 		row.dist, row.label = dist, label
-		row:SetScript("OnClick", function(btn)
+		row:RegisterForClicks("LeftButtonUp","RightButtonUp")
+		row:SetScript("OnClick", function(btn,mouseButton)
 			if btn.step then
+				if mouseButton=="RightButton" and btn.step.questID then FP.QuestLocationPanel:Open(btn.step.questID);return end
 				if btn.step.kind == "hearth" then
 					FP:Print("Use your Hearthstone: " .. tostring(btn.step.title))
 					return
@@ -111,7 +113,7 @@ function Panel:OnInit()
 			if U.Finite(btn.step.groupSize) and btn.step.groupSize > 1 then GameTooltip:AddLine("Client suggests a group of " .. btn.step.groupSize .. ".", 1, 0.82, 0, true) end
 			if btn.step.mapID then GameTooltip:AddLine(API.GetMapName(btn.step.mapID) .. "  " .. U.FormatCoords(btn.step.x, btn.step.y) .. "  " .. FP.GREY .. "(" .. tostring(btn.step.how) .. ")|r", 0.7, 0.7, 0.7)
 			else GameTooltip:AddLine("The client has supplied no coordinates for this objective. Check the quest directions in your log.", 0.9, 0.5, 0.5, true) end
-			GameTooltip:AddLine("Click to send the arrow here.", 0.5, 0.8, 1)
+			GameTooltip:AddLine("Click: guide. Right-click: quest targets and locations.", 0.5, 0.8, 1)
 			GameTooltip:Show()
 		end)
 		row:SetScript("OnLeave", function() GameTooltip:Hide() end)
