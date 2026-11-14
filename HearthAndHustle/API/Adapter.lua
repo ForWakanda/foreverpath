@@ -1860,6 +1860,17 @@ function API.Check()
 			state == nil and "missing" or (state == "1" and "on" or "off"),
 			outline == nil and "unreadable" or (outline and "on" or "off"))
 	end)
+	probe("enemyWatch", function()
+		local shown, always = API.EnemyNameplates()
+		local function word(v) return v == nil and "unreadable" or (v and "on" or "off") end
+		local missing = {}
+		for _, event in ipairs({ "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_SPELLCAST_SUCCEEDED", "PARTY_KILL", "PLAYER_DEAD", "PLAYER_FOCUS_CHANGED" }) do
+			if FP.unavailableEvents[event] then missing[#missing + 1] = event end
+		end
+		return API.EnemyWatchAvailable() and #missing == 0, string.format("unit API %s; enemy nameplates %s, outside combat %s; zone %s; death recap %s%s",
+			API.EnemyWatchAvailable() and "present" or "missing", word(shown), word(always), tostring(API.ZonePvPType()),
+			has(C_DeathRecap, "GetRecapEvents") and "present" or "missing", #missing > 0 and ("; events missing: " .. table.concat(missing, ", ")) or "")
+	end)
 	probe("classPrep", function()
 		local free = API.GetFreeBagSlots()
 		return free ~= nil, tostring(API.GetCharInfo().class) .. "; general bag slots " .. tostring(free or "unavailable")
@@ -2249,4 +2260,161 @@ function API.SetLootSparkle(on)
 	if not pcall(C_CVar.SetCVar, LOOT_SPARKLE_CVAR, want) then return false, "error" end
 	if API.GetLootSparkle() ~= want then return false, "refused" end
 	return true
+end
+
+-------------------------------------------------------------------------------
+-- Enemy watch (PvP/EnemyWatch.lua): hostile players the client already shows.
+-- Checked against Blizzard's Forever source 1.60.1.70938: on this client
+-- UnitName(unit) returns the first name and the surname, and Blizzard's own
+-- NameUtil joins them with CHARACTERNAME_SURNAME_SEPARATOR. NAME_PLATE_UNIT_ADDED
+-- / _REMOVED carry a unit token. UnitGUID and PARTY_KILL are secret while unit
+-- identity is restricted, UNIT_SPELLCAST_SUCCEEDED while casts are restricted;
+-- every value is checked before use. GetGuildInfo is an undocumented global the
+-- Blizzard UI still calls. Nothing here targets, and nothing reads auras.
+-------------------------------------------------------------------------------
+local function surnameSeparator()
+	local consts = type(Constants) == "table" and Constants.CharacterNameSeparatorConsts
+	local sep = type(consts) == "table" and consts.CHARACTERNAME_SURNAME_SEPARATOR
+	return (type(sep) == "string" and sep ~= "") and sep or " "
+end
+
+-- "First Last" for a player unit, or nil when the client withholds the name.
+function API.PlayerFullName(unit)
+	if not hasg("UnitName") then return nil end
+	local ok, name, surname = pcall(UnitName, unit)
+	if not ok then return nil end
+	name, surname = safe(name), safe(surname)
+	if type(name) ~= "string" or name == "" or name == _G.UNKNOWNOBJECT then return nil end
+	if type(surname) == "string" and surname ~= "" then return name .. surnameSeparator() .. surname end
+	return name
+end
+
+function API.EnemyWatchAvailable()
+	return hasg("UnitIsEnemy") and hasg("UnitIsPlayer") and hasg("UnitExists") and hasg("UnitName")
+end
+
+function API.IsNameplateUnit(unit)
+	return type(unit) == "string" and unit:find("^nameplate%d+$") ~= nil
+end
+
+-- A player of the other side behind a unit token:
+-- { name, class, race, level, guild, guid, attackable, targetsMe, dead }.
+-- nil when the unit is anything else; nil, "secret" when it is such a player
+-- whose name the client withholds.
+function API.EnemyPlayer(unit)
+	if type(unit) ~= "string" or not API.EnemyWatchAvailable() then return nil end
+	local ok, exists = pcall(UnitExists, unit)
+	if not ok or not safe(exists) then return nil end
+	if not safe(UnitIsPlayer(unit)) then return nil end
+	local good, enemy = pcall(UnitIsEnemy, "player", unit)
+	if not good or not safe(enemy) then return nil end
+	local name = API.PlayerFullName(unit)
+	if not name then return nil, "secret" end
+	local info = { name = name }
+	if hasg("UnitClass") then
+		local _, class = UnitClass(unit)
+		class = safe(class)
+		if type(class) == "string" then info.class = class end
+	end
+	if hasg("UnitRace") then
+		local race = safe((UnitRace(unit)))
+		if type(race) == "string" then info.race = race end
+	end
+	if hasg("UnitLevel") then
+		local level = safe(UnitLevel(unit))
+		if U.Finite(level) then info.level = level end
+	end
+	if hasg("GetGuildInfo") then
+		local okGuild, guild = pcall(GetGuildInfo, unit)
+		guild = okGuild and safe(guild) or nil
+		if type(guild) == "string" and guild ~= "" then info.guild = guild end
+	end
+	if hasg("UnitGUID") then
+		local guid = safe(UnitGUID(unit))
+		if type(guid) == "string" then info.guid = guid end
+	end
+	if hasg("UnitCanAttack") then
+		local can = safe(UnitCanAttack("player", unit))
+		if can ~= nil then info.attackable = can and true or false end
+	end
+	if hasg("UnitIsUnit") then
+		local okTarget, same = pcall(UnitIsUnit, unit .. "target", "player")
+		info.targetsMe = (okTarget and safe(same)) and true or false
+	end
+	if hasg("UnitIsDeadOrGhost") then info.dead = safe(UnitIsDeadOrGhost(unit)) and true or false end
+	return info
+end
+
+-- "sanctuary", "contested", "friendly", "hostile", "combat", "arena", or nil.
+function API.ZonePvPType()
+	local fn = (has(C_PvP, "GetZonePVPInfo") and C_PvP.GetZonePVPInfo) or (hasg("GetZonePVPInfo") and GetZonePVPInfo)
+	if not fn then return nil end
+	local ok, kind = pcall(fn)
+	kind = ok and safe(kind) or nil
+	return type(kind) == "string" and kind or nil
+end
+
+function API.IsOwnGUID(guid)
+	if type(guid) ~= "string" or not hasg("UnitGUID") then return false end
+	return guid == safe(UnitGUID("player")) or guid == safe(UnitGUID("pet"))
+end
+
+-- Who struck the killing blow in the client's death recap: { guid, name }, or
+-- nil and why. `seen` is the id of a recap already counted for an earlier death.
+-- Third value: this recap's id, when the client gives one.
+function API.DeathRecapKiller(seen)
+	if not has(C_DeathRecap, "GetRecapEvents") then return nil, "unavailable" end
+	local id
+	if has(C_DeathRecap, "GetRecapLink") then
+		local ok, link = pcall(C_DeathRecap.GetRecapLink)
+		link = ok and safe(link) or nil
+		if type(link) == "string" then id = tonumber(link:match("death:(%d+)")) end
+	end
+	if id and id == seen then return nil, "stale", id end
+	local ok, events = pcall(C_DeathRecap.GetRecapEvents)
+	if not ok or type(events) ~= "table" or issecrettable(events) then return nil, "unreadable", id end
+	local event = events[1]   -- the killing blow, as Blizzard's own recap reads it
+	if type(event) ~= "table" or issecrettable(event) then return nil, "empty", id end
+	if safe(event.hideCaster) then return nil, "hidden", id end
+	local guid, name = safe(event.sourceGUID), safe(event.sourceName)
+	return { guid = type(guid) == "string" and guid or nil, name = (type(name) == "string" and name ~= "") and name or nil }, nil, id
+end
+
+local function cvarOn(name)
+	local value = readCVar(name)
+	if value == nil then return nil end
+	return value == "1"
+end
+
+-- Enemy nameplates shown at all, and shown outside combat. nil = not readable.
+function API.EnemyNameplates()
+	return cvarOn("nameplateShowEnemies"), cvarOn("nameplateShowAll")
+end
+
+-- Switches both on. Only ever called from the player's click or typed command
+-- (/hh enemies nameplates), never on the addon's own initiative, never in combat.
+function API.EnableEnemyNameplates()
+	if not has(C_CVar, "SetCVar") then return false, "unavailable" end
+	if API.InCombat() then return false, "combat" end
+	for _, name in ipairs({ "nameplateShowEnemies", "nameplateShowAll" }) do
+		local current = readCVar(name)
+		if current ~= nil and current ~= "1" then pcall(C_CVar.SetCVar, name, "1") end
+	end
+	local shown, always = API.EnemyNameplates()
+	if shown ~= false and always ~= false then return true end
+	return false, "refused"
+end
+
+local ENEMY_SOUNDS = { new = { "PVP_ENTER_QUEUE", 8458 }, kos = { "RAID_WARNING", 8959 }, stealth = { "RAID_BOSS_EMOTE_WARNING", 12197 } }
+function API.PlayEnemyAlert(kind)
+	local def = ENEMY_SOUNDS[kind]
+	if not def or not hasg("PlaySound") then return false end
+	local kit = (type(SOUNDKIT) == "table" and SOUNDKIT[def[1]]) or def[2]
+	local ok, played = pcall(PlaySound, kit, "Master")
+	return (ok and played) and true or false
+end
+
+function API.ScreenNotice(text)
+	if type(RaidNotice_AddMessage) ~= "function" or not RaidWarningFrame or not ChatTypeInfo then return false end
+	return (pcall(RaidNotice_AddMessage, RaidWarningFrame, text, ChatTypeInfo["RAID_WARNING"] or { r = 1, g = 0.8, b = 0 }))
 end

@@ -96,6 +96,8 @@ end
 
 function R:Lines()
 	local lines = {}
+	-- In the open world the enemy watch lists the same players, by full name.
+	if FP.EnemyWatch and #FP.EnemyWatch:Rows() > 0 then return lines end
 	local now = U.Now()
 	local list = {}
 	for name, e in pairs(self.session) do

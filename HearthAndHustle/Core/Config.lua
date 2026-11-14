@@ -46,6 +46,7 @@ FP.defaults = {
 		reminders = { enabled = true, buffs = true, durability = 20, ammo = 200 },   -- out-of-combat reminders (/hh remind)
 		trainer = { enabled = true },   -- trainer notes (/hh trainer)
 		barGuard = { enabled = true, announce = true },   -- puts back action buttons the server dropped (/hh bars)
+		enemyWatch = { enabled = true, alerts = true, sound = true, stealth = true, share = true },   -- enemy players nearby in the open world (/hh enemies)
 		questSparkle = { enabled = true },   -- keeps the game's sparkle on quest items switched on (/hh sparkle)
 	},
 	data = {
@@ -56,6 +57,7 @@ FP.defaults = {
 	meta = { created = 0, builds = {}, counters = {} },
 	apicheck = {},
 	errors = {},
+	enemyWatch = { kos = {}, ignore = {}, players = {}, counts = {} },   -- Kill On Sight, ignore, everyone met with wins/losses
 	questSparkle = {},   -- whether the sparkle setting was switched on by this addon, and the last look
 }
 

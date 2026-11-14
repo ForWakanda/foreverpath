@@ -1,9 +1,10 @@
 -- HearthAndHustle / PvP / PvPCore.lua
 -- PvP HUD container + mode detection. Sub-modules (CastTimers, Battleground,
--- Roster, Coordination) register sections that return display rows; this file
--- only draws them. Everything shown here comes from your own actions, from
--- Blizzard's non-secret battleground data, or from what a party member chose
--- to broadcast about their own casts. Nothing reads enemy casts or auras.
+-- Roster, EnemyWatch, Coordination) register sections that return display rows;
+-- this file only draws them. Everything shown here comes from your own actions,
+-- from Blizzard's non-secret battleground data, from players the client shows
+-- you, or from what a party member chose to broadcast. Nothing reads enemy
+-- auras, and the only enemy cast looked at is the stealth notice in EnemyWatch.
 local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local PvP = FP:NewModule("PvP")
