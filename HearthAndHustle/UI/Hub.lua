@@ -10,6 +10,7 @@ local SECTIONS = {
 	{"gear", "Best in slot", "Find gear by slot, compare stats and plan your next upgrade."},
 	{"dungeons", "Dungeons", "Entrance guidance, quest preparation and pickup routes."},
 	{"navigation", "Navigation", "Choose your next quest or resume your route."},
+	{"locations", "Quest locations", "Find quest targets, inspect known locations and show them on the map."},
 	{"rewards", "Quest rewards", "Compare reward items, equipped gear, and vendor values."},
 	{"chains", "Quest chains", "Explore prerequisites, optional lead-ins, and what comes next."},
 	{"waypoints", "Waypoints", "Save places, enter coordinates, and manage your destinations."},
@@ -83,10 +84,10 @@ function H:Create()
 		local key = section[1]
 		self.nav[key] = button(f,section[2],16,-78-(i-1)*29,142,function() self:Select(key) end)
 	end
-	button(f,"Compact panel",16,-500,142,function() FP.Panel:Toggle() end)
-	button(f,"Quest map settings",16,-532,142,function() self:Select("display") end)
-	label(f,"Drag the title area to move.\nPreferences save automatically.",20,-569,134)
-	button(f,"Recenter window",16,-620,142,function()
+	button(f,"Compact panel",16,-532,142,function() FP.Panel:Toggle() end)
+	button(f,"Quest map settings",16,-564,142,function() self:Select("display") end)
+	label(f,"Drag the title area to move.\nPreferences save automatically.",20,-596,134)
+	button(f,"Recenter window",16,-635,142,function()
 		s.point,s.x,s.y="CENTER",0,0; f:ClearAllPoints(); f:SetPoint("CENTER"); self:FitWindow()
 	end)
 	label(f,"Results",180,-530,600,"GameFontNormal")
@@ -251,6 +252,8 @@ function H:BuildPage(key)
 		local list=self:List(p,"hubDungeons",function() return FP.Dungeons:List() end,function(row) return row.data.name.." · "..tostring(row.data.recommendedLevel or "Level unknown") end)
 		self:Actions(p,{{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end}})
 		self:Text(p,"Entrance routes and quest pickup / objective / turn-in guidance are available inside the checklist. Interior paths and boss order are not mapped.")
+	elseif key=="locations" then
+		FP.QuestLocationPanel:Build(self,p)
 	elseif key=="rewards" then
 		FP.RewardPanel:Build(self,p)
 	elseif key=="chains" then
@@ -272,6 +275,7 @@ function H:BuildPage(key)
 		})
 		self:Actions(p,{{"recoverGuide","Restore arrow and compact panel",function() command("guide") end}})
 		self:Section(p,"Quest locations")
+		self:Actions(p,{{"browseQuestLocations","Browse quest targets and locations",function()FP.QuestLocationPanel:Open() end}})
 		self:Text(p,"",function() return FP.QuestObjectives:Summary() end)
 		self:Text(p,"Quest colors and numbers match the map legend and this list. Sword: kill; bag: loot; gear: interact; spyglass: event; ! pickup; ? turn-in. Click a legend quest to focus it, right-click to hide it, or Show all to restore everything. A white + marks shared locations. Hover for progress; click a marker to guide. Some objectives still lack known sources.")
 		self:Section(p,"Quest destinations")

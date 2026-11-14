@@ -773,6 +773,26 @@ function API.GetSelectedQuest()
 	end
 end
 
+-- A client quest area is useful when exact source data is missing, but does
+-- not identify any particular creature, drop or individual objective.
+function API.GetQuestArea(questID)
+	local mapID,x,y=API.GetQuestNextWaypoint(questID)
+	if mapID then return mapID,x,y end
+	mapID=API.GetBestMap()
+	x,y=API.GetQuestNextWaypointForMap(questID,mapID)
+	if x then return mapID,x,y end
+	for _,poi in ipairs(API.GetQuestsOnMap(mapID)) do
+		if safe(poi.questID)==questID and safe(poi.isQuestStart)~=true
+			and U.ValidMapPoint(mapID,safe(poi.x),safe(poi.y)) then return mapID,safe(poi.x),safe(poi.y) end
+	end
+end
+
+function API.OpenQuestSourceMap(mapID)
+	if not U.Finite(mapID) or not hasg("OpenWorldMap") then return false end
+	local ok=pcall(OpenWorldMap,mapID)
+	return ok and WorldMapFrame and WorldMapFrame:IsShown() and WorldMapFrame:GetMapID()==mapID or false
+end
+
 -- Quest POIs on a map: { questID, x, y, isQuestStart, inProgress, numObjectives, ... }
 function API.GetQuestsOnMap(mapID)
 	if not mapID or not has(C_QuestLog, "GetQuestsOnMap") then return {} end

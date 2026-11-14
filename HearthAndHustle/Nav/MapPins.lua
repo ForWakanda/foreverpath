@@ -97,17 +97,18 @@ end
 -- A colored border and quest number identify the quest; the inner icon
 -- identifies the action. Shared locations use a white + badge, never one
 -- arbitrary quest's color. All art is shipped by the client.
-local objectiveIcons={Npc="INV_Sword_04",Item="INV_Misc_Bag_10",Object="INV_Misc_Gear_01",
+local objectiveIcons={Area="INV_Misc_Map_01",Npc="INV_Sword_04",Item="INV_Misc_Bag_10",Object="INV_Misc_Gear_01",
 	Event="INV_Misc_Spyglass_03",Credit="INV_Gauntlets_04",Hint="INV_Misc_Book_09"}
 function Pins:StyleObjectivePin(frame,pin,mini)
 	local Q=FP.QuestObjectives
 	local first=pin.entries[1] and pin.entries[1].group
+	for _,entry in ipairs(pin.entries) do if entry.group.questID==pin.attention then first=entry.group;break end end
 	if not first then return end
 	local ids,n={},0
 	for _,entry in ipairs(pin.entries) do if not ids[entry.group.questID] then ids[entry.group.questID]=true;n=n+1 end end
 	local r,g,b,slot=Q:Style(first.questID)
 	if n>1 then r,g,b=1,1,1 end
-	local size=mini and 11 or 18
+	local size=mini and 11 or (pin.attention and 22 or 18)
 	frame:SetSize(size,size)
 	frame.Icon=frame.Icon or frame:CreateTexture(nil,"BACKGROUND")
 	frame.Icon:SetDrawLayer("BACKGROUND",0)
@@ -138,6 +139,14 @@ function Pins:StyleObjectivePin(frame,pin,mini)
 	frame.questBadge:SetText(n>1 and "+" or tostring(slot))
 	frame.questBadge:SetShown(not mini)
 	frame.questID,frame.sharedQuests=first.questID,n
+	if not mini then
+		if not frame.sourceLabel then
+			frame.sourceLabel=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+			frame.sourceLabel:SetPoint("TOP",frame,"BOTTOM",0,-5)
+			frame.sourceLabel:SetShadowColor(0,0,0,1);frame.sourceLabel:SetShadowOffset(1,-1)
+		end
+		frame.sourceLabel:SetText(pin.label or "");frame.sourceLabel:SetShown(pin.label~=nil)
+	end
 end
 function HearthAndHustleObjectivePinMixin:OnAcquired(point)
 	self.point = point; self:EnableMouse(true)
@@ -169,11 +178,18 @@ function HearthAndHustleMapDataProviderMixin:RefreshPins(fromOnShow)
 	self:RemoveAllData()
 	local mapID = self:GetMap():GetMapID()
 	FP.pcall("worldmap-legend", Pins.UpdateLegend, Pins, self:GetMap(), mapID)
+	local report={at=API.Now(),mapID=mapID,questPins=0,quests={}}
 	if FP.settings.questWorldPins and FP.settings.worldMapPins then
 		for _,point in ipairs(FP.QuestObjectives:WorldPins(mapID)) do
 			self:GetMap():AcquirePin("HearthAndHustleObjectivePinTemplate",point)
+			report.questPins=report.questPins+1
+			local seen={}
+			for _,entry in ipairs(point.entries) do if not seen[entry.group.questID] then
+				seen[entry.group.questID]=true;report.quests[entry.group.questID]=(report.quests[entry.group.questID] or 0)+1
+			end end
 		end
 	end
+	if FP.db.questLocations then FP.db.questLocations.world=report end
 	if not FP.settings.worldMapPins then return end
 	local active = FP.Waypoints:GetActive()
 	for _, wp in ipairs(FP.Waypoints.list) do
@@ -313,11 +329,12 @@ end
 -- Map-space prefilter avoids world conversions for every distant spawn.
 function Pins:UpdateObjectiveMinimap(pos)
 	self.objectiveMini = self.objectiveMini or {}
-	local function hideAll() for _,frame in ipairs(self.objectiveMini) do frame:Hide() end end
+	local function hideAll() for _,frame in ipairs(self.objectiveMini) do frame:Hide() end;if self.questDirection then self.questDirection:Hide() end end
 	if not FP.settings.questMinimapPins or not FP.settings.minimapPin or not pos.valid then hideAll(); return end
 	local now = API.Time()
 	if self.lastObjectiveMini and now-self.lastObjectiveMini < .25 then return end
 	self.lastObjectiveMini = now
+	self:UpdateQuestDirection(pos)
 	local radius, nearby, seen = API.GetMinimapViewRadius(), {}, {}
 	local cellYards=radius and radius*18/((Minimap:GetWidth() or 140)/2)
 	local w,h = API.GetMapWorldSize(pos.mapID)
@@ -385,6 +402,58 @@ function Pins:UpdateObjectiveMinimap(pos)
 		frame:ClearAllPoints(); frame:SetPoint("CENTER",Minimap,"CENTER",x,y); frame:Show()
 	end
 	for i=#nearby+1,#self.objectiveMini do self.objectiveMini[i]:Hide() end
+	if FP.db.questLocations then
+		local cue=self.questDirection
+		FP.db.questLocations.minimap={at=API.Now(),mapID=pos.mapID,pins=#nearby,questID=FP.QuestObjectives:AttentionQuest(),
+			cue=cue and cue:IsShown() or false,distance=cue and cue:IsShown() and cue.distance or nil}
+	end
+end
+
+-- One labelled edge cue for the focused/tracked quest. Nearby source icons
+-- still represent only locations actually inside the minimap's range.
+function Pins:UpdateQuestDirection(pos)
+	local frame=self.questDirection
+	local function hide() if frame then frame:Hide() end end
+	if not pos.valid or not FP.settings.questMinimapPins or not FP.settings.minimapPin then hide();return end
+	local Q=FP.QuestObjectives
+	local questID=Q:AttentionQuest()
+	local radius=API.GetMinimapViewRadius()
+	if not questID or not radius or radius<=0 then hide();return end
+	local best,distance,bearing
+	for _,g in ipairs(Q:VisibleGroups()) do if g.questID==questID and g.kind~="Hint" then
+		for _,p in ipairs(g.points) do
+			local at=minimapPoint(self,p,pos.mapID)
+			if at then
+				local d,b=FP.Pos:VectorTo(p)
+				if d and (not distance or d<distance) then best,distance,bearing={group=g,point=p},d,b end
+			end
+		end
+	end end
+	if not best or distance<=radius then hide();return end
+	if not frame then
+		frame=CreateFrame("Button",nil,Minimap);self.questDirection=frame
+		frame:SetSize(18,18);frame:SetFrameStrata("MEDIUM");frame:SetFrameLevel((Minimap:GetFrameLevel() or 1)+6)
+		frame.Icon=frame:CreateTexture(nil,"ARTWORK");frame.Icon:SetAllPoints();frame.Icon:SetTexture("Interface\\AddOns\\HearthAndHustle\\Media\\arrow")
+		frame.label=frame:CreateFontString(nil,"OVERLAY","GameFontNormalSmall");frame.label:SetPoint("TOP",frame,"BOTTOM",0,-1)
+		frame.label:SetShadowColor(0,0,0,1);frame.label:SetShadowOffset(1,-1)
+		frame:SetScript("OnEnter",function(f)
+			GameTooltip:SetOwner(f,"ANCHOR_LEFT");GameTooltip:AddLine("Quest search area: "..f.entry.point.name,1,.82,0)
+			GameTooltip:AddLine(f.entry.group.title.." — "..f.entry.group.text,1,1,1,true)
+			GameTooltip:AddLine(U.FormatDistance(f.distance).." away, outside minimap view. Known location; search nearby.",.7,.8,1,true)
+			GameTooltip:AddLine("Click: guide. Right-click: all quest locations.",.7,.8,1);GameTooltip:Show()
+		end)
+		frame:SetScript("OnLeave",function()GameTooltip:Hide() end)
+		frame:RegisterForClicks("LeftButtonUp","RightButtonUp")
+		frame:SetScript("OnClick",function(f,button)
+			if button=="RightButton" then FP.QuestLocationPanel:Open(f.entry.group.questID)
+			else Q:Guide({entries={f.entry}}) end
+		end)
+	end
+	frame.entry,frame.distance=best,distance
+	local rel=bearing-(API.IsMinimapRotating() and pos.facing or 0)
+	local x,y=U.RadialOffset(rel,math.max(0,(Minimap:GetWidth() or 140)/2-10))
+	frame.Icon:SetRotation(rel);frame.label:SetText(U.FormatDistance(distance))
+	frame:ClearAllPoints();frame:SetPoint("CENTER",Minimap,"CENTER",x,y);frame:Show()
 end
 
 -- Compact, paged map key. Focusing/hiding changes markers only, never the route.
@@ -403,7 +472,8 @@ function Pins:UpdateLegend(map,mapID)
 		f.collapse=button("-",226,-5,20,function() f.collapsed=not f.collapsed; self:UpdateLegend(map,map:GetMapID()) end)
 		f.all=button("Show all",8,-30,70,function() Q:ShowAll() end)
 		f.settings=button("Settings",82,-30,70,function() FP.Hub:Open("display") end)
-		f.pageLabel=f:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");f.pageLabel:SetPoint("TOPLEFT",160,-36)
+		f.locations=button("Locations",156,-30,80,function() FP.QuestLocationPanel:Open() end)
+		f.pageLabel=f:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall");f.pageLabel:SetPoint("TOPLEFT",205,-238)
 		f.rows={}
 		for i=1,6 do
 			local b=CreateFrame("Button",nil,f);b:SetSize(236,27);b:SetPoint("TOPLEFT",9,-55-(i-1)*28)
@@ -432,7 +502,7 @@ function Pins:UpdateLegend(map,mapID)
 	if f.mapID~=mapID then f.page=1;f.mapID=mapID end
 	local pages=math.max(1,math.ceil(#rows/6));f.page=math.min(f.page or 1,pages)
 	f.collapse:SetText(f.collapsed and "+" or "-");f:SetHeight(f.collapsed and 28 or 260)
-	for _,control in ipairs({f.all,f.settings,f.prev,f.next,f.hint,f.pageLabel}) do control:SetShown(not f.collapsed) end
+	for _,control in ipairs({f.all,f.settings,f.locations,f.prev,f.next,f.hint,f.pageLabel}) do control:SetShown(not f.collapsed) end
 	f.pageLabel:SetText(f.page.." / "..pages)
 	for i,b in ipairs(f.rows) do
 		local row=rows[(f.page-1)*6+i]

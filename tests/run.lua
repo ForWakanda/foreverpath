@@ -68,7 +68,9 @@ print("arrow: " .. FP.Arrow.dist._text .. " rot " .. string.format("%.2f", FP.Ar
 -- World map provider
 check(FP.Pins.provider ~= nil, "world map provider registered")
 FP.Pins.provider:RefreshAllData()
-check(#WorldMapFrame._pins == 1, "one world map pin, got " .. #WorldMapFrame._pins)
+local waypointPins=0
+for _,pin in ipairs(WorldMapFrame._pins) do if pin._pinTemplate=="HearthAndHustleMapPinTemplate" then waypointPins=waypointPins+1 end end
+check(waypointPins == 1, "one waypoint pin, got " .. waypointPins)
 WorldMapFrame._pins[1]:OnMouseEnter(); WorldMapFrame._pins[1]:OnMouseLeave()
 
 -- Commands
