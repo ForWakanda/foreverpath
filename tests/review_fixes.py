@@ -1,4 +1,5 @@
-"""Transition regressions from the 2026-11-14 review. No client writes."""
+"""Regression cases for the 2026-11-14 deep review repairs. Mock-only."""
+
 REVIEW_FIX_CASES = {}
 
 REVIEW_FIX_CASES['navigation_arrival_clears_after_continent_change'] = (r"""""", r"""
@@ -69,11 +70,25 @@ M.RunTimers(30); M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED"); M.
 assert(#M.placed==3 and not B.strictPending)
 """)
 
-REVIEW_FIX_CASES['enemy_uncertain_death_is_not_a_confirmed_loss'] = ('', '\nlocal W=FP.EnemyWatch\nM.Enemy("nameplate1","Bystander","One")\nM.SetUnit("nameplate1target",{is="player"});W:Scan()\nM.recap={id=123,events={}}\nM.FireEvent("PLAYER_DEAD");M.RunTimers(2)\nlocal p=FP.db.enemyWatch.players["Bystander One"]\nprint("losses="..tostring(p.losses).."; attribution="..tostring(FP.db.enemyWatch.lastDeath.how))\nassert((p.losses or 0)==0,"a player merely targeting me was counted as my killer")\n')
+REVIEW_FIX_CASES['enemy_uncertain_death_is_not_a_confirmed_loss'] = (r"""""", r"""
+local W=FP.EnemyWatch
+M.Enemy("nameplate1","Bystander","One")
+M.SetUnit("nameplate1target",{is="player"});W:Scan()
+M.recap={id=123,events={}}
+M.FireEvent("PLAYER_DEAD");M.RunTimers(2)
+local p=FP.db.enemyWatch.players["Bystander One"]
+print("losses="..tostring(p.losses).."; attribution="..tostring(FP.db.enemyWatch.lastDeath.how))
+assert((p.losses or 0)==0,"a player merely targeting me was counted as my killer")
+""")
 
-REVIEW_FIX_CASES['control_confirmed_recap_counts_a_loss'] = ('', '\nlocal u=M.Enemy("nameplate1","Known","Enemy")\nM.recap={id=123,events={{sourceGUID=u.guid,sourceName="Known Enemy"}}}\nM.FireEvent("PLAYER_DEAD");M.RunTimers(2)\nassert(FP.db.enemyWatch.players["Known Enemy"].losses==1)\n')
+REVIEW_FIX_CASES['control_confirmed_recap_counts_a_loss'] = (r"""""", r"""
+local u=M.Enemy("nameplate1","Known","Enemy")
+M.recap={id=123,events={{sourceGUID=u.guid,sourceName="Known Enemy"}}}
+M.FireEvent("PLAYER_DEAD");M.RunTimers(2)
+assert(FP.db.enemyWatch.players["Known Enemy"].losses==1)
+""")
 
-REVIEW_FIX_CASES["enemy_death_callback_cancels_on_disable_or_world_change"] = ("", r'''
+REVIEW_FIX_CASES['enemy_death_callback_cancels_on_disable_or_world_change'] = (r"""""", r"""
 local W=FP.EnemyWatch; local u=M.Enemy("nameplate1","Known","Enemy")
 M.recap={id=123,events={{sourceGUID=u.guid,sourceName="Known Enemy"}}}
 M.FireEvent("PLAYER_DEAD"); W:Command("off"); W:Command("on"); M.RunTimers(2)
@@ -82,8 +97,9 @@ M.FireEvent("PLAYER_DEAD"); M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
 assert(not FP.db.enemyWatch.players["Known Enemy"].losses)
 M.FireEvent("PLAYER_DEAD"); M.instance={type="party"}; M.RunTimers(2)
 assert(not FP.db.enemyWatch.players["Known Enemy"].losses)
-''')
-REVIEW_FIX_CASES["enemy_recap_explicit_npc_guid_cannot_match_player_name"] = ("", r'''
+""")
+
+REVIEW_FIX_CASES['enemy_recap_explicit_npc_guid_cannot_match_player_name'] = (r"""""", r"""
 M.Enemy("nameplate1","Known","Enemy")
 M.recap={id=124,events={{sourceGUID="Creature-0-1",sourceName="Known Enemy"}}}
 M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
@@ -92,13 +108,23 @@ FP.EnemyWatch.nearby={}
 M.recap={id=125,events={{sourceName="Known Enemy"}}}
 M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
 assert(not FP.db.enemyWatch.players["Known Enemy"].losses,"historical account name is not a session sighting")
-''')
+""")
 
-REVIEW_FIX_CASES['enemy_ambiguous_first_name_must_not_mark_both'] = ('', '\nlocal W=FP.EnemyWatch\nM.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two")\nW:KosCommand("+Alex")\nprint("Alex One KOS="..tostring(W:KOS("Alex One")~=nil).."; Alex Two KOS="..tostring(W:KOS("Alex Two")~=nil))\nassert(not W:KOS("Alex One") and not W:KOS("Alex Two"),"ambiguous first name silently marks both players")\n')
+REVIEW_FIX_CASES['enemy_ambiguous_first_name_must_not_mark_both'] = (r"""""", r"""
+local W=FP.EnemyWatch
+M.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two")
+W:KosCommand("+Alex")
+print("Alex One KOS="..tostring(W:KOS("Alex One")~=nil).."; Alex Two KOS="..tostring(W:KOS("Alex Two")~=nil))
+assert(not W:KOS("Alex One") and not W:KOS("Alex Two"),"ambiguous first name silently marks both players")
+""")
 
-REVIEW_FIX_CASES['control_full_name_kos_is_specific'] = ('', '\nM.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two")\nFP.EnemyWatch:KosCommand("+Alex One")\nassert(FP.EnemyWatch:KOS("Alex One") and not FP.EnemyWatch:KOS("Alex Two"))\n')
+REVIEW_FIX_CASES['control_full_name_kos_is_specific'] = (r"""""", r"""
+M.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two")
+FP.EnemyWatch:KosCommand("+Alex One")
+assert(FP.EnemyWatch:KOS("Alex One") and not FP.EnemyWatch:KOS("Alex Two"))
+""")
 
-REVIEW_FIX_CASES["enemy_ignore_rejects_ambiguity_and_removes_exact_rows"] = ("", r'''
+REVIEW_FIX_CASES['enemy_ignore_rejects_ambiguity_and_removes_exact_rows'] = (r"""""", r"""
 local W=FP.EnemyWatch
 M.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two");M.Enemy("target","Other","Target")
 W:IgnoreCommand("+Alex")
@@ -109,19 +135,35 @@ assert(W:Ignored("Alex One") and not W.nearby["Alex One"] and not W:Ignored("Ale
 for _,r in ipairs(W:Rows()) do assert(not r.text:find("Alex One",1,true)) end
 FP.db.enemyWatch.ignore["Alex Two"]=true
 for _,r in ipairs(W:Rows()) do assert(not r.text:find("Alex Two",1,true)) end
-''')
-REVIEW_FIX_CASES["enemy_legacy_single_name_entries_never_wildcard"] = ("", r'''
+""")
+
+REVIEW_FIX_CASES['enemy_legacy_single_name_entries_never_wildcard'] = (r"""""", r"""
 local W=FP.EnemyWatch
 FP.db.enemyWatch.kos.Alex={};FP.db.enemyWatch.ignore.Sam=1
 M.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Sam","Two")
 assert(not W:KOS("Alex One") and not W:Ignored("Sam Two") and W.nearby["Sam Two"])
 W:KosCommand("-Alex");W:IgnoreCommand("-Sam")
 assert(not FP.db.enemyWatch.kos.Alex and not FP.db.enemyWatch.ignore.Sam)
-''')
+""")
 
-REVIEW_FIX_CASES['vendor_best_value_waits_for_all_choices'] = ('', '\nlocal buttons={}\nfor i=1,3 do local b=CreateFrame("Button");b:SetID(i);b.type="choice";b:Show();buttons[i]=b end\nQuestInfoFrame={rewardsFrame={RewardButtons=buttons}}\nFP.API.GetQuestRewardValues=function() return {{type="choice",index=1,value=100},{type="choice",index=2,value=200},{type="choice",index=3,value=nil}} end\nFP.Vendor:DecorateRewards()\nlocal text=buttons[2].fpValue:GetText()\nprint("highlight="..text)\nassert(text:sub(1,#FP.GOLD)~=FP.GOLD,"best vendor choice highlighted before third choice is priced")\n')
+REVIEW_FIX_CASES['vendor_best_value_waits_for_all_choices'] = (r"""""", r"""
+local buttons={}
+for i=1,3 do local b=CreateFrame("Button");b:SetID(i);b.type="choice";b:Show();buttons[i]=b end
+QuestInfoFrame={rewardsFrame={RewardButtons=buttons}}
+local values={countsKnown=true,{type="choice",kind="choice",index=1,value=100},{type="choice",kind="choice",index=2,value=200},{type="choice",kind="choice",index=3,value=nil}}
+FP.API.GetQuestRewardValues=function() return values end
+FP.Vendor:DecorateRewards()
+local text=buttons[2].fpValue:GetText()
+print("highlight="..text)
+assert(text:sub(1,#FP.GOLD)~=FP.GOLD,"best vendor choice highlighted before third choice is priced")
 
-REVIEW_FIX_CASES["reward_adapter_preserves_unknown_counts_and_quantities"] = ("", r'''
+values[3].value=300
+FP.Vendor:DecorateRewards()
+assert(buttons[3].fpValue:GetText():sub(1,#FP.GOLD)==FP.GOLD,"loaded highest value must become gold")
+assert(buttons[2].fpValue:GetText():sub(1,#FP.GOLD)~=FP.GOLD,"lower value must remain plain")
+""")
+
+REVIEW_FIX_CASES['reward_adapter_preserves_unknown_counts_and_quantities'] = (r"""""", r"""
 GetNumQuestChoices=function() return 3 end;GetNumQuestRewards=function() return 0 end
 GetQuestItemLink=function(_,i) return "item:"..i end
 local qty=2
@@ -135,11 +177,19 @@ qty=M.Secret();rows=FP.API.GetQuestRewardValues();assert(rows[1].value==nil)
 qty=1;GetNumQuestRewards=function() return nil end
 rows=FP.API.GetQuestRewardValues();assert(rows.countsKnown==false and #rows==3)
 GetNumQuestChoices=function() return 1e99 end;rows=FP.API.GetQuestRewardValues();assert(#rows==0 and not rows.countsKnown)
-''')
+""")
 
-REVIEW_FIX_CASES['vendor_disable_removes_existing_reward_labels'] = ('', '\nlocal b=CreateFrame("Button");b:SetID(1);b.type="choice";b:Show()\nQuestInfoFrame={rewardsFrame={RewardButtons={b}}}\nFP.API.GetQuestRewardValues=function() return {{type="choice",index=1,value=100}} end\nFP.Vendor:DecorateRewards();assert(b.fpValue:IsShown())\nFP.Vendor:Command("rewards off");M.FireEvent("QUEST_DETAIL");M.RunTimers(1)\nprint("enabled="..tostring(FP.settings.vendor.rewardValues).."; old label visible="..tostring(b.fpValue:IsShown()))\nassert(not b.fpValue:IsShown(),"disabled labels survive and can label a different reused reward button")\n')
+REVIEW_FIX_CASES['vendor_disable_removes_existing_reward_labels'] = (r"""""", r"""
+local b=CreateFrame("Button");b:SetID(1);b.type="choice";b:Show()
+QuestInfoFrame={rewardsFrame={RewardButtons={b}}}
+FP.API.GetQuestRewardValues=function() return {{type="choice",index=1,value=100}} end
+FP.Vendor:DecorateRewards();assert(b.fpValue:IsShown())
+FP.Vendor:Command("rewards off");M.FireEvent("QUEST_DETAIL");M.RunTimers(1)
+print("enabled="..tostring(FP.settings.vendor.rewardValues).."; old label visible="..tostring(b.fpValue:IsShown()))
+assert(not b.fpValue:IsShown(),"disabled labels survive and can label a different reused reward button")
+""")
 
-REVIEW_FIX_CASES["vendor_queued_refresh_cannot_redraw_disabled_or_stale_prices"] = ("", r'''
+REVIEW_FIX_CASES['vendor_queued_refresh_cannot_redraw_disabled_or_stale_prices'] = (r"""""", r"""
 local b=CreateFrame("Button");b:SetID(1);b.type="choice";b:Show()
 QuestInfoFrame={rewardsFrame={RewardButtons={b}}}
 local price=100
@@ -149,16 +199,30 @@ V:RequestRewards();V:Command("rewards off");price=999
 M.RunTimers(1);assert(not b.fpValue:IsShown() and b.fpValue:GetText()=="")
 V:Command("rewards on");M.RunTimers(1);assert(b.fpValue:IsShown() and b.fpValue:GetText():find("9s 99c",1,true))
 M.FireEvent("QUEST_FINISHED");assert(not b.fpValue:IsShown())
-''')
+""")
 
-REVIEW_FIX_CASES['control_sparkle_combat_off_creates_reload_fixture'] = ('M.cvars.outlineModeShowLootEffectWhenDisabled="0"', '\nlocal Q=FP.QuestSparkle\nassert(FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")\nM.combatLockdown=true;Q:Command("off")\nassert(Q.pendingOff and FP.settings.questSparkle.enabled==false and FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")\n-- Without reloading, combat end successfully restores the original setting.\nM.combatLockdown=false;M.FireEvent("PLAYER_REGEN_ENABLED")\nassert(M.cvars.outlineModeShowLootEffectWhenDisabled=="0")\n')
+REVIEW_FIX_CASES['control_sparkle_combat_off_creates_reload_fixture'] = (r"""M.cvars.outlineModeShowLootEffectWhenDisabled="0"
+""", r"""
+local Q=FP.QuestSparkle
+assert(FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")
+M.combatLockdown=true;Q:Command("off")
+assert(Q.pendingOff and FP.settings.questSparkle.enabled==false and FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")
+-- Without reloading, combat end successfully restores the original setting.
+M.combatLockdown=false;M.FireEvent("PLAYER_REGEN_ENABLED")
+assert(M.cvars.outlineModeShowLootEffectWhenDisabled=="0")
+""")
 
-REVIEW_FIX_CASES['sparkle_disabled_pending_restore_survives_reload'] = ('HearthAndHustleDB={settings={questSparkle={enabled=false}},questSparkle={ours=true}}\nM.cvars.outlineModeShowLootEffectWhenDisabled="1"', '\nprint("enabled="..tostring(FP.settings.questSparkle.enabled).."; ours="..tostring(FP.db.questSparkle.ours).."; game="..M.cvars.outlineModeShowLootEffectWhenDisabled)\nassert(M.cvars.outlineModeShowLootEffectWhenDisabled=="0","disabled pending restore was lost across reload")\n')
+REVIEW_FIX_CASES['sparkle_disabled_pending_restore_survives_reload'] = (r"""HearthAndHustleDB={settings={questSparkle={enabled=false}},questSparkle={ours=true}}
+M.cvars.outlineModeShowLootEffectWhenDisabled="1"
+""", r"""
+print("enabled="..tostring(FP.settings.questSparkle.enabled).."; ours="..tostring(FP.db.questSparkle.ours).."; game="..M.cvars.outlineModeShowLootEffectWhenDisabled)
+assert(M.cvars.outlineModeShowLootEffectWhenDisabled=="0","disabled pending restore was lost across reload")
+""")
 
-REVIEW_FIX_CASES["sparkle_reload_off_waits_for_combat_and_unavailable_read"] = (r'''
+REVIEW_FIX_CASES['sparkle_reload_off_waits_for_combat_and_unavailable_read'] = (r"""
 HearthAndHustleDB={settings={questSparkle={enabled=false}},questSparkle={ours=true}}
 M.cvars.outlineModeShowLootEffectWhenDisabled="1";M.combatLockdown=true
-''', r'''
+""", r"""
 local Q=FP.QuestSparkle
 assert(Q.pendingOff and FP.db.questSparkle.ours and #M.cvarWrites==0)
 local read=FP.API.GetLootSparkle; FP.API.GetLootSparkle=function() return nil end
@@ -166,17 +230,24 @@ M.combatLockdown=false;M.FireEvent("PLAYER_REGEN_ENABLED")
 assert(Q.pendingOff and FP.db.questSparkle.ours and #M.cvarWrites==0,"unavailable is not already off")
 FP.API.GetLootSparkle=read;M.FireEvent("CVAR_UPDATE");M.RunTimers(2)
 assert(not Q.pendingOff and not FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="0")
-''')
-REVIEW_FIX_CASES["sparkle_disabled_unowned_setting_is_preserved"] = (r'''
+""")
+
+REVIEW_FIX_CASES['sparkle_disabled_unowned_setting_is_preserved'] = (r"""
 HearthAndHustleDB={settings={questSparkle={enabled=false}}}
 M.cvars.outlineModeShowLootEffectWhenDisabled="1"
-''', r'''
+""", r"""
 assert(#M.cvarWrites==0 and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")
-''')
+""")
 
-REVIEW_FIX_CASES['xp_rate_expires_when_all_gains_are_outside_the_hour'] = ('', '\nlocal B=FP.InfoBar\nlocal now=FP.Util.Now()\nB.samples={{t=now-7200,total=0},{t=now-7000,total=10000}};B.gained=10000\nlocal rate=B:Rate();print("XP in last hour=0; displayed rate="..tostring(rate))\nassert(rate==nil or rate==0,"last-hour XP rate includes gains from two hours ago")\n')
+REVIEW_FIX_CASES['xp_rate_expires_when_all_gains_are_outside_the_hour'] = (r"""""", r"""
+local B=FP.InfoBar
+local now=FP.Util.Now()
+B.samples={{t=now-7200,total=0},{t=now-7000,total=10000}};B.gained=10000
+local rate=B:Rate();print("XP in last hour=0; displayed rate="..tostring(rate))
+assert(rate==nil or rate==0,"last-hour XP rate includes gains from two hours ago")
+""")
 
-REVIEW_FIX_CASES["xp_rate_keeps_boundary_gain_and_recovers_after_idle"] = ("", r'''
+REVIEW_FIX_CASES['xp_rate_keeps_boundary_gain_and_recovers_after_idle'] = (r"""""", r"""
 local B=FP.InfoBar;local now=FP.Util.Now()
 B.samples={{t=now-7200,total=0},{t=now-4000,total=9000},{t=now-3599,total=10000},{t=now-300,total=11000}};B.gained=11000
 local rate,gained,elapsed=B:Rate();assert(rate==2000 and gained==2000 and elapsed==3600)
@@ -185,4 +256,4 @@ now=FP.Util.Now();B.gained=11100;B.samples[#B.samples+1]={t=now,total=11100}
 assert(B:Rate()==100,"new gain after idle is counted against the rolling hour")
 B.samples={{t=now-600,total=0},{t=now,total=1200}};B.gained=1200
 assert(B:Rate()==7200,"short sessions retain the measured elapsed time")
-''')
+""")
