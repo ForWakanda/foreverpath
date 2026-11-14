@@ -3500,6 +3500,7 @@ local ok,why=FP.API.PlaceOnBar(60,{k="spell",id=1}); assert(ok==false and why=="
 """),
     "bars_hand_edits_are_remembered_not_reverted": ("", r"""
 assert(FP.settings.barGuard.enabled and remembered(1)==0 and #FP.cdb.barGuard.log==0, "fresh profile: on, nothing to restore")
+assert(said("Action bar guard is watching your bars")==1 and FP.cdb.barGuard.introduced)
 for slot=49,60 do put(slot,"spell",1000+slot) end
 M.RunTimers(2); assert(remembered(1)==12)
 for slot=49,53 do put(slot); M.RunTimers(1) end      -- five buttons dragged off, one a second
@@ -3518,8 +3519,10 @@ M.RunTimers(2.1); assert(count(49,72)==24 and #M.placed==24 and said("Put 24 act
 M.RunTimers(20)
 put(49); M.RunTimers(3); assert(count(49,72)==23 and #M.placed==24, "a later hand edit is still an edit")
 M.FireEvent("PLAYER_LEVEL_UP",48); M.WipeActions(50,51)   -- two slots: below the burst size
-M.RunTimers(2); assert(count(49,72)==23 and #M.placed==26, "buttons lost at a level-up are put back")
-assert(#FP.cdb.barGuard.log==2 and remembered(1)==23)
+M.RunTimers(3.1); assert(count(49,72)==23 and #M.placed==26, "buttons lost at a level-up are put back")
+M.RunTimers(20); M.FireEvent("PLAYER_LEVEL_UP",49); M.actions[52]=nil   -- lost with no slot event at all
+M.RunTimers(3.1); assert(M.actions[52] and #M.placed==27 and said("Action bar guard is watching")==1)
+assert(#FP.cdb.barGuard.log==3 and remembered(1)==23)
 """),
     "bars_combat_defers_restore_and_keeps_memory": (BAR_MEMORY + "M.combatLockdown=true\n", r"""
 assert(#M.placed==0 and M.blockedPlaces==0 and count(49,72)==0, "nothing is attempted in combat")

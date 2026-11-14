@@ -133,6 +133,11 @@ function B:Reconcile()
 	if not saved then
 		self:Save(group, live)
 		self:Done()
+		local bars = store()
+		if not bars.introduced and s().announce then
+			bars.introduced = true
+			FP:Print("Action bar guard is watching your bars. Buttons that vanish at login, on a spec change or on a level-up are put back." .. FP.GREY .. " /hh bars|r")
+		end
 		return
 	end
 
@@ -230,7 +235,10 @@ function B:OnEnable()
 	E("ACTIONBAR_SLOT_CHANGED", function(_, slot) B:OnSlotChanged(slot) end)
 	E("ACTIVE_TALENT_GROUP_CHANGED", function() B:OnSpecChanged() end)
 	E("PLAYER_LEVEL_UP", function()
+		-- Reported wipe moment. Look even if the client sends no slot event.
+		if not FP.dbReady or not s().enabled then return end
 		B.strictUntil = API.Time() + STRICT_WINDOW
+		B:Schedule(SPEC_DELAY)
 	end)
 	E("PLAYER_REGEN_ENABLED", function()
 		if B.deferred then B:Schedule(1) end
