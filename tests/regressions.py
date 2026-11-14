@@ -3786,10 +3786,11 @@ M.Enemy("target","Ann","Bee"); cmd("kos"); assert(DB.kos["Ann Bee"], "no name me
 cmd("kos +Ann Bee"); assert(said("already on Kill On Sight")==1 and DB.kos["Ann Bee"])
 cmd("kos Ann Bee: corpse camper"); assert(DB.kos["Ann Bee"].reason=="corpse camper", "a reason updates, it does not remove")
 cmd("kos -Ann Bee"); assert(not DB.kos["Ann Bee"]); cmd("kos -Ann Bee"); assert(said("is not on Kill On Sight")==1)
-cmd("kos zug"); assert(DB.kos["Zug"]); M.Enemy("nameplate5","Zug","Zug")
-assert(said("KILL ON SIGHT: Zug Zug")==1, "a first name typed before the meeting matches")
+cmd("kos zug"); assert(not DB.kos["Zug"]); M.Enemy("nameplate5","Zug","Zug")
+assert(said("KILL ON SIGHT: Zug Zug")==0, "unknown first names do not become wildcards")
+cmd("kos zug"); assert(DB.kos["Zug Zug"], "a unique known first name resolves exactly")
 M.Gone("target"); M.Enemy("target","Boar",nil,{player=false}); cmd("kos"); assert(said("Target an enemy player")==1)
-cmd("kos list"); assert(said("KOS Zug")==1)
+cmd("kos list"); assert(said("KOS Zug Zug")==1)
 """),
     "enemy_ignore_list_is_silent": ("", r"""
 cmd("ignore Fetto Vandike"); M.Enemy("nameplate1","Fetto","Vandike"); M.Tick(3)

@@ -93,3 +93,28 @@ M.recap={id=125,events={{sourceName="Known Enemy"}}}
 M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
 assert(not FP.db.enemyWatch.players["Known Enemy"].losses,"historical account name is not a session sighting")
 ''')
+
+REVIEW_FIX_CASES['enemy_ambiguous_first_name_must_not_mark_both'] = ('', '\nlocal W=FP.EnemyWatch\nM.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two")\nW:KosCommand("+Alex")\nprint("Alex One KOS="..tostring(W:KOS("Alex One")~=nil).."; Alex Two KOS="..tostring(W:KOS("Alex Two")~=nil))\nassert(not W:KOS("Alex One") and not W:KOS("Alex Two"),"ambiguous first name silently marks both players")\n')
+
+REVIEW_FIX_CASES['control_full_name_kos_is_specific'] = ('', '\nM.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two")\nFP.EnemyWatch:KosCommand("+Alex One")\nassert(FP.EnemyWatch:KOS("Alex One") and not FP.EnemyWatch:KOS("Alex Two"))\n')
+
+REVIEW_FIX_CASES["enemy_ignore_rejects_ambiguity_and_removes_exact_rows"] = ("", r'''
+local W=FP.EnemyWatch
+M.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Alex","Two");M.Enemy("target","Other","Target")
+W:IgnoreCommand("+Alex")
+assert(not W:Ignored("Alex One") and not W:Ignored("Alex Two") and not W:Ignored("Other Target"))
+W:KosCommand("+Alex");assert(not W:KOS("Other Target"),"invalid input cannot fall back to current target")
+W:IgnoreCommand("+Alex One")
+assert(W:Ignored("Alex One") and not W.nearby["Alex One"] and not W:Ignored("Alex Two"))
+for _,r in ipairs(W:Rows()) do assert(not r.text:find("Alex One",1,true)) end
+FP.db.enemyWatch.ignore["Alex Two"]=true
+for _,r in ipairs(W:Rows()) do assert(not r.text:find("Alex Two",1,true)) end
+''')
+REVIEW_FIX_CASES["enemy_legacy_single_name_entries_never_wildcard"] = ("", r'''
+local W=FP.EnemyWatch
+FP.db.enemyWatch.kos.Alex={};FP.db.enemyWatch.ignore.Sam=1
+M.Enemy("nameplate1","Alex","One");M.Enemy("nameplate2","Sam","Two")
+assert(not W:KOS("Alex One") and not W:Ignored("Sam Two") and W.nearby["Sam Two"])
+W:KosCommand("-Alex");W:IgnoreCommand("-Sam")
+assert(not FP.db.enemyWatch.kos.Alex and not FP.db.enemyWatch.ignore.Sam)
+''')

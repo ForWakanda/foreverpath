@@ -61,17 +61,17 @@ end
 -------------------------------------------------------------------------------
 function W:KOS(name)
 	local kos = store().kos
-	return kos[name] or kos[firstName(name)]
+	return kos[name]
 end
 
 function W:Ignored(name)
 	local ignore = store().ignore
-	return (ignore[name] or ignore[firstName(name)]) and true or false
+	return ignore[name] and true or false
 end
 
 -- A typed name becomes the spelling already known for that player; a first name
--- alone matches when exactly one known player has it. Otherwise each part is
--- capitalised the way the game writes names.
+-- alone matches when exactly one known player has it. Ambiguity is shown to
+-- the player; unknown first names never become wildcards for future sightings.
 function W:TypedName(text)
 	text = clean((tostring(text or ""):gsub("%s+", " ")), 48)
 	if not text then return nil end
@@ -89,6 +89,11 @@ function W:TypedName(text)
 		end
 	end
 	if count == 1 then return match end
+	if single then
+		local names = self:SortedNames(found)
+		return nil, count > 1 and ("Name is ambiguous. Use a full name: " .. table.concat(names, ", ") .. ".")
+			or "Use the player's full name, or target them and leave the name blank."
+	end
 	return (lower:gsub("(%S)(%S*)", function(a, b) return a:upper() .. b end))
 end
 
@@ -396,7 +401,7 @@ function W:Rows()
 	if not self:Active() then return {} end
 	local now, list = API.Time(), {}
 	for _, e in pairs(self.nearby) do
-		if now - e.last <= NEARBY then list[#list + 1] = e end
+		if now - e.last <= NEARBY and not self:Ignored(e.name) then list[#list + 1] = e end
 	end
 	for _, e in ipairs(list) do e.kosNow = self:KOS(e.name) and 1 or 0 end
 	table.sort(list, function(a, b)
@@ -415,7 +420,9 @@ function W:Rows()
 		bits[#bits + 1] = ago < 3 and "now" or (math.floor(ago) .. "s")
 		local note = e.note and e.noteAt and now - e.noteAt < 30 and e.note or nil
 		if not note and FP.Roster then
-			local r = FP.Roster.session[firstName(e.name)]
+			-- First-name roster notes are unsafe when multiple full identities match.
+			local short = firstName(e.name)
+			local r = self:Known(short) == e.name and FP.Roster.session[short] or nil
 			if r and r.note and r.noteT and U.Now() - r.noteT < 60 then note = r.note end
 		end
 		if e.dead and note ~= "killed" then note = "dead" end
@@ -543,8 +550,9 @@ function W:KosCommand(rest)
 	local typed, reason = rest:match("^([^:]*):%s*(.*)$")
 	typed = U.Trim(typed or rest)
 	reason = clean(reason, 80)
-	local name = typed ~= "" and self:TypedName(typed) or targetName()
-	if not name then FP:Print("Target an enemy player, or type /hh kos <name>: <reason>."); return end
+	local name, why
+	if typed ~= "" then name, why = self:TypedName(typed) else name = targetName() end
+	if not name then FP:Print(why or "Target an enemy player, or type /hh kos <name>: <reason>."); return end
 	if mode == "-" and not st.kos[name] then
 		FP:Print(name .. " is not on Kill On Sight.")
 	elseif mode == "+" and st.kos[name] and not reason then
@@ -572,8 +580,9 @@ function W:IgnoreCommand(rest)
 	end
 	local mode = rest:match("^([%+%-])")
 	if mode then rest = U.Trim(rest:sub(2)) end
-	local name = rest ~= "" and self:TypedName(rest) or targetName()
-	if not name then FP:Print("Target an enemy player, or type /hh ignore <name>."); return end
+	local name, why
+	if rest ~= "" then name, why = self:TypedName(rest) else name = targetName() end
+	if not name then FP:Print(why or "Target an enemy player, or type /hh ignore <name>."); return end
 	if mode == "-" and not st.ignore[name] then
 		FP:Print(name .. " is not ignored.")
 	elseif mode == "+" and st.ignore[name] then
