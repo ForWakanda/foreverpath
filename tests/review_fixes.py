@@ -150,3 +150,26 @@ M.RunTimers(1);assert(not b.fpValue:IsShown() and b.fpValue:GetText()=="")
 V:Command("rewards on");M.RunTimers(1);assert(b.fpValue:IsShown() and b.fpValue:GetText():find("9s 99c",1,true))
 M.FireEvent("QUEST_FINISHED");assert(not b.fpValue:IsShown())
 ''')
+
+REVIEW_FIX_CASES['control_sparkle_combat_off_creates_reload_fixture'] = ('M.cvars.outlineModeShowLootEffectWhenDisabled="0"', '\nlocal Q=FP.QuestSparkle\nassert(FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")\nM.combatLockdown=true;Q:Command("off")\nassert(Q.pendingOff and FP.settings.questSparkle.enabled==false and FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")\n-- Without reloading, combat end successfully restores the original setting.\nM.combatLockdown=false;M.FireEvent("PLAYER_REGEN_ENABLED")\nassert(M.cvars.outlineModeShowLootEffectWhenDisabled=="0")\n')
+
+REVIEW_FIX_CASES['sparkle_disabled_pending_restore_survives_reload'] = ('HearthAndHustleDB={settings={questSparkle={enabled=false}},questSparkle={ours=true}}\nM.cvars.outlineModeShowLootEffectWhenDisabled="1"', '\nprint("enabled="..tostring(FP.settings.questSparkle.enabled).."; ours="..tostring(FP.db.questSparkle.ours).."; game="..M.cvars.outlineModeShowLootEffectWhenDisabled)\nassert(M.cvars.outlineModeShowLootEffectWhenDisabled=="0","disabled pending restore was lost across reload")\n')
+
+REVIEW_FIX_CASES["sparkle_reload_off_waits_for_combat_and_unavailable_read"] = (r'''
+HearthAndHustleDB={settings={questSparkle={enabled=false}},questSparkle={ours=true}}
+M.cvars.outlineModeShowLootEffectWhenDisabled="1";M.combatLockdown=true
+''', r'''
+local Q=FP.QuestSparkle
+assert(Q.pendingOff and FP.db.questSparkle.ours and #M.cvarWrites==0)
+local read=FP.API.GetLootSparkle; FP.API.GetLootSparkle=function() return nil end
+M.combatLockdown=false;M.FireEvent("PLAYER_REGEN_ENABLED")
+assert(Q.pendingOff and FP.db.questSparkle.ours and #M.cvarWrites==0,"unavailable is not already off")
+FP.API.GetLootSparkle=read;M.FireEvent("CVAR_UPDATE");M.RunTimers(2)
+assert(not Q.pendingOff and not FP.db.questSparkle.ours and M.cvars.outlineModeShowLootEffectWhenDisabled=="0")
+''')
+REVIEW_FIX_CASES["sparkle_disabled_unowned_setting_is_preserved"] = (r'''
+HearthAndHustleDB={settings={questSparkle={enabled=false}}}
+M.cvars.outlineModeShowLootEffectWhenDisabled="1"
+''', r'''
+assert(#M.cvarWrites==0 and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")
+''')

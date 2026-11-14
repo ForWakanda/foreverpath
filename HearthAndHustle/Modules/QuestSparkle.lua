@@ -29,11 +29,13 @@ end
 
 -- One live timer; requests that arrive while it runs are covered by it.
 function Q:Schedule(delay, reason)
-	if self.timer or self.stopped or not FP.dbReady or not s().enabled then return end
+	if self.timer or not FP.dbReady then return end
+	if s().enabled then if self.stopped then return end
+	elseif not self.pendingOff then return end
 	self.timer = true
 	FP.After(delay, function()
 		Q.timer = nil
-		Q:Apply(reason)
+		if s().enabled then Q:Apply(reason) elseif Q.pendingOff then Q:Restore() end
 	end)
 end
 
@@ -82,9 +84,10 @@ end
 -- One that was already on before the addon came is the player's and stays.
 function Q:Restore()
 	local st = store()
-	if not st.ours then return "kept" end
+	if not st.ours then self.pendingOff = nil; return "kept" end
 	local now = API.GetLootSparkle()
-	if now ~= "1" then st.ours = nil; return "off" end
+	if now == nil then self.pendingOff = true; return "unavailable" end
+	if now ~= "1" then st.ours = nil; self.pendingOff = nil; return "off" end
 	if API.InCombat() then self.pendingOff = true; return "combat" end
 	self.writing = true
 	local ok, why = API.SetLootSparkle(false)
@@ -92,10 +95,12 @@ function Q:Restore()
 	if self.blocked then ok, why = false, "blocked" end
 	if ok then
 		st.ours = nil
+		self.pendingOff = nil
 		self:Note("off", now)
 		return "restored"
 	end
 	if why == "combat" then self.pendingOff = true; return "combat" end
+	self.pendingOff = nil
 	self:Note("off", now, why)
 	return "failed"
 end
@@ -108,7 +113,6 @@ function Q:OnEnable()
 	E("PLAYER_ENTERING_WORLD", function() Q:Schedule(SETTLE, "world") end)
 	E("PLAYER_REGEN_ENABLED", function()
 		if Q.pendingOff then
-			Q.pendingOff = nil
 			if FP.dbReady and not s().enabled then Q:Restore() end
 		end
 		if Q.deferred then
@@ -121,7 +125,8 @@ function Q:OnEnable()
 			if Q.writing and FP.safe(addon) == ADDON then Q.blocked = true end
 		end)
 	end
-	self:Apply("login")
+	-- Disabled + owned is the persisted form of an unfinished off request.
+	if not s().enabled and store().ours then self:Restore() else self:Apply("login") end
 	self:Schedule(LOGIN_DELAY, "login")
 end
 
@@ -138,7 +143,7 @@ function Q:Lines()
 	out[1] = "Quest item sparkles " .. (s().enabled and "on" or "off") .. paused
 	out[2] = "  game setting: " .. (state == "1" and "on" or "off")
 		.. ((state == "1" and not s().enabled) and " (the game keeps it until you switch it off there)" or "")
-		.. ((self.deferred or self.pendingOff) and " (changes after combat)" or "")
+		.. ((self.deferred or self.pendingOff) and " (change pending: combat or setting unavailable)" or "")
 	if s().enabled and API.OutlineModeOn() then out[#out + 1] = "  " .. OUTLINE_HINT end
 	return out
 end
@@ -163,6 +168,8 @@ function Q:Command(rest)
 			FP:Print("quest item sparkles off. The game keeps drawing them until you fully exit and restart it; /reload is not enough.")
 		elseif result == "combat" then
 			FP:Print("quest item sparkles off; the game setting is switched back after combat")
+		elseif result == "unavailable" then
+			FP:Print("quest item sparkles off; restoring the previous setting when the client makes it available")
 		elseif result == "failed" then
 			FP:Print("quest item sparkles off, but the client did not accept the change" .. FP.GREY .. " /hh sparkle|r")
 		elseif API.GetLootSparkle() == "1" then
