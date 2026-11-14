@@ -77,4 +77,54 @@ assert(not W:Ignored("Alex One") and not W:Ignored("Alex Two"))
 FP.API.InInstance=function() return true end
 for _,r in ipairs(W:Browse()) do assert(not r.nearby) end
 ''',
+        'navigation_explanation_manual_resume_preserves_saved_destination': hub + r'''
+addQuest(9101)
+cmd("way 55 55 Saved place");local wp=active();wp.persistent=true
+local state=snapshot(FP.cdb)..snapshot(FP.settings)
+local title,detail=FP.Planner:Guidance()
+assert(title=="Manual destination" and detail:find("saved destinations are kept",1,true))
+assert(state==snapshot(FP.cdb)..snapshot(FP.settings))
+FP.Panel:Toggle(true);FP.Panel.resumeButton:GetScript("OnClick")()
+assert(FP.Waypoints:Get(wp.id) and wp.suspended)
+assert(active().source.type=="plan")
+assert(FP.Panel.guidanceText:GetText()==FP.Planner:Guidance())
+FP.Panel.guidanceButton:GetScript("OnClick")();assert(H.selected=="navigation")
+''',
+        'navigation_explanation_selected_pinned_auto_and_source': r'''
+local P=FP.Planner
+addQuest(9101);P:Build()
+FP.API.GetSelectedQuest=function() return 9101 end
+P:Go(P:NextStep(),true)
+local title,detail=P:Guidance()
+assert(title=="Selected quest" and detail:find("tracked quest",1,true))
+assert(detail:find("client waypoint",1,true))
+P:Go(P:NextStep());assert(P:Guidance()=="Chosen quest step")
+P.pinned=nil;FP.API.GetSelectedQuest=function() return nil end
+local title,detail=P:Guidance()
+assert(title=="Automatic quest choice" and detail:find("straight-line",1,true))
+assert(not detail:find("nearest",1,true))
+P.current={questID=999,title="Stale",how="WRONG"}
+assert(not select(2,P:Guidance()):find("WRONG",1,true))
+''',
+        'navigation_explanation_paused_waiting_missing_and_battleground': r'''
+local P=FP.Planner
+FP.Waypoints:Clear();assert(P:Guidance()=="Guidance paused")
+P.paused=nil;FP.settings.autoNext=true
+local title,detail=P:Guidance()
+assert(title=="No active destination" and detail:find("Quest locations",1,true))
+P.waiting={title="Quest",kind="objective"}
+assert(P:Guidance()=="Working in the quest area")
+P.paused=true;assert(P:Guidance()=="Guidance paused")
+FP.API.InBattleground=function() return true end
+assert(P:Guidance()=="Quest guidance suspended")
+''',
+        'navigation_explanation_location_hold_and_turnin': r'''
+local P=FP.Planner
+FP.Waypoints:Clear();P.paused=nil;FP.settings.autoNext=true
+FP.Waypoints:Add(1413,.6,.6,"Quest source",{source={type="quest-location",questID=9101}})
+assert(P:Guidance()=="Selected quest location")
+FP.Waypoints:Clear();P.paused=nil
+addQuest(9101,true);P:Build();P:Go(P:NextStep(),true)
+assert(select(2,P:Guidance()):find("Ready to turn in",1,true))
+''',
     }

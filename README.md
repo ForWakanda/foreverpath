@@ -4,7 +4,16 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## Enemy browser
+## Guidance explanations (v0.23.0)
+
+The compact quest panel shows why guidance chose its destination: your selected
+quest, an explicitly chosen step, an automatic quest choice, a manual destination,
+or waiting in the objective area. Click that explanation for details in
+**Navigation**. **Resume guide** returns to automatic selection while keeping saved
+manual destinations available under Waypoints. Automatic choices use straight-line
+distance and quest priorities; they do not account for terrain or optimize XP/hour.
+
+## Enemy browser (v0.23.0)
 
 Open **Tools → PvP** (or **Overview → Enemy watch**) to search nearby and recent
 players by full name. Select a row, then **Add selected to KOS**, **Ignore selected**,

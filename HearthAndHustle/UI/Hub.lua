@@ -260,12 +260,13 @@ function H:BuildPage(key)
 	elseif key=="chains" then
 		FP.ChainPanel:Build(self,p)
 	elseif key=="navigation" then
-		self:Text(p,"",function()
+		self.controls.guidanceDetails=self:Text(p,"",function()
 			local wp=FP.Waypoints:GetActive()
-			return (wp and ("Current: "..U.Truncate(wp.title,85)) or "No active destination.") .. ((wp and (not wp.source or wp.source.type~="plan")) and "\nManual destination holds guidance. Resume guidance to return to quests; saved destinations are kept." or "") .. "\nAutomatic selection: " .. (FP.settings.autoNext and not FP.Planner.paused and "on" or "paused/off")
-		end)
+			local reason,detail=FP.Planner:Guidance()
+			return (wp and ("Current: "..U.Truncate(wp.title,85).."\n") or "")..reason.."\n"..detail
+		end,100)
 		self:Actions(p,{
-			{"resume","Resume guidance",function() FP.Waypoints:SuspendManual();command("auto on"); FP.settings.arrow.shown=true; FP.Arrow:Refresh() end},
+			{"resume","Resume guidance",function() FP.Planner:ResumeGuidance() end},
 			{"pause","Pause selection",function() FP.Planner.paused=true;FP:Fire("WAYPOINTS_CHANGED");FP:Print("Guidance paused for this session.") end},
 			{"nextStep","Next suggestion",function() command("next") end},
 		})

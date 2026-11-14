@@ -6,7 +6,7 @@ local Panel = FP:NewModule("Panel")
 
 local ROW_HEIGHT = 16
 local WIDTH = 360
-local CONTENT_TOP = 72
+local CONTENT_TOP = 96
 
 local function savePosition(frame)
 	local s = FP.settings.panel
@@ -70,6 +70,22 @@ function Panel:OnInit()
 	status:SetPoint("TOPLEFT", 10, -53)
 	status:SetWidth(WIDTH - 20)
 	status:SetJustifyH("LEFT")
+	local reason = CreateFrame("Button",nil,f)
+	self.guidanceButton = reason
+	reason:SetSize(218,20); reason:SetPoint("TOPLEFT",10,-73)
+	self.guidanceText=reason:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+	self.guidanceText:SetAllPoints(); self.guidanceText:SetJustifyH("LEFT")
+	reason:SetScript("OnClick",function() FP.Hub:Open("navigation") end)
+	reason:SetScript("OnEnter",function(btn)
+		local why,detail=FP.Planner:Guidance()
+		GameTooltip:SetOwner(btn,"ANCHOR_LEFT"); GameTooltip:AddLine(why,1,.82,0)
+		GameTooltip:AddLine(detail,1,1,1,true); GameTooltip:AddLine("Click for navigation tools.",.6,.8,1); GameTooltip:Show()
+	end)
+	reason:SetScript("OnLeave",function(btn) if GameTooltip:IsOwned(btn) then GameTooltip:Hide() end end)
+	self.resumeButton=CreateFrame("Button",nil,f,"UIPanelButtonTemplate")
+	self.resumeButton:SetSize(110,20); self.resumeButton:SetPoint("TOPRIGHT",-10,-73)
+	self.resumeButton:SetText("Resume guide")
+	self.resumeButton:SetScript("OnClick",function() FP.Planner:ResumeGuidance() end)
 
 	self.rows = {}
 	for i = 1, FP.settings.panel.maxSteps or 10 do
@@ -181,6 +197,8 @@ function Panel:Refresh(positionOnly)
 	local xp, max, level, rested = API.GetXP()
 	local pct = (xp and max and max > 0) and math.floor(xp / max * 100 + 0.5) or 0
 	local active = FP.Waypoints:GetActive()
+	local guidance = FP.Planner:Guidance()
+	self.guidanceText:SetText(guidance)
 	self.status:SetText(string.format("Lvl %s · %d%% xp%s · %s", tostring(level or "?"), pct, rested and (" · rested " .. math.floor(rested / (max or 1) * 100 + 0.5) .. "%") or "",
 		active and (FP.GOLD .. "→ " .. U.Truncate(active.title, 30) .. "|r") or FP.GREY .. (FP.Planner.waiting and ("Working here: " .. U.Truncate(FP.Planner.waiting.title or "quest", 24)) or ((FP.Planner.paused or not FP.settings.autoNext) and "Guidance paused — Open tools to resume" or (#steps > 0 and "No route coordinates available" or "No available quest locations reported"))) .. "|r"))
 	local n = 0
