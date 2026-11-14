@@ -136,3 +136,17 @@ qty=1;GetNumQuestRewards=function() return nil end
 rows=FP.API.GetQuestRewardValues();assert(rows.countsKnown==false and #rows==3)
 GetNumQuestChoices=function() return 1e99 end;rows=FP.API.GetQuestRewardValues();assert(#rows==0 and not rows.countsKnown)
 ''')
+
+REVIEW_FIX_CASES['vendor_disable_removes_existing_reward_labels'] = ('', '\nlocal b=CreateFrame("Button");b:SetID(1);b.type="choice";b:Show()\nQuestInfoFrame={rewardsFrame={RewardButtons={b}}}\nFP.API.GetQuestRewardValues=function() return {{type="choice",index=1,value=100}} end\nFP.Vendor:DecorateRewards();assert(b.fpValue:IsShown())\nFP.Vendor:Command("rewards off");M.FireEvent("QUEST_DETAIL");M.RunTimers(1)\nprint("enabled="..tostring(FP.settings.vendor.rewardValues).."; old label visible="..tostring(b.fpValue:IsShown()))\nassert(not b.fpValue:IsShown(),"disabled labels survive and can label a different reused reward button")\n')
+
+REVIEW_FIX_CASES["vendor_queued_refresh_cannot_redraw_disabled_or_stale_prices"] = ("", r'''
+local b=CreateFrame("Button");b:SetID(1);b.type="choice";b:Show()
+QuestInfoFrame={rewardsFrame={RewardButtons={b}}}
+local price=100
+FP.API.GetQuestRewardValues=function() return {countsKnown=true,{kind="choice",type="choice",index=1,value=price}} end
+local V=FP.Vendor; V:DecorateRewards();assert(b.fpValue:IsShown())
+V:RequestRewards();V:Command("rewards off");price=999
+M.RunTimers(1);assert(not b.fpValue:IsShown() and b.fpValue:GetText()=="")
+V:Command("rewards on");M.RunTimers(1);assert(b.fpValue:IsShown() and b.fpValue:GetText():find("9s 99c",1,true))
+M.FireEvent("QUEST_FINISHED");assert(not b.fpValue:IsShown())
+''')
