@@ -397,6 +397,77 @@ end
 -------------------------------------------------------------------------------
 -- HUD rows, status, commands
 -------------------------------------------------------------------------------
+-- Browsing never scans units or changes the watch lists. Session sightings use
+-- the monotonic clock; saved encounters use the wall clock, including on relog.
+function W:Browse(query)
+	local st, now, wall = store(), API.Time(), API.Now()
+	local names, out, watching = {}, {}, self:Active()
+	query = U.Trim(query or ""):lower()
+	for name in pairs(st.players) do names[name] = true end
+	for name in pairs(self.nearby) do names[name] = true end
+	for name in pairs(names) do
+		if not self:Ignored(name) and (query == "" or name:lower():find(query, 1, true)) then
+			local e, p = self.nearby[name], st.players[name]
+			local age = e and math.max(0, now - e.last) or p and p.last and math.max(0, wall - p.last)
+			local recent = e and age <= NEARBY and watching
+			local source = e and (e.by and ("Party report by " .. e.by) or ("Seen locally via " .. tostring(e.how or "client"))) or "Recorded encounter"
+			out[#out + 1] = { key = name, name = name, entry = e, record = p, age = age,
+				nearby = recent and not e.dead or false, source = source, kos = self:KOS(name) ~= nil }
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.nearby ~= b.nearby then return a.nearby end
+		if a.kos ~= b.kos then return a.kos end
+		if a.age ~= b.age then return (a.age or math.huge) < (b.age or math.huge) end
+		return a.name < b.name
+	end)
+	return out
+end
+
+function W:BrowseLabel(row)
+	return (row.kos and "[KOS] " or "") .. row.name .. " — " .. row.source .. " · "
+		.. (row.age and (U.FormatTime(row.age) .. " ago") or "time unknown")
+end
+
+-- GUI selections are exact identities, never text to reparse as a command.
+function W:BrowseAction(name, action, reason)
+	local found
+	for _,row in ipairs(self:Browse()) do if row.name == name then found=true; break end end
+	if not found then return false end
+	local st=store()
+	if action == "kos" then
+		st.kos[name]={t=API.Now(),reason=clean(reason,80)}
+		st.ignore[name]=nil
+		FP:Print(name .. " added to Kill On Sight.")
+	elseif action == "remove-kos" then
+		st.kos[name]=nil
+		FP:Print(name .. " removed from Kill On Sight.")
+	elseif action == "ignore" then
+		st.ignore[name]=API.Now(); st.kos[name]=nil; self.nearby[name]=nil
+		FP:Print(name .. " ignored: no alerts and not listed.")
+	else return false end
+	FP:Fire("PVP_CHANGED")
+	return true
+end
+
+function W:BrowseDetails(row)
+	if not row then return "Select a full name above to view its record or change your watch lists." end
+	local p, e, st = row.record, row.entry, store()
+	local lines = { self:Describe(e or {name=row.name, class=p and p.class, level=p and p.level, guild=p and p.guild}),
+		row.source .. " · " .. (row.age and (U.FormatTime(row.age) .. " ago") or "time unknown")
+		.. (e and e.dead and " · last seen dead" or row.nearby and " · recent sighting" or " · not a current nearby claim"),
+		p and ("Recorded wins " .. (p.wins or 0) .. " / losses " .. (p.losses or 0) .. (p.zone and (" · " .. p.zone) or ""))
+			or "No local encounter record; a party report does not establish a local sighting." }
+	local death = st.lastDeath
+	if death and death.possible == row.name then
+		lines[#lines + 1] = "Last death: possible attacker only; no confirmed loss added."
+	elseif death and death.name == row.name then
+		lines[#lines + 1] = death.confirmed and "Last death: killing blow confirmed by death recap."
+			or "Last death: older attribution; confirmation not recorded."
+	end
+	return table.concat(lines, "\n")
+end
+
 function W:Rows()
 	if not self:Active() then return {} end
 	local now, list = API.Time(), {}

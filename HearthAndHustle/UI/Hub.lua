@@ -189,9 +189,9 @@ function H:NewPage(key)
 	return p
 end
 
-function H:Text(p,text,live)
+function H:Text(p,text,live,height)
 	local l=label(p.body,text,0,-p.y,W)
-	local h=live and 64 or math.max(28,l:GetStringHeight()+10)
+	local h=height or (live and 64 or math.max(28,l:GetStringHeight()+10))
 	p.y=p.y+h
 	if live then table.insert(p.refreshers,function() l:SetText(live()) end) end
 	return l
@@ -238,6 +238,7 @@ function H:BuildOverview(p)
   b:SetScript("OnClick",function() self:Select(key) end);self.controls["home_"..key]=b
  end
  p.y=p.y+324
+ self:Actions(p,{{"homeEnemies","Enemy watch: nearby and recent players",function() self:Select("pvp") end}})
  self:Text(p,"Quest maps work automatically. Use Display for source markers, event hints and overlay settings; the remaining tools are always in the sidebar.")
 end
 
@@ -438,6 +439,7 @@ function H:BuildPage(key)
 		local lvl=self:Field(p,"trainerLevel","Look ahead to level",(API.PlayerLevel() or 1)+1)
 		self:Actions(p,{{"trainerLookup","Show recorded training",function() local n=self:Number(lvl,"level",1,100,true); if n then command("trainer "..n) end end}})
 	elseif key=="pvp" then
+		if FP.EnemyWatch then self:BuildEnemyBrowser(p) end
 		self:Text(p,"Timers are estimates from your own actions. Battleground flag numbers identify map slots, not enemy teams.")
 		self:HudControls(p,"pvp",FP.settings.pvp)
 		self:Section(p,"Battleground navigation")
@@ -693,6 +695,34 @@ function H:Refresh()
 	self.footer:SetText("v" .. FP.version .. "   ·   " .. (wp and ("Heading to " .. U.Truncate(wp.title,75)) or "No active destination"))
 end
 
+function H:BuildEnemyBrowser(p)
+	local EW=FP.EnemyWatch
+	self:Section(p,"Enemy watch: nearby and recent players")
+	self:Text(p,"Select a full name to inspect sightings and manage your lists. Party reports show when they were received; older encounters do not mean the player is still nearby.")
+	local search=self:Field(p,"enemySearch","Find a player","")
+	local list=self:List(p,"enemyPlayers",function() return EW:Browse(search:GetText()) end,function(row) return EW:BrowseLabel(row) end,{count=4})
+	search:SetScript("OnTextChanged",function() list.page=1; self:Refresh() end)
+	local reason
+	-- Resolve the selection again on the click: the list can change while open.
+	local function selected()
+		for _,row in ipairs(EW:Browse(search:GetText())) do if row.name==list.selected then return row end end
+	end
+	self:Actions(p,{
+		{"enemyAddKOS","Add selected to KOS",function()
+			local row=selected(); if row then EW:BrowseAction(row.name,"kos",reason:GetText()) end
+		end,enabled=function() local row=self:Selected(list); return row and not row.kos end},
+		{"enemyIgnore","Ignore selected",function()
+			local row=selected(); if row then EW:BrowseAction(row.name,"ignore"); list.selected=nil end
+		end,enabled=function() return self:Selected(list)~=nil end},
+		{"enemyRemoveKOS","Remove selected KOS",function()
+			local row=selected(); if row then EW:BrowseAction(row.name,"remove-kos") end
+		end,enabled=function() local row=self:Selected(list); return row and row.kos end},
+	})
+	self.controls.enemyDetails=self:Text(p,"",function() return EW:BrowseDetails(self:Selected(list)) end,110)
+	reason=self:Field(p,"enemyReason","KOS reason (optional)","")
+	self:Text(p,"Ignored players are hidden here. Use Ignored enemies below to restore them. Win/loss totals retain older history; uncertain attackers are shown separately.")
+end
+
 function H:OnEnable()
 	local function refresh()
 		if self.frame and self.frame:IsShown() then
@@ -704,4 +734,9 @@ function H:OnEnable()
 	FP:RegisterEvent("PLAYER_REGEN_DISABLED",refresh)
 	FP:RegisterEvent("UI_SCALE_CHANGED",function() self:FitWindow() end)
 	FP:RegisterEvent("DISPLAY_SIZE_CHANGED",function() self:FitWindow() end)
+	if C_Timer and C_Timer.NewTicker then
+		self.enemyTicker=C_Timer.NewTicker(1,function()
+			if self.frame and self.frame:IsShown() and self.selected=="pvp" then self:Refresh() end
+		end)
+	end
 end
