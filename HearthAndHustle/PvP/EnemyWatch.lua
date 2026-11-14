@@ -97,12 +97,12 @@ end
 function W:Known(name)
 	if type(name) ~= "string" then return nil end
 	local st = store()
-	if st.players[name] then return name end
+	if st.players[name] and self.nearby[name] and not self.nearby[name].by then return name end
 	local spaced = name:gsub("%-", " ")
-	if st.players[spaced] then return spaced end
+	if st.players[spaced] and self.nearby[spaced] and not self.nearby[spaced].by then return spaced end
 	local match, count = nil, 0
-	for known in pairs(self.nearby) do
-		if firstName(known) == name then match, count = known, count + 1 end
+	for known, e in pairs(self.nearby) do
+		if not e.by and firstName(known) == name then match, count = known, count + 1 end
 	end
 	return count == 1 and st.players[match] and match or nil
 end
@@ -311,15 +311,19 @@ function W:OnPartyKill(attacker, target)
 end
 
 -- A loss: the killing blow in the client's death recap, when it names an enemy
--- player seen this session. If the recap cannot be read, the one enemy who had
--- you targeted just before; with two or more, nobody gets it.
+-- player seen this session. Targeting alone is a separate, uncertain hint;
+-- it never changes the confirmed record.
 function W:OnDead()
 	if not self:Active() then return end
+	self.deathGeneration = (self.deathGeneration or 0) + 1
+	local generation = self.deathGeneration
+	local deathMap = API.GetBestMap()
 	local now, suspects = API.Time(), {}
 	for name, t in pairs(self.targetingMe) do
 		if now - t <= TARGETING then suspects[#suspects + 1] = name end
 	end
 	local function resolve(attempt)
+		if not W:Active() or W.deathGeneration ~= generation or API.GetBestMap() ~= deathMap then return end
 		local src, why, id = API.DeathRecapKiller(W.lastRecap)
 		if not src and why == "stale" and attempt < 2 then
 			FP.After(3, function() resolve(attempt + 1) end)
@@ -327,16 +331,20 @@ function W:OnDead()
 		end
 		if id then W.lastRecap = id end
 		local st = store()
-		local name, how
+		local name, how, possible
 		if src then
-			name = (src.guid and W.guids[src.guid]) or W:Known(src.name)
+			-- An explicit GUID outranks a matching name, including NPC names.
+			if src.guid then
+				if src.guid:sub(1, 7) == "Player-" then name = W.guids[src.guid] end
+			else name = W:Known(src.name) end
 			how = name and "recap" or "recap: not an enemy player seen this session"
 		elseif #suspects == 1 then
-			name, how = suspects[1], "targeting (recap " .. tostring(why) .. ")"
+			possible, how = suspects[1], "targeting (recap " .. tostring(why) .. ")"
 		else
 			how = "recap " .. tostring(why) .. "; " .. #suspects .. " had you targeted"
 		end
-		st.lastDeath = { t = API.Now(), name = name, how = how, version = FP.version }
+		st.lastDeath = { t = API.Now(), name = name, possible = possible, confirmed = name ~= nil, how = how, version = FP.version }
+		if possible then FP:Print("Killer unconfirmed. " .. possible .. " had you targeted; your win/loss record is unchanged.") end
 		local p = name and st.players[name]
 		if not p then return end
 		p.losses = (p.losses or 0) + 1
@@ -481,7 +489,7 @@ function W:Command(rest)
 	local sub, val = (args[1] or ""):lower(), (args[2] or ""):lower()
 	local set = s()
 	if sub == "on" then set.enabled = true; FP:Print("enemy watch on"); self:Scan()
-	elseif sub == "off" then set.enabled = false; FP:Print("enemy watch off")
+	elseif sub == "off" then set.enabled = false; self.deathGeneration = (self.deathGeneration or 0) + 1; FP:Print("enemy watch off")
 	elseif sub == "alerts" then toggle(set, "alerts", val, "alerts")
 	elseif sub == "sound" then toggle(set, "sound", val, "sound")
 	elseif sub == "stealth" then toggle(set, "stealth", val, "stealth alerts")
@@ -594,7 +602,7 @@ function W:OnEnable()
 		unit = FP.safe(unit)
 		if type(unit) == "string" then W.plates[unit] = nil end
 	end)
-	E("PLAYER_ENTERING_WORLD", function() W.plates = {} end)
+	E("PLAYER_ENTERING_WORLD", function() W.plates = {}; W.deathGeneration = (W.deathGeneration or 0) + 1 end)
 	E("PLAYER_TARGET_CHANGED", function() W:See("target", "target") end)
 	E("PLAYER_FOCUS_CHANGED", function() W:See("focus", "focus") end)
 	E("UPDATE_MOUSEOVER_UNIT", function() W:See("mouseover", "mouseover") end)

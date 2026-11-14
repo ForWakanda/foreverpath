@@ -68,3 +68,28 @@ M.RunTimers(2.1); assert(B.deferred and #M.placed==1)
 M.RunTimers(30); M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(2)
 assert(#M.placed==3 and not B.strictPending)
 """)
+
+REVIEW_FIX_CASES['enemy_uncertain_death_is_not_a_confirmed_loss'] = ('', '\nlocal W=FP.EnemyWatch\nM.Enemy("nameplate1","Bystander","One")\nM.SetUnit("nameplate1target",{is="player"});W:Scan()\nM.recap={id=123,events={}}\nM.FireEvent("PLAYER_DEAD");M.RunTimers(2)\nlocal p=FP.db.enemyWatch.players["Bystander One"]\nprint("losses="..tostring(p.losses).."; attribution="..tostring(FP.db.enemyWatch.lastDeath.how))\nassert((p.losses or 0)==0,"a player merely targeting me was counted as my killer")\n')
+
+REVIEW_FIX_CASES['control_confirmed_recap_counts_a_loss'] = ('', '\nlocal u=M.Enemy("nameplate1","Known","Enemy")\nM.recap={id=123,events={{sourceGUID=u.guid,sourceName="Known Enemy"}}}\nM.FireEvent("PLAYER_DEAD");M.RunTimers(2)\nassert(FP.db.enemyWatch.players["Known Enemy"].losses==1)\n')
+
+REVIEW_FIX_CASES["enemy_death_callback_cancels_on_disable_or_world_change"] = ("", r'''
+local W=FP.EnemyWatch; local u=M.Enemy("nameplate1","Known","Enemy")
+M.recap={id=123,events={{sourceGUID=u.guid,sourceName="Known Enemy"}}}
+M.FireEvent("PLAYER_DEAD"); W:Command("off"); W:Command("on"); M.RunTimers(2)
+assert(not FP.db.enemyWatch.players["Known Enemy"].losses)
+M.FireEvent("PLAYER_DEAD"); M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(2)
+assert(not FP.db.enemyWatch.players["Known Enemy"].losses)
+M.FireEvent("PLAYER_DEAD"); M.instance={type="party"}; M.RunTimers(2)
+assert(not FP.db.enemyWatch.players["Known Enemy"].losses)
+''')
+REVIEW_FIX_CASES["enemy_recap_explicit_npc_guid_cannot_match_player_name"] = ("", r'''
+M.Enemy("nameplate1","Known","Enemy")
+M.recap={id=124,events={{sourceGUID="Creature-0-1",sourceName="Known Enemy"}}}
+M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(not FP.db.enemyWatch.players["Known Enemy"].losses)
+FP.EnemyWatch.nearby={}
+M.recap={id=125,events={{sourceName="Known Enemy"}}}
+M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(not FP.db.enemyWatch.players["Known Enemy"].losses,"historical account name is not a session sighting")
+''')
