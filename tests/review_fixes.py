@@ -173,3 +173,16 @@ M.cvars.outlineModeShowLootEffectWhenDisabled="1"
 ''', r'''
 assert(#M.cvarWrites==0 and M.cvars.outlineModeShowLootEffectWhenDisabled=="1")
 ''')
+
+REVIEW_FIX_CASES['xp_rate_expires_when_all_gains_are_outside_the_hour'] = ('', '\nlocal B=FP.InfoBar\nlocal now=FP.Util.Now()\nB.samples={{t=now-7200,total=0},{t=now-7000,total=10000}};B.gained=10000\nlocal rate=B:Rate();print("XP in last hour=0; displayed rate="..tostring(rate))\nassert(rate==nil or rate==0,"last-hour XP rate includes gains from two hours ago")\n')
+
+REVIEW_FIX_CASES["xp_rate_keeps_boundary_gain_and_recovers_after_idle"] = ("", r'''
+local B=FP.InfoBar;local now=FP.Util.Now()
+B.samples={{t=now-7200,total=0},{t=now-4000,total=9000},{t=now-3599,total=10000},{t=now-300,total=11000}};B.gained=11000
+local rate,gained,elapsed=B:Rate();assert(rate==2000 and gained==2000 and elapsed==3600)
+M.RunTimers(4000);assert(B:Rate()==nil)
+now=FP.Util.Now();B.gained=11100;B.samples[#B.samples+1]={t=now,total=11100}
+assert(B:Rate()==100,"new gain after idle is counted against the rolling hour")
+B.samples={{t=now-600,total=0},{t=now,total=1200}};B.gained=1200
+assert(B:Rate()==7200,"short sessions retain the measured elapsed time")
+''')

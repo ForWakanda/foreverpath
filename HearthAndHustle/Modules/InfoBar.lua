@@ -141,12 +141,15 @@ end
 function Bar:Rate()
 	if not self.samples or #self.samples == 0 then return nil end
 	local now = U.Now()
-	local first = self.samples[1]
+	local first, boundary = self.samples[1], now - RATE_WINDOW
+	local before
 	for _, smp in ipairs(self.samples) do
-		if smp.t >= now - RATE_WINDOW then first = smp; break end
+		if smp.t < boundary then before = smp else break end
 	end
-	local elapsed = now - first.t
-	local gained = self.gained - first.total
+	-- Use the cumulative total just before the window, so the first gain
+	-- inside it is included. If all gains expired, this subtracts all of them.
+	local elapsed = now - (before and boundary or first.t)
+	local gained = self.gained - (before or first).total
 	if elapsed < 120 or gained <= 0 then return nil end
 	return gained / elapsed * 3600, gained, elapsed
 end
