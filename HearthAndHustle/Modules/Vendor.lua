@@ -81,7 +81,7 @@ function V:OnEnable()
 	E("PLAYER_REGEN_ENABLED", function() V:RequestRefresh() end)
 	E("QUEST_COMPLETE", function() V:RequestRewards() end)
 	E("QUEST_DETAIL", function() V:RequestRewards() end)
-	E("QUEST_FINISHED", function() V.rewardsShown = nil end)
+	E("QUEST_FINISHED", function() V:ClearRewardValues() end)
 
 	if type(hooksecurefunc) == "function" and type(QuestInfo_ShowRewards) == "function" then
 		hooksecurefunc("QuestInfo_ShowRewards", function() V:RequestRewards() end)
@@ -223,17 +223,19 @@ local function rewardButtons()
 	return type(rf) == "table" and type(rf.RewardButtons) == "table" and rf.RewardButtons or nil
 end
 
+function V:ClearRewardValues()
+	for _, b in pairs(rewardButtons() or {}) do
+		if type(b) == "table" and b.fpValue then b.fpValue:SetText(""); b.fpValue:Hide() end
+	end
+	self.rewardsShown = 0
+end
+
 function V:DecorateRewards()
+	if not s().rewardValues then self:ClearRewardValues(); return 0 end
 	local buttons = rewardButtons()
 	if not buttons then return 0 end
 	local values = API.GetQuestRewardValues()
-	local best, bestCount = nil, 0
-	for _, v in ipairs(values) do
-		if v.type == "choice" and v.value then
-			bestCount = bestCount + 1
-			if not best or v.value > best then best = v.value end
-		end
-	end
+	FP.QuestRewards:Rank({ items = values, countsKnown = values.countsKnown == true })
 	local byKey = {}
 	for _, v in ipairs(values) do byKey[v.type .. ":" .. v.index] = v end
 	local n = 0
@@ -246,7 +248,7 @@ function V:DecorateRewards()
 					b.fpValue:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
 					b.fpValue:SetJustifyH("RIGHT")
 				end
-				local gold = v.type == "choice" and bestCount > 1 and v.value == best
+				local gold = v.bestVendor
 				b.fpValue:SetText((gold and FP.GOLD or FP.GREY) .. U.MoneyString(v.value) .. "|r")
 				b.fpValue:Show()
 				n = n + 1
@@ -272,7 +274,10 @@ function V:Command(rest)
 	if sub == "on" then s().enabled = true; FP:Print("vendor strip on")
 	elseif sub == "off" then s().enabled = false; self.frame:Hide(); FP:Print("vendor strip off")
 	elseif sub == "tooltip" or sub == "price" then s().tooltipPrice = onoff(s().tooltipPrice); FP:Print("tooltip vendor value " .. (s().tooltipPrice and "on" or "off"))
-	elseif sub == "rewards" then s().rewardValues = onoff(s().rewardValues); FP:Print("quest reward values " .. (s().rewardValues and "on" or "off"))
+	elseif sub == "rewards" then
+		s().rewardValues = onoff(s().rewardValues)
+		if s().rewardValues then self:RequestRewards() else self:ClearRewardValues() end
+		FP:Print("quest reward values " .. (s().rewardValues and "on" or "off"))
 	elseif sub == "junk" or sub == "grays" then
 		local junk, why = API.GetJunk()
 		if not junk then FP:Print("Grays: " .. tostring(why)); return end

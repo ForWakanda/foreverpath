@@ -3786,10 +3786,11 @@ M.Enemy("target","Ann","Bee"); cmd("kos"); assert(DB.kos["Ann Bee"], "no name me
 cmd("kos +Ann Bee"); assert(said("already on Kill On Sight")==1 and DB.kos["Ann Bee"])
 cmd("kos Ann Bee: corpse camper"); assert(DB.kos["Ann Bee"].reason=="corpse camper", "a reason updates, it does not remove")
 cmd("kos -Ann Bee"); assert(not DB.kos["Ann Bee"]); cmd("kos -Ann Bee"); assert(said("is not on Kill On Sight")==1)
-cmd("kos zug"); assert(DB.kos["Zug"]); M.Enemy("nameplate5","Zug","Zug")
-assert(said("KILL ON SIGHT: Zug Zug")==1, "a first name typed before the meeting matches")
+cmd("kos zug"); assert(not DB.kos["Zug"]); M.Enemy("nameplate5","Zug","Zug")
+assert(said("KILL ON SIGHT: Zug Zug")==0, "unknown first names do not become wildcards")
+cmd("kos zug"); assert(DB.kos["Zug Zug"], "a unique known first name resolves exactly")
 M.Gone("target"); M.Enemy("target","Boar",nil,{player=false}); cmd("kos"); assert(said("Target an enemy player")==1)
-cmd("kos list"); assert(said("KOS Zug")==1)
+cmd("kos list"); assert(said("KOS Zug Zug")==1)
 """),
     "enemy_ignore_list_is_silent": ("", r"""
 cmd("ignore Fetto Vandike"); M.Enemy("nameplate1","Fetto","Vandike"); M.Tick(3)
@@ -3866,10 +3867,10 @@ M.SetUnit("nameplate1target",{is="player"}); M.Tick(1)
 M.recap={id=6,events={{sourceGUID="Creature-0-1-2-3",sourceName="Boar"}}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
 assert(p.losses==1 and DB.lastDeath.how:find("not an enemy player",1,true), "a creature's killing blow is nobody's win")
 M.Tick(1); M.recap={id=7,events={}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
-assert(p.losses==2 and DB.lastDeath.how:find("^targeting"), "unreadable recap: the one enemy who had me targeted")
+assert(p.losses==1 and DB.lastDeath.name==nil and DB.lastDeath.possible=="Fetto Vandike" and DB.lastDeath.confirmed==false, "targeting is an uncertain hint, never a confirmed loss")
 M.Enemy("nameplate2","Ann","Bee"); M.SetUnit("nameplate2target",{is="player"}); M.Tick(1)
 M.recap={id=8,events={}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
-assert(p.losses==2 and not DB.players["Ann Bee"].losses and DB.lastDeath.how:find("2 had you targeted",1,true), "two suspects: nobody gets it")
+assert(p.losses==1 and not DB.players["Ann Bee"].losses and DB.lastDeath.how:find("2 had you targeted",1,true), "two suspects: nobody gets it")
 M.recap={id=9,events={{sourceName="Ann"}}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
 assert(DB.players["Ann Bee"].losses==1, "a recap with a first name finds the one enemy seen with it")
 """),
@@ -3933,6 +3934,16 @@ for name, (preload, body) in ENEMY_CASES.items():
     if result.returncode:
         failed += 1
         print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
+# Review transition cases use preloads to exercise persisted state after reload.
+from review_fixes import REVIEW_FIX_CASES
+for name, (preload, body) in REVIEW_FIX_CASES.items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print(result.stdout + result.stderr)
 
 # The file tool, on fixtures written the way the release client writes them: CRLF, no indentation.
 def client_lua(variable, rows):
@@ -4048,5 +4059,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + 1} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + len(REVIEW_FIX_CASES) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)

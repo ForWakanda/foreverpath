@@ -104,8 +104,9 @@ function B:Burst(slots)
 end
 
 function B:Done(carried)
-	local strict = self.mode ~= "track"
+	local strict = self.strictPending or self.mode ~= "track"
 	self.mode = "track"
+	self.strictPending = nil
 	self.changed, self.allChanged = {}, nil
 	-- Spell, item or macro data can arrive late after a login or spec change:
 	-- look again, strictly, a bounded number of times.
@@ -142,7 +143,7 @@ function B:Reconcile()
 	end
 
 	local now = API.Time()
-	local strict = self.mode ~= "track" or now < (self.strictUntil or 0)
+	local strict = self.strictPending or self.mode ~= "track" or now < (self.strictUntil or 0)
 	local lost = {}
 	for slot, entry in pairs(saved.slots) do
 		if not live[slot] and (strict or not entry.fails) then lost[#lost + 1] = slot end
@@ -157,12 +158,15 @@ function B:Reconcile()
 			-- Several buttons vanished in one instant. Look once more before acting:
 			-- a spec change announces itself in between and gets its own comparison.
 			self.strictUntil = now + STRICT_WINDOW
+			self.strictPending = true
 			self:Schedule(CONFIRM)
 			return
 		end
 		self:Done(self:Save(group, live, saved))   -- an ordinary edit
 		return
 	end
+	-- Recovery intent survives combat, cursor and late-data delays.
+	self.strictPending = true
 	if API.CursorBusy() then
 		-- The player is dragging something: wait, and keep the memory untouched.
 		self.strictUntil = now + STRICT_WINDOW
@@ -207,7 +211,7 @@ function B:Reconcile()
 		return
 	end
 	local after = API.ReadActionBars()
-	self:Done(after and self:Save(group, after, saved) or 0)
+	if after then self:Done(self:Save(group, after, saved)) else self:Schedule(5) end
 end
 
 function B:OnSlotChanged(slot)
@@ -238,6 +242,8 @@ function B:OnEnable()
 		-- Reported wipe moment. Look even if the client sends no slot event.
 		if not FP.dbReady or not s().enabled then return end
 		B.strictUntil = API.Time() + STRICT_WINDOW
+		B.strictPending = true
+		B.rechecks = 0
 		B:Schedule(SPEC_DELAY)
 	end)
 	E("PLAYER_REGEN_ENABLED", function()
@@ -292,6 +298,8 @@ function B:Command(rest)
 	if sub == "on" then
 		s().enabled = true
 		self.mode, self.rechecks = "track", 0
+		self.strictPending, self.strictUntil, self.deferred = nil, nil, nil
+		self.changed, self.allChanged = {}, nil
 		self:Schedule(SETTLE)
 		FP:Print("action bar guard on")
 	elseif sub == "off" then

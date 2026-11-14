@@ -61,17 +61,17 @@ end
 -------------------------------------------------------------------------------
 function W:KOS(name)
 	local kos = store().kos
-	return kos[name] or kos[firstName(name)]
+	return kos[name]
 end
 
 function W:Ignored(name)
 	local ignore = store().ignore
-	return (ignore[name] or ignore[firstName(name)]) and true or false
+	return ignore[name] and true or false
 end
 
 -- A typed name becomes the spelling already known for that player; a first name
--- alone matches when exactly one known player has it. Otherwise each part is
--- capitalised the way the game writes names.
+-- alone matches when exactly one known player has it. Ambiguity is shown to
+-- the player; unknown first names never become wildcards for future sightings.
 function W:TypedName(text)
 	text = clean((tostring(text or ""):gsub("%s+", " ")), 48)
 	if not text then return nil end
@@ -89,6 +89,11 @@ function W:TypedName(text)
 		end
 	end
 	if count == 1 then return match end
+	if single then
+		local names = self:SortedNames(found)
+		return nil, count > 1 and ("Name is ambiguous. Use a full name: " .. table.concat(names, ", ") .. ".")
+			or "Use the player's full name, or target them and leave the name blank."
+	end
 	return (lower:gsub("(%S)(%S*)", function(a, b) return a:upper() .. b end))
 end
 
@@ -97,12 +102,12 @@ end
 function W:Known(name)
 	if type(name) ~= "string" then return nil end
 	local st = store()
-	if st.players[name] then return name end
+	if st.players[name] and self.nearby[name] and not self.nearby[name].by then return name end
 	local spaced = name:gsub("%-", " ")
-	if st.players[spaced] then return spaced end
+	if st.players[spaced] and self.nearby[spaced] and not self.nearby[spaced].by then return spaced end
 	local match, count = nil, 0
-	for known in pairs(self.nearby) do
-		if firstName(known) == name then match, count = known, count + 1 end
+	for known, e in pairs(self.nearby) do
+		if not e.by and firstName(known) == name then match, count = known, count + 1 end
 	end
 	return count == 1 and st.players[match] and match or nil
 end
@@ -311,15 +316,19 @@ function W:OnPartyKill(attacker, target)
 end
 
 -- A loss: the killing blow in the client's death recap, when it names an enemy
--- player seen this session. If the recap cannot be read, the one enemy who had
--- you targeted just before; with two or more, nobody gets it.
+-- player seen this session. Targeting alone is a separate, uncertain hint;
+-- it never changes the confirmed record.
 function W:OnDead()
 	if not self:Active() then return end
+	self.deathGeneration = (self.deathGeneration or 0) + 1
+	local generation = self.deathGeneration
+	local deathMap = API.GetBestMap()
 	local now, suspects = API.Time(), {}
 	for name, t in pairs(self.targetingMe) do
 		if now - t <= TARGETING then suspects[#suspects + 1] = name end
 	end
 	local function resolve(attempt)
+		if not W:Active() or W.deathGeneration ~= generation or API.GetBestMap() ~= deathMap then return end
 		local src, why, id = API.DeathRecapKiller(W.lastRecap)
 		if not src and why == "stale" and attempt < 2 then
 			FP.After(3, function() resolve(attempt + 1) end)
@@ -327,16 +336,20 @@ function W:OnDead()
 		end
 		if id then W.lastRecap = id end
 		local st = store()
-		local name, how
+		local name, how, possible
 		if src then
-			name = (src.guid and W.guids[src.guid]) or W:Known(src.name)
+			-- An explicit GUID outranks a matching name, including NPC names.
+			if src.guid then
+				if src.guid:sub(1, 7) == "Player-" then name = W.guids[src.guid] end
+			else name = W:Known(src.name) end
 			how = name and "recap" or "recap: not an enemy player seen this session"
 		elseif #suspects == 1 then
-			name, how = suspects[1], "targeting (recap " .. tostring(why) .. ")"
+			possible, how = suspects[1], "targeting (recap " .. tostring(why) .. ")"
 		else
 			how = "recap " .. tostring(why) .. "; " .. #suspects .. " had you targeted"
 		end
-		st.lastDeath = { t = API.Now(), name = name, how = how, version = FP.version }
+		st.lastDeath = { t = API.Now(), name = name, possible = possible, confirmed = name ~= nil, how = how, version = FP.version }
+		if possible then FP:Print("Killer unconfirmed. " .. possible .. " had you targeted; your win/loss record is unchanged.") end
 		local p = name and st.players[name]
 		if not p then return end
 		p.losses = (p.losses or 0) + 1
@@ -388,7 +401,7 @@ function W:Rows()
 	if not self:Active() then return {} end
 	local now, list = API.Time(), {}
 	for _, e in pairs(self.nearby) do
-		if now - e.last <= NEARBY then list[#list + 1] = e end
+		if now - e.last <= NEARBY and not self:Ignored(e.name) then list[#list + 1] = e end
 	end
 	for _, e in ipairs(list) do e.kosNow = self:KOS(e.name) and 1 or 0 end
 	table.sort(list, function(a, b)
@@ -407,7 +420,9 @@ function W:Rows()
 		bits[#bits + 1] = ago < 3 and "now" or (math.floor(ago) .. "s")
 		local note = e.note and e.noteAt and now - e.noteAt < 30 and e.note or nil
 		if not note and FP.Roster then
-			local r = FP.Roster.session[firstName(e.name)]
+			-- First-name roster notes are unsafe when multiple full identities match.
+			local short = firstName(e.name)
+			local r = self:Known(short) == e.name and FP.Roster.session[short] or nil
 			if r and r.note and r.noteT and U.Now() - r.noteT < 60 then note = r.note end
 		end
 		if e.dead and note ~= "killed" then note = "dead" end
@@ -481,7 +496,7 @@ function W:Command(rest)
 	local sub, val = (args[1] or ""):lower(), (args[2] or ""):lower()
 	local set = s()
 	if sub == "on" then set.enabled = true; FP:Print("enemy watch on"); self:Scan()
-	elseif sub == "off" then set.enabled = false; FP:Print("enemy watch off")
+	elseif sub == "off" then set.enabled = false; self.deathGeneration = (self.deathGeneration or 0) + 1; FP:Print("enemy watch off")
 	elseif sub == "alerts" then toggle(set, "alerts", val, "alerts")
 	elseif sub == "sound" then toggle(set, "sound", val, "sound")
 	elseif sub == "stealth" then toggle(set, "stealth", val, "stealth alerts")
@@ -535,8 +550,9 @@ function W:KosCommand(rest)
 	local typed, reason = rest:match("^([^:]*):%s*(.*)$")
 	typed = U.Trim(typed or rest)
 	reason = clean(reason, 80)
-	local name = typed ~= "" and self:TypedName(typed) or targetName()
-	if not name then FP:Print("Target an enemy player, or type /hh kos <name>: <reason>."); return end
+	local name, why
+	if typed ~= "" then name, why = self:TypedName(typed) else name = targetName() end
+	if not name then FP:Print(why or "Target an enemy player, or type /hh kos <name>: <reason>."); return end
 	if mode == "-" and not st.kos[name] then
 		FP:Print(name .. " is not on Kill On Sight.")
 	elseif mode == "+" and st.kos[name] and not reason then
@@ -564,8 +580,9 @@ function W:IgnoreCommand(rest)
 	end
 	local mode = rest:match("^([%+%-])")
 	if mode then rest = U.Trim(rest:sub(2)) end
-	local name = rest ~= "" and self:TypedName(rest) or targetName()
-	if not name then FP:Print("Target an enemy player, or type /hh ignore <name>."); return end
+	local name, why
+	if rest ~= "" then name, why = self:TypedName(rest) else name = targetName() end
+	if not name then FP:Print(why or "Target an enemy player, or type /hh ignore <name>."); return end
 	if mode == "-" and not st.ignore[name] then
 		FP:Print(name .. " is not ignored.")
 	elseif mode == "+" and st.ignore[name] then
@@ -594,7 +611,7 @@ function W:OnEnable()
 		unit = FP.safe(unit)
 		if type(unit) == "string" then W.plates[unit] = nil end
 	end)
-	E("PLAYER_ENTERING_WORLD", function() W.plates = {} end)
+	E("PLAYER_ENTERING_WORLD", function() W.plates = {}; W.deathGeneration = (W.deathGeneration or 0) + 1 end)
 	E("PLAYER_TARGET_CHANGED", function() W:See("target", "target") end)
 	E("PLAYER_FOCUS_CHANGED", function() W:See("focus", "focus") end)
 	E("UPDATE_MOUSEOVER_UNIT", function() W:See("mouseover", "mouseover") end)
