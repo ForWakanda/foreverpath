@@ -1331,22 +1331,28 @@ end
 
 -- Vendor value of the rewards on the open quest dialog (choice and fixed rewards).
 function API.GetQuestRewardValues()
-	local out = {}
-	if not hasg("GetQuestItemLink") then return out end
+	local out = { countsKnown = true }
+	if not hasg("GetQuestItemLink") then out.countsKnown = false; return out end
 	for _, kind in ipairs({ { "choice", "GetNumQuestChoices" }, { "reward", "GetNumQuestRewards" } }) do
-		local n = 0
-		if hasg(kind[2]) then local ok, c = pcall(_G[kind[2]]); n = ok and safe(c) or 0 end
-		for i = 1, (U.Finite(n) and n or 0) do
+		local n
+		if hasg(kind[2]) then local ok, c = pcall(_G[kind[2]]); n = ok and safe(c) or nil end
+		if not U.Finite(n) or n < 0 or n > 64 or n ~= math.floor(n) then
+			out.countsKnown = false
+			n = 0
+		end
+		for i = 1, n do
 			local ok, link = pcall(GetQuestItemLink, kind[1], i)
 			link = ok and safe(link) or nil
-			local price = link and API.GetItemValue(link) or nil
-			local qty = 1
+			local price = type(link) == "string" and API.GetItemValue(link) or nil
+			local qty
 			if hasg("GetQuestItemInfo") then
 				local good, _, _, q = pcall(GetQuestItemInfo, kind[1], i)
 				q = good and safe(q) or nil
-				if U.Finite(q) and q > 0 then qty = q end
+				if U.Finite(q) and q > 0 and q == math.floor(q) then qty = q end
 			end
-			out[#out + 1] = { type = kind[1], index = i, link = link, price = price, count = qty, value = price and price * qty or nil }
+			local value = U.Finite(price) and price >= 0 and qty and price * qty or nil
+			out[#out + 1] = { type = kind[1], kind = kind[1], index = i, link = link, price = price, count = qty,
+				value = U.Finite(value) and value or nil }
 		end
 	end
 	return out

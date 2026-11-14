@@ -118,3 +118,21 @@ assert(not W:KOS("Alex One") and not W:Ignored("Sam Two") and W.nearby["Sam Two"
 W:KosCommand("-Alex");W:IgnoreCommand("-Sam")
 assert(not FP.db.enemyWatch.kos.Alex and not FP.db.enemyWatch.ignore.Sam)
 ''')
+
+REVIEW_FIX_CASES['vendor_best_value_waits_for_all_choices'] = ('', '\nlocal buttons={}\nfor i=1,3 do local b=CreateFrame("Button");b:SetID(i);b.type="choice";b:Show();buttons[i]=b end\nQuestInfoFrame={rewardsFrame={RewardButtons=buttons}}\nFP.API.GetQuestRewardValues=function() return {{type="choice",index=1,value=100},{type="choice",index=2,value=200},{type="choice",index=3,value=nil}} end\nFP.Vendor:DecorateRewards()\nlocal text=buttons[2].fpValue:GetText()\nprint("highlight="..text)\nassert(text:sub(1,#FP.GOLD)~=FP.GOLD,"best vendor choice highlighted before third choice is priced")\n')
+
+REVIEW_FIX_CASES["reward_adapter_preserves_unknown_counts_and_quantities"] = ("", r'''
+GetNumQuestChoices=function() return 3 end;GetNumQuestRewards=function() return 0 end
+GetQuestItemLink=function(_,i) return "item:"..i end
+local qty=2
+GetQuestItemInfo=function() return "Reward",1,qty end
+FP.API.GetItemValue=function(link) return tonumber(link:match("%d+"))*100 end
+local rows=FP.API.GetQuestRewardValues();FP.QuestRewards:Rank({items=rows,countsKnown=rows.countsKnown})
+assert(rows[3].bestVendor and rows[3].value==600)
+qty=nil; rows=FP.API.GetQuestRewardValues();FP.QuestRewards:Rank({items=rows,countsKnown=rows.countsKnown})
+assert(rows[3].value==nil and not rows[3].bestVendor and rows[3].count==nil)
+qty=M.Secret();rows=FP.API.GetQuestRewardValues();assert(rows[1].value==nil)
+qty=1;GetNumQuestRewards=function() return nil end
+rows=FP.API.GetQuestRewardValues();assert(rows.countsKnown==false and #rows==3)
+GetNumQuestChoices=function() return 1e99 end;rows=FP.API.GetQuestRewardValues();assert(#rows==0 and not rows.countsKnown)
+''')

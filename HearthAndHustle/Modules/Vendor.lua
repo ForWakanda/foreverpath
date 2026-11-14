@@ -227,13 +227,7 @@ function V:DecorateRewards()
 	local buttons = rewardButtons()
 	if not buttons then return 0 end
 	local values = API.GetQuestRewardValues()
-	local best, bestCount = nil, 0
-	for _, v in ipairs(values) do
-		if v.type == "choice" and v.value then
-			bestCount = bestCount + 1
-			if not best or v.value > best then best = v.value end
-		end
-	end
+	FP.QuestRewards:Rank({ items = values, countsKnown = values.countsKnown == true })
 	local byKey = {}
 	for _, v in ipairs(values) do byKey[v.type .. ":" .. v.index] = v end
 	local n = 0
@@ -246,7 +240,7 @@ function V:DecorateRewards()
 					b.fpValue:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
 					b.fpValue:SetJustifyH("RIGHT")
 				end
-				local gold = v.type == "choice" and bestCount > 1 and v.value == best
+				local gold = v.bestVendor
 				b.fpValue:SetText((gold and FP.GOLD or FP.GREY) .. U.MoneyString(v.value) .. "|r")
 				b.fpValue:Show()
 				n = n + 1
