@@ -4,6 +4,24 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Guidance explanations (v0.23.0)
+
+The compact quest panel shows why guidance chose its destination: your selected
+quest, an explicitly chosen step, an automatic quest choice, a manual destination,
+or waiting in the objective area. Click that explanation for details in
+**Navigation**. **Resume guide** returns to automatic selection while keeping saved
+manual destinations available under Waypoints. Automatic choices use straight-line
+distance and quest priorities; they do not account for terrain or optimize XP/hour.
+
+## Enemy browser (v0.23.0)
+
+Open **Tools → PvP** (or **Overview → Enemy watch**) to search nearby and recent
+players by full name. Select a row, then **Add selected to KOS**, **Ignore selected**,
+or **Remove selected KOS**. The detail area shows local sightings, party reports,
+ages and saved records separately. Possible attackers never appear as confirmed
+losses. Ignored players can be restored through **Ignored enemies** on the same page.
+Browsing does not select a game target, send a party message or change your route.
+
 ## Enemy watch (v0.21.0)
 
 For world PvP: Hearth & Hustle now tells you when players of the other faction are near you in the open world, the way the Spy addon does.
@@ -12,7 +30,7 @@ For world PvP: Hearth & Hustle now tells you when players of the other faction a
 - **Alerts.** A chat line, an on-screen notice and a sound for a new enemy, a louder one for a Kill On Sight player, and one when a visible enemy uses Stealth, Vanish, Prowl or Shadowmeld (only when the client lets the cast be read). A player who cannot attack you and whom you cannot attack (unflagged on a PvE realm) is listed without an alert. Sanctuaries are quiet. A raid on a town gives five lines and one summary, not a flood.
 - **Nearby list** on the PvP HUD: name, level, class, guild, how long ago, Kill On Sight players first. Players are kept by their full name (first name and surname).
 - **Kill On Sight and ignore lists**, shared by all your characters: `/hh kos Name Surname: reason`, `/hh ignore Name Surname`, or either command alone with the player targeted. Both lists are also under PvP in the control window.
-- **Record.** Every enemy you met, with wins (your killing blow or your pet's) and losses (the killing blow in the game's death recap; if that cannot be read, the one enemy who had you targeted): `/hh enemies stats`.
+- **Record.** Every enemy you met, with wins (your killing blow or your pet's) and confirmed losses from the game's death recap. A player who only had you targeted is shown as a possible attacker and does not add a loss. Older saved totals are retained. `/hh enemies stats` prints the record.
 - **Party.** Sightings go to party members who also run v0.21.0 or later, and theirs show up for you as "seen by". Turn it off with `/hh enemies share off`.
 - Off in dungeons, raids and battlegrounds. `/hh enemies off` switches it off everywhere; every part has its own tick under PvP.
 - Not included: clicking a row to target the player, fight markers on the world map, a watch list for your own faction or for guilds, announcing to guild or raid chat.

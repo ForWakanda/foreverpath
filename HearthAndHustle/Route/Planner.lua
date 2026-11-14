@@ -266,6 +266,52 @@ function P:NextStep()
 	return nil
 end
 
+-- Explain the state already chosen by the planner; opening a UI must not
+-- rebuild, advance or replace the player's route.
+function P:Guidance()
+	local active = FP.Waypoints:GetActive()
+	if API.InBattleground() then return "Quest guidance suspended", "Battleground guidance takes priority here." end
+	if active and (not active.source or active.source.type ~= "plan") then
+		local kind = active.source and active.source.type
+		return kind == "quest-location" and "Selected quest location" or "Manual destination",
+			"This destination holds quest selection. Resume guidance to return to the automatic route; saved destinations are kept."
+	end
+	if self.paused or not FP.settings.autoNext then
+		return "Guidance paused", active and "Your current destination is kept. Resume guidance to choose quests automatically."
+			or "Resume guidance to choose a quest destination."
+	end
+	if self.waiting then
+		return "Working in the quest area", self.waiting.entrance and "At the dungeon approach. Continue inside; interior paths are not mapped."
+			or "Guidance is waiting while you work here. It resumes after completion or when you leave the area."
+	end
+	if not active then
+		return "No active destination", "Open Quest locations to inspect known sources, or check the quest directions when coordinates are missing."
+	end
+	local step
+	for _,candidate in ipairs(self.steps) do if sameStep(candidate, active.source) then step=candidate; break end end
+	local title
+	if self.pinned then title = "Chosen quest step"
+	elseif active.source.questID and active.source.questID == API.GetSelectedQuest() then title = "Selected quest"
+	else title = "Automatic quest choice" end
+	local bits = { active.source.kind == "turnin" and "Ready to turn in" or active.source.kind == "pickup" and "Quest pickup" or "Unfinished objective" }
+	if step and step.how then
+		local sources = { waypoint="client waypoint", ["map waypoint"]="client map waypoint", poi="client quest area", recorded="recorded turn-in", npc="recorded NPC location", mobs="observed creature area (approximate)", ["giver-npc"]="quest giver (unconfirmed turn-in)" }
+		bits[#bits+1] = "Location: " .. (sources[step.how] or step.how)
+	end
+	if title == "Automatic quest choice" then
+		bits[#bits+1] = "Ranked by straight-line distance, turn-ins, shared quests and nearby quest clusters; small changes keep the current route steady."
+	elseif title == "Selected quest" then bits[#bits+1] = "Your tracked quest takes priority."
+	else bits[#bits+1] = "Your chosen step stays selected until it is completed." end
+	return title, table.concat(bits, ". ")
+end
+
+function P:ResumeGuidance()
+	FP.Waypoints:SuspendManual()
+	FP.Commands:Handle("auto on")
+	FP.settings.arrow.shown=true
+	FP.Arrow:Refresh()
+end
+
 function P:Go(step, automatic)
 	if not step or (step.entrance and API.InInstance()) or not U.ValidMapPoint(step.mapID, step.x, step.y) then return nil end
 	if not automatic and self.deferred and step.questID then self.deferred[step.questID] = nil end
