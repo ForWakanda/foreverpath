@@ -4,6 +4,16 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Action bar guard (v0.19.0)
+
+On the current Forever build a character with dual specialization can log in, swap spec or level up and find action bars emptied by the server. Hearth & Hustle now remembers what is on your bars while you play and puts missing buttons back on their slots a few seconds later, with one chat line saying how many. Nothing to set up and no command to type.
+
+- It only fills empty slots. It never replaces or removes a button, never acts in combat or while you are dragging something, and never uses an ability.
+- Your own changes are remembered as you make them, separately for each spec.
+- The memory is kept on this computer: after the update, set your bars up once and they are covered from then on. A button you removed on another computer comes back once.
+- Turn it off under **Display → Action bars** or with `/hh bars off`. `/hh bars` shows what is remembered.
+- Mock-tested and checked against Blizzard's Forever UI source (70938); first client session pending.
+
 ## Renamed from ForeverPath (v0.17.0)
 
 Hearth & Hustle is the same addon under a new name. An unrelated addon called "ForeverPath" now exists and uses the same folder, saved-variable names and `/fp` command, so everything moved: the folder is `HearthAndHustle`, and the commands are `/hh` and `/hustle` (`/way` remains available when another addon or the client has not already claimed it; `/hh way` always works).

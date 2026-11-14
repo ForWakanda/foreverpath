@@ -1848,6 +1848,12 @@ function API.Check()
 		return inv.waterKnown and inv.bandagesKnown, string.format("drink count %s; bandages %s; learned spell lookup %s",
 			inv.waterKnown and tostring(inv.water) or "loading/unknown", inv.bandagesKnown and tostring(inv.bandages) or "loading/unknown", tostring(API.KnowsSpell(759)))
 	end)
+	probe("actionBars", function()
+		local bars, count = API.ReadActionBars()
+		return API.ActionBarsAvailable() and bars ~= nil, string.format("slot API %s; spec group %s; %s",
+			API.ActionBarsAvailable() and "present" or "missing", tostring(API.ActiveSpecGroup()),
+			bars and (count .. " buttons readable") or "bars not readable now (combat or secret)")
+	end)
 	probe("classPrep", function()
 		local free = API.GetFreeBagSlots()
 		return free ~= nil, tostring(API.GetCharInfo().class) .. "; general bag slots " .. tostring(free or "unavailable")
@@ -2078,4 +2084,117 @@ function API.GetGearQuestSources(itemID)
  end
  table.sort(out,function(a,b) return a.id<b.id end)
  return out
+end
+
+-------------------------------------------------------------------------------
+-- Action bars (Modules/BarGuard.lua). Checked against Blizzard's Forever source
+-- 1.60.1.70938: GetActionInfo / PlaceAction / PickupMacro are the globals
+-- Blizzard's own action buttons call; C_Spell.PickupSpell, C_Item.PickupItem and
+-- C_SpecializationInfo.GetActiveSpecGroup are documented. Reads never run in
+-- combat (the values may be secret there) and every write refuses combat.
+-------------------------------------------------------------------------------
+-- Player-placed slots: pages 1-10 (main bar, the four extra bars, stance pages)
+-- and pages 13-15 (bars 6-8). Pages 11-12 are possess/vehicle and totem slots.
+API.BAR_SLOT_RANGES = { { 1, 120 }, { 145, 180 } }
+local RANDOM_MOUNT = 268435455
+
+function API.ActionBarsAvailable()
+	return hasg("GetActionInfo") and hasg("PlaceAction") and hasg("ClearCursor") and hasg("GetCursorInfo")
+		and has(C_Spell, "PickupSpell")
+end
+
+function API.ActiveSpecGroup()
+	local fn = has(C_SpecializationInfo, "GetActiveSpecGroup") and C_SpecializationInfo.GetActiveSpecGroup
+		or (hasg("GetActiveTalentGroup") and GetActiveTalentGroup)
+	if not fn then return 1 end
+	local ok, group = pcall(fn)
+	group = ok and safe(group) or nil
+	if U.Finite(group) and group >= 1 and group <= 8 and group == math.floor(group) then return group end
+	return nil
+end
+
+-- One slot: nil = empty, a table = what is on it, false = could not be read.
+-- "Could not be read" must never be mistaken for "empty".
+function API.GetActionSlot(slot)
+	local ok, kind, id, sub = pcall(GetActionInfo, slot)
+	if not ok or FP.issecret(kind) or FP.issecret(id) or FP.issecret(sub) then return false end
+	if kind == nil then return nil end
+	if type(kind) ~= "string" then return false end
+	local entry = { k = kind }
+	if type(id) == "number" or type(id) == "string" then entry.id = id end
+	if type(sub) == "string" then entry.sub = sub end
+	if kind == "macro" then
+		-- The id of a macro slot is not a stable macro index on this client; the name is.
+		local text = has(C_ActionBar, "GetActionText") and C_ActionBar.GetActionText or (hasg("GetActionText") and GetActionText)
+		if text then
+			local okText, name = pcall(text, slot)
+			if okText and FP.issecret(name) then return false end
+			if okText and type(name) == "string" and name ~= "" then entry.n = name end
+		end
+	end
+	return entry
+end
+
+-- Every player-placed slot, or nil when any slot is unreadable or in combat.
+function API.ReadActionBars()
+	if not API.ActionBarsAvailable() or API.InCombat() then return nil end
+	local out, count = {}, 0
+	for _, range in ipairs(API.BAR_SLOT_RANGES) do
+		for slot = range[1], range[2] do
+			local entry = API.GetActionSlot(slot)
+			if entry == false then return nil end
+			if entry then out[slot] = entry; count = count + 1 end
+		end
+	end
+	return out, count
+end
+
+function API.CursorBusy()
+	if not hasg("GetCursorInfo") then return true end
+	local ok, kind = pcall(GetCursorInfo)
+	if not ok then return true end
+	return kind ~= nil
+end
+
+local function pickUp(entry)
+	local kind, id = entry.k, entry.id
+	if kind == "spell" and U.Finite(id) then
+		C_Spell.PickupSpell(id)
+	elseif kind == "item" and U.Finite(id) then
+		if has(C_Item, "PickupItem") then C_Item.PickupItem(id) elseif hasg("PickupItem") then PickupItem(id) end
+	elseif kind == "macro" and hasg("PickupMacro") then
+		local target = entry.n
+		if target and hasg("GetMacroIndexByName") then
+			local index = GetMacroIndexByName(target)
+			target = U.Finite(index) and index > 0 and index or nil
+		end
+		if target then PickupMacro(target) end
+	elseif kind == "summonmount" and U.Finite(id) then
+		if id == RANDOM_MOUNT then
+			if has(C_MountJournal, "Pickup") then C_MountJournal.Pickup(0) end
+		elseif has(C_MountJournal, "GetMountInfoByID") then
+			local _, spellID = C_MountJournal.GetMountInfoByID(id)
+			spellID = safe(spellID)
+			if U.Finite(spellID) then C_Spell.PickupSpell(spellID) end
+		end
+	end
+end
+
+-- Put a remembered button back on an EMPTY slot. Never in combat, never while the
+-- player holds something on the cursor, never on top of an existing button.
+-- Returns true, or false and why.
+function API.PlaceOnBar(slot, entry)
+	if not API.ActionBarsAvailable() then return false, "unavailable" end
+	if API.InCombat() then return false, "combat" end
+	if API.CursorBusy() then return false, "cursor" end
+	local current = API.GetActionSlot(slot)
+	if current == false then return false, "unreadable" end
+	if current ~= nil then return false, "occupied" end
+	local ok, err = pcall(pickUp, entry)
+	if not ok then pcall(ClearCursor); return false, tostring(err) end
+	if not API.CursorBusy() then return false, "pickup" end
+	local placed = pcall(PlaceAction, slot)
+	pcall(ClearCursor)
+	if not placed then return false, "place" end
+	return true
 end

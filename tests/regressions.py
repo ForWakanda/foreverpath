@@ -3466,6 +3466,154 @@ for name, (preload, body) in RENAME_CASES.items():
         failed += 1
         print("  " + (result.stderr.splitlines() or ["no error output"])[0])
 
+# v0.19.0: action bar guard. On build 70938 the server can hand a dual-spec
+# character emptied bars at login, on a spec change or on a level-up. Each case
+# starts from saved character data and mock bars prepared before the addon loads.
+BAR_HELPERS = r"""
+local B=FP.BarGuard
+local function put(slot,kind,id,name) M.SetAction(slot,kind,id,name); M.FireEvent("ACTIONBAR_SLOT_CHANGED",slot) end
+local function count(first,last) local n=0; for slot=first,last do if M.actions[slot] then n=n+1 end end return n end
+local function remembered(group) local n=0; for _ in pairs(FP.cdb.barGuard.specs[group].slots) do n=n+1 end return n end
+local function said(text) local n=0; for _,l in ipairs(M.Chat()) do if tostring(l):find(text,1,true) then n=n+1 end end return n end
+"""
+BAR_MEMORY = r"""
+local snap={}
+for slot=1,12 do snap[slot]={k="spell",id=1000+slot}; M.SetAction(slot,"spell",1000+slot) end
+for slot=49,72 do snap[slot]={k="spell",id=1000+slot} end
+HearthAndHustleCharDB={barGuard={specs={[1]={slots=snap}},log={}}}
+"""
+BAR_CASES = {
+    "bars_login_wipe_fills_empty_slots_only": (BAR_MEMORY + r"""
+M.SetAction(60,"spell",9999)                      -- the player's own button on a remembered slot
+M.SetAction(133,"spell",5); snap[133]={k="spell",id=5}; snap[200]={k="spell",id=6}; snap.junk=true
+""", r"""
+assert(count(49,72)==24 and #M.placed==23, "23 empty slots are filled: "..#M.placed)
+assert(M.actions[60].id==9999 and M.actions[61].id==1061 and M.actions[49].id==1049, "an existing button is never replaced")
+for _,slot in ipairs(M.placed) do assert(slot>=49 and slot<=72 and slot~=60) end
+assert(M.cursor==nil and M.actions[133].id==5 and count(1,12)==12)
+assert(said("Put 23 action buttons back")==1)
+local log=FP.cdb.barGuard.log; assert(#log==1 and log[1].lost==23 and log[1].restored==23 and log[1].failed==0 and log[1].group==1)
+assert(remembered(1)==36 and FP.cdb.barGuard.specs[1].slots[60].id==9999 and not FP.cdb.barGuard.specs[1].slots[133])
+assert(B.mode=="track")
+M.RunTimers(30); assert(#M.placed==23 and said("Put ")==1, "nothing is repeated")
+local ok,why=FP.API.PlaceOnBar(60,{k="spell",id=1}); assert(ok==false and why=="occupied" and M.actions[60].id==9999 and M.cursor==nil)
+"""),
+    "bars_hand_edits_are_remembered_not_reverted": ("", r"""
+assert(FP.settings.barGuard.enabled and remembered(1)==0 and #FP.cdb.barGuard.log==0, "fresh profile: on, nothing to restore")
+assert(said("Action bar guard is watching your bars")==1 and FP.cdb.barGuard.introduced)
+for slot=49,60 do put(slot,"spell",1000+slot) end
+M.RunTimers(2); assert(remembered(1)==12)
+for slot=49,53 do put(slot); M.RunTimers(1) end      -- five buttons dragged off, one a second
+M.RunTimers(5); assert(#M.placed==0 and count(49,60)==7 and remembered(1)==7, "removed buttons stay removed")
+for slot=54,56 do put(slot); M.RunTimers(0.4) end    -- as fast as a person can
+M.RunTimers(8); assert(#M.placed==0 and count(49,60)==4 and remembered(1)==4)
+put(54,"spell",77); put(49,"item",858); M.RunTimers(2)
+assert(remembered(1)==6 and FP.cdb.barGuard.specs[1].slots[49].k=="item" and said("Put ")==0)
+"""),
+    "bars_burst_wipe_and_level_up_wipe_are_restored": ("", r"""
+for slot=49,72 do put(slot,"spell",1000+slot) end
+M.RunTimers(2); assert(remembered(1)==24)
+M.WipeActions(49,72)
+M.RunTimers(1.6); assert(#M.placed==0 and remembered(1)==24, "a burst is confirmed before anything is placed")
+M.RunTimers(2.1); assert(count(49,72)==24 and #M.placed==24 and said("Put 24 action buttons back")==1)
+M.RunTimers(20)
+put(49); M.RunTimers(3); assert(count(49,72)==23 and #M.placed==24, "a later hand edit is still an edit")
+M.FireEvent("PLAYER_LEVEL_UP",48); M.WipeActions(50,51)   -- two slots: below the burst size
+M.RunTimers(3.1); assert(count(49,72)==23 and #M.placed==26, "buttons lost at a level-up are put back")
+M.RunTimers(20); M.FireEvent("PLAYER_LEVEL_UP",49); M.actions[52]=nil   -- lost with no slot event at all
+M.RunTimers(3.1); assert(M.actions[52] and #M.placed==27 and said("Action bar guard is watching")==1)
+assert(#FP.cdb.barGuard.log==3 and remembered(1)==23)
+"""),
+    "bars_combat_defers_restore_and_keeps_memory": (BAR_MEMORY + "M.combatLockdown=true\n", r"""
+assert(#M.placed==0 and M.blockedPlaces==0 and count(49,72)==0, "nothing is attempted in combat")
+M.RunTimers(30); assert(M.blockedPlaces==0 and remembered(1)==36, "the memory survives a long fight")
+M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(2)
+assert(count(49,72)==24 and M.blockedPlaces==0 and said("Put 24 action buttons back")==1)
+"""),
+    "bars_spec_change_uses_that_specs_memory": (BAR_MEMORY + r"""
+local two={}
+for slot=49,66 do two[slot]={k="spell",id=2000+slot} end
+HearthAndHustleCharDB.barGuard.specs[2]={slots=two}
+for slot=49,72 do M.SetAction(slot,"spell",1000+slot) end
+""", r"""
+assert(#M.placed==0 and remembered(1)==36 and remembered(2)==18)
+-- Swap to spec 2; the server hands over its bars with all but one button gone.
+M.specGroup=2; M.WipeActions(49,72); put(49,"spell",2049); M.FireEvent("ACTIVE_TALENT_GROUP_CHANGED",2,1)
+M.RunTimers(1.6); assert(#M.placed==0, "a spec change is given time to finish")
+M.RunTimers(2); assert(count(49,72)==18 and #M.placed==17)
+for slot=49,66 do assert(M.actions[slot].id==2000+slot, "spec 2 gets spec 2's buttons") end
+assert(remembered(1)==36 and FP.cdb.barGuard.specs[1].slots[50].id==1050, "spec 1's memory is untouched")
+-- Back to spec 1 with intact bars: nothing to do, and spec 2's memory stays.
+M.RunTimers(20); M.specGroup=1
+for slot=49,72 do put(slot,"spell",1000+slot) end
+M.FireEvent("ACTIVE_TALENT_GROUP_CHANGED",1,2); M.RunTimers(6)
+assert(#M.placed==17 and remembered(2)==30 and remembered(1)==36)   -- spec 2 = main bar 12 + its 18
+-- The emptied bars arrive while the client still reports the old spec group.
+M.RunTimers(20); M.WipeActions(49,72); M.RunTimers(2.5)
+M.specGroup=2; M.FireEvent("ACTIVE_TALENT_GROUP_CHANGED",2,1); M.RunTimers(6)
+assert(count(49,72)==18 and #M.placed==35)
+for slot=49,72 do assert(not M.actions[slot] or M.actions[slot].id>=2000, "spec 1's buttons never land on spec 2's bars") end
+assert(remembered(1)==36 and remembered(2)==30)
+"""),
+    "bars_unreadable_slots_are_not_treated_as_empty": (BAR_MEMORY + "M.secretActions=true\n", r"""
+assert(#M.placed==0 and remembered(1)==36 and #FP.cdb.barGuard.log==0, "secret slot data changes nothing")
+assert(FP.API.ReadActionBars()==nil and FP.API.GetActionSlot(49)==false)
+M.secretActions=false; M.RunTimers(6)
+assert(count(49,72)==24 and remembered(1)==36)
+"""),
+    "bars_unplaceable_buttons_retry_then_are_forgotten_quietly": (r"""
+local snap={[49]={k="spell",id=1049},[50]={k="macro",id=3,n="Heal"},[51]={k="item",id=858},[52]={k="macro",id=4,n="Gone"},[53]={k="flyout",id=9}}
+HearthAndHustleCharDB={barGuard={specs={[1]={slots=snap}},log={}}}
+M.unknownSpells[1049]=true; M.macros.Heal=11
+""", r"""
+assert(#M.placed==2 and M.actions[50].kind=="macro" and M.actions[50].name=="Heal" and M.actions[51].id==858, "a macro is found by name, not by its old index")
+assert(count(49,53)==2 and M.cursor==nil and said("Put 2 action buttons back on your bars (3 could not be restored)")==1)
+assert(remembered(1)==5 and FP.cdb.barGuard.specs[1].slots[49].fails==1)
+put(60,"spell",7); put(60); M.RunTimers(2)
+assert(remembered(1)==5, "an ordinary edit does not drop buttons still owed")
+M.RunTimers(12); M.RunTimers(12); M.RunTimers(30)
+assert(#M.placed==2 and remembered(1)==2 and said("Put ")==1 and #FP.cdb.barGuard.log==3, "three attempts, then silence")
+cmd("bars"); assert(said("last restore: 2 of 5 missing buttons put back on spec 1")==1)
+"""),
+    "bars_late_spell_data_is_restored_on_the_recheck": (r"""
+HearthAndHustleCharDB={barGuard={specs={[1]={slots={[49]={k="spell",id=1049},[50]={k="spell",id=1050}}}},log={}}}
+M.unknownSpells[1049]=true
+""", r"""
+assert(#M.placed==1 and not M.actions[49] and remembered(1)==2)
+M.unknownSpells[1049]=nil; M.RunTimers(11)
+assert(M.actions[49].id==1049 and #M.placed==2 and FP.cdb.barGuard.specs[1].slots[49].fails==nil)
+"""),
+    "bars_drag_defers_and_a_disabled_guard_is_inert": (BAR_MEMORY + 'M.cursor={kind="spell",id=1}\n', HUB + r"""
+assert(#M.placed==0 and M.cursor and M.cursor.id==1 and remembered(1)==36, "a held spell is never dropped or overwritten")
+M.cursor=nil; M.RunTimers(3); assert(count(49,72)==24)
+cmd("bars"); assert(said("Action bar guard on")==1 and said("spec 1 (active): 36 buttons remembered")==1)
+page("display"); check("barGuardEnabled",false); assert(FP.settings.barGuard.enabled==false)
+M.RunTimers(20); M.WipeActions(49,72); M.RunTimers(20)
+assert(#M.placed==24 and count(49,72)==0 and remembered(1)==36, "off means off: no reads, no writes")
+check("barGuardNotice",false); assert(FP.settings.barGuard.announce==false)
+check("barGuardEnabled",true); M.RunTimers(3)
+assert(#M.placed==24 and remembered(1)==12, "what happened while it was off is not second-guessed")
+"""),
+    "bars_refused_change_pauses_the_guard": (BAR_MEMORY + r"""
+local place=PlaceAction
+PlaceAction=function(slot) M.FireEvent("ADDON_ACTION_BLOCKED","HearthAndHustle","PlaceAction()") end
+""", r"""
+assert(#M.placed==0 and B.blocked and said("refused an action bar change")==1)
+assert(remembered(1)==36 and M.cursor==nil)
+M.WipeActions(1,12); M.RunTimers(30)
+local blocked=0; for _,e in ipairs(FP.db.errors) do if e.where=="ADDON_ACTION_BLOCKED" then blocked=blocked+1 end end
+assert(blocked==1 and said("refused an action bar change")==1, "one refusal, one report, no retries this session")
+FP.db.errors={}
+"""),
+}
+for name, (preload, body) in BAR_CASES.items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    result = subprocess.run([LUA, "-"], input=boot + BAR_HELPERS + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
 # The file tool, on fixtures written the way the release client writes them: CRLF, no indentation.
 def client_lua(variable, rows):
     return ("\r\n" + variable + " = {\r\n" + "".join(row + "\r\n" for row in rows) + "}\r\n").encode()
@@ -3580,5 +3728,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + 1} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)
