@@ -3934,6 +3934,16 @@ for name, (preload, body) in ENEMY_CASES.items():
         failed += 1
         print("  " + (result.stderr.splitlines() or ["no error output"])[0])
 
+# Review transition cases use preloads to exercise persisted state after reload.
+from review_fixes import REVIEW_FIX_CASES
+for name, (preload, body) in REVIEW_FIX_CASES.items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print(result.stdout + result.stderr)
+
 # The file tool, on fixtures written the way the release client writes them: CRLF, no indentation.
 def client_lua(variable, rows):
     return ("\r\n" + variable + " = {\r\n" + "".join(row + "\r\n" for row in rows) + "}\r\n").encode()

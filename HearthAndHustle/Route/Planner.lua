@@ -30,7 +30,12 @@ function P:WaitingValid()
 		if not offered then return false end
 	elseif not API.IsOnQuest(s.questID) then return false end
 	-- Stay put while working in the area, but recover if the player walks away.
-	local d = s.mapID and FP.Pos:DistanceTo(s)
+	local d, sameCont
+	if s.mapID then
+		local bearing
+		d, bearing, sameCont = FP.Pos:VectorTo(s)
+	end
+	if sameCont == false then return false end
 	if d and d > math.max(100, (s.radius or 35) * 3) then return false end
 	if s.kind == "pickup" then return true end
 	if s.kind == "turnin" then return API.IsQuestComplete(s.questID) end
