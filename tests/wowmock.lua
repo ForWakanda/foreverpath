@@ -470,4 +470,48 @@ function M.EnableBags(bags)
 	end
 end
 
+-------------------------------------------------------------------------------
+-- Action bars: slots, a cursor, spec groups. PlaceAction in combat is refused by
+-- the client and reported as a blocked action, never as a Lua error.
+-------------------------------------------------------------------------------
+M.actions, M.cursor, M.macros, M.unknownSpells = {}, nil, {}, {}
+M.placed, M.blockedPlaces, M.specGroup = {}, 0, 1
+function M.SetAction(slot, kind, id, name)
+	M.actions[slot] = kind and { kind = kind, id = id, name = name } or nil
+end
+-- The server drops buttons: every slot changes in the same instant.
+function M.WipeActions(first, last)
+	for slot = first, last do
+		if M.actions[slot] then M.actions[slot] = nil; M.FireEvent("ACTIONBAR_SLOT_CHANGED", slot) end
+	end
+end
+GetActionInfo = function(slot)
+	if M.secretActions then return M.Secret(), M.Secret() end
+	local a = M.actions[slot]
+	if not a then return nil end
+	if a.kind == "macro" then return "macro", 7000 + slot, "spell" end   -- not a macro index
+	return a.kind, a.id, a.kind == "spell" and "spell" or nil
+end
+C_ActionBar = { GetActionText = function(slot) local a = M.actions[slot]; return a and a.kind == "macro" and a.name or nil end }
+GetCursorInfo = function() if M.cursor then return M.cursor.kind, M.cursor.id end end
+ClearCursor = function() M.cursor = nil end
+C_Spell.PickupSpell = function(id) if not M.unknownSpells[id] then M.cursor = { kind = "spell", id = id } end end
+C_Item.PickupItem = function(id) M.cursor = { kind = "item", id = id } end
+GetMacroIndexByName = function(name) return M.macros[name] or 0 end
+PickupMacro = function(index)
+	for name, i in pairs(M.macros) do if i == index or name == index then M.cursor = { kind = "macro", id = i, name = name } end end
+end
+PlaceAction = function(slot)
+	if M.combatLockdown then
+		M.blockedPlaces = M.blockedPlaces + 1
+		M.FireEvent("ADDON_ACTION_BLOCKED", "HearthAndHustle", "PlaceAction()")
+		return
+	end
+	if not M.cursor then return end
+	M.cursor, M.actions[slot] = M.actions[slot], M.cursor
+	table.insert(M.placed, slot)
+	M.FireEvent("ACTIONBAR_SLOT_CHANGED", slot)
+end
+C_SpecializationInfo = { GetActiveSpecGroup = function() return M.specGroup end }
+
 return M

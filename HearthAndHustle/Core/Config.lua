@@ -45,6 +45,7 @@ FP.defaults = {
 		bar = { shown = true, locked = false, scale = 1.0, x = 0, y = -4, point = "TOP", fps = true },   -- status line (/hh bar)
 		reminders = { enabled = true, buffs = true, durability = 20, ammo = 200 },   -- out-of-combat reminders (/hh remind)
 		trainer = { enabled = true },   -- trainer notes (/hh trainer)
+		barGuard = { enabled = true, announce = true },   -- puts back action buttons the server dropped (/hh bars)
 	},
 	data = {
 		quests = {}, npcs = {}, creatures = {}, objects = {}, items = {},
@@ -69,6 +70,7 @@ FP.charDefaults = {
 	party = {},
 	lastRoute = {},
 	lootSeen = {},
+	barGuard = { specs = {}, log = {} },   -- remembered action bars per spec group
 }
 
 -- Renamed from "ForeverPath" in v0.17.0. A SavedVariables file copied to the new
