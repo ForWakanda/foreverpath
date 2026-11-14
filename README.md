@@ -4,6 +4,21 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Enemy watch (v0.21.0)
+
+For world PvP: Hearth & Hustle now tells you when players of the other faction are near you in the open world, the way the Spy addon does.
+
+- **What it sees.** Forever closes the combat log to addons, so it only knows what your client already shows: a player whose nameplate is on screen, or one you target, focus or mouse over. It cannot see a stealthed player or anyone out of nameplate range. Turn on enemy nameplates and "always show nameplates" (Options → Nameplates, or `/hh enemies nameplates`); without them it only sees players you mouse over or target. The addon tells you once if they are off and never switches them on by itself.
+- **Alerts.** A chat line, an on-screen notice and a sound for a new enemy, a louder one for a Kill On Sight player, and one when a visible enemy uses Stealth, Vanish, Prowl or Shadowmeld (only when the client lets the cast be read). A player who cannot attack you and whom you cannot attack (unflagged on a PvE realm) is listed without an alert. Sanctuaries are quiet. A raid on a town gives five lines and one summary, not a flood.
+- **Nearby list** on the PvP HUD: name, level, class, guild, how long ago, Kill On Sight players first. Players are kept by their full name (first name and surname).
+- **Kill On Sight and ignore lists**, shared by all your characters: `/hh kos Name Surname: reason`, `/hh ignore Name Surname`, or either command alone with the player targeted. Both lists are also under PvP in the control window.
+- **Record.** Every enemy you met, with wins (your killing blow or your pet's) and losses (the killing blow in the game's death recap; if that cannot be read, the one enemy who had you targeted): `/hh enemies stats`.
+- **Party.** Sightings go to party members who also run v0.21.0 or later, and theirs show up for you as "seen by". Turn it off with `/hh enemies share off`.
+- Off in dungeons, raids and battlegrounds. `/hh enemies off` switches it off everywhere; every part has its own tick under PvP.
+- Not included: clicking a row to target the player, fight markers on the world map, a watch list for your own faction or for guilds, announcing to guild or raid chat.
+- This is an independent implementation. Spy (Forever) is all rights reserved; none of its code, sounds or art is used. Its port showed which game functions still work for this on Forever.
+- Mock-tested and checked against Blizzard's Forever UI source (70938). First client session pending.
+
 ## Quest item sparkles (v0.20.0)
 
 Quest items lying in the world are easy to walk past. The game has its own sparkle for them, and a graphics preset switches it off. Hearth & Hustle now keeps it switched on: at login, and again about a second after a settings change resets it. Nothing to set up.

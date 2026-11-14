@@ -3725,6 +3725,215 @@ for name, (preload, body) in SPARKLE_CASES.items():
         failed += 1
         print("  " + (result.stderr.splitlines() or ["no error output"])[0])
 
+# v0.21.0: enemy watch. Hostile players the client already shows (nameplate,
+# target, focus, mouseover) are listed, alerted on and counted. Each case uses
+# mock unit tokens; M.Enemy puts an enemy player on one.
+ENEMY_HELPERS = r"""
+local W=FP.EnemyWatch
+local DB=FP.db.enemyWatch
+local base=#M.played
+local function said(text) local n=0; for _,l in ipairs(M.Chat()) do if tostring(l):find(text,1,true) then n=n+1 end end return n end
+local function rows() local out={}; for _,r in ipairs(W:Rows()) do out[#out+1]=r.text end return table.concat(out,"\n") end
+local function near() local n=0; for _ in pairs(W.nearby) do n=n+1 end return n end
+local function lastKit() return #M.played>base and M.played[#M.played].kit or nil end
+local function sent() local out={}; for _,m in ipairs(M.addonSent) do if tostring(m):sub(1,3)=="EW;" then out[#out+1]=m end end return out end
+local function msg(body,channel,sender) M.FireEvent("CHAT_MSG_ADDON","HHUSTLE",body,channel or "PARTY",sender or "Friend-Realm") end
+"""
+ENEMY_CASES = {
+    "enemy_nameplate_gives_full_name_one_alert_and_a_record": ("", r"""
+M.Enemy("nameplate1","Fetto","Vandike",{guild="Gankers",level=42})
+assert(W.nearby["Fetto Vandike"] and said("Enemy nearby: Fetto Vandike (42 Rogue) <Gankers>")==1 and #M.notices==1)
+assert(#M.played==base+1 and lastKit()==8458)
+M.Tick(5)
+assert(said("Enemy nearby")==1 and #M.notices==1 and #M.played==base+1, "still on screen is not a new encounter")
+local p=DB.players["Fetto Vandike"]
+assert(p.seen==1 and p.class=="ROGUE" and p.guild=="Gankers" and p.level==42 and DB.counts.nameplate==1)
+assert(rows():find("Fetto Vandike",1,true) and rows():find("<Gankers>",1,true) and rows():find("42 Rogue",1,true))
+M.Enemy("nameplate2","Fetto","Other")
+assert(W.nearby["Fetto Other"] and near()==2 and said("Enemy nearby")==2, "the same first name is not the same player")
+M.Gone("nameplate1"); M.RunTimers(60); M.Enemy("nameplate1","Fetto","Vandike")
+assert(said("Enemy nearby: Fetto Vandike")==1 and p.seen==1, "back within two minutes: the same encounter")
+M.Gone("nameplate1"); M.RunTimers(130); M.Enemy("nameplate1","Fetto","Vandike")
+assert(said("Enemy nearby: Fetto Vandike")==2 and p.seen==2, "back after two minutes: a new one")
+cmd("apicheck")
+local row=FP.db.apicheck["70124-manual"].rows["probe:enemyWatch"]
+assert(row and row.ok and row.note:find("enemy nameplates on, outside combat on",1,true), row and row.note)
+"""),
+    "enemy_target_focus_mouseover_count_and_others_do_not": ("", r"""
+M.Enemy("target","Ann","Bee"); M.Enemy("focus","Cee","Dee"); M.Enemy("mouseover","Eff","Gee")
+assert(W.nearby["Ann Bee"] and W.nearby["Cee Dee"] and W.nearby["Eff Gee"])
+assert(DB.counts.target==1 and DB.counts.focus==1 and DB.counts.mouseover==1 and said("Enemy nearby")==3 and #M.notices==1)
+M.Enemy("nameplate3","Friend","Ly",{enemy=false}); M.Enemy("nameplate4","Boar",nil,{player=false}); M.Tick(2)
+assert(near()==3 and not DB.players["Friend Ly"] and not DB.players["Boar"], "own faction and creatures are not enemies")
+M.Enemy("nameplate5","Dead","One",{dead=true}); M.Tick(1)
+assert(near()==3 and said("Dead One")==0, "a corpse is not a sighting")
+"""),
+    "enemy_withheld_identity_is_counted_not_guessed": ("", r"""
+M.Enemy("nameplate1","Hidden","One",{secret=true}); M.Tick(2)
+assert(near()==0 and said("Enemy nearby")==0 and DB.counts.secret==3 and next(DB.players)==nil)
+M.FireEvent("NAME_PLATE_UNIT_ADDED",M.Secret()); M.FireEvent("PARTY_KILL",M.Secret(),M.Secret())
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED",M.Secret(),M.Secret(),M.Secret())
+assert(near()==0 and DB.lastKill==nil)
+"""),
+    "enemy_kill_on_sight_list_and_alert": ("", r"""
+cmd("kos fetto vandike: ganked me in STV")
+assert(DB.kos["Fetto Vandike"].reason=="ganked me in STV")
+M.Enemy("nameplate1","Fetto","Vandike")
+assert(said("KILL ON SIGHT: Fetto Vandike (40 Rogue) — ganked me in STV")==1 and lastKit()==8959 and rows():find("KOS",1,true))
+assert(said("Enemy nearby")==0)
+cmd("kos Fetto"); assert(DB.kos["Fetto Vandike"]==nil and said("removed from Kill On Sight")==1, "a first name finds the one known player")
+M.Enemy("target","Ann","Bee"); cmd("kos"); assert(DB.kos["Ann Bee"], "no name means the targeted enemy")
+cmd("kos +Ann Bee"); assert(said("already on Kill On Sight")==1 and DB.kos["Ann Bee"])
+cmd("kos Ann Bee: corpse camper"); assert(DB.kos["Ann Bee"].reason=="corpse camper", "a reason updates, it does not remove")
+cmd("kos -Ann Bee"); assert(not DB.kos["Ann Bee"]); cmd("kos -Ann Bee"); assert(said("is not on Kill On Sight")==1)
+cmd("kos zug"); assert(DB.kos["Zug"]); M.Enemy("nameplate5","Zug","Zug")
+assert(said("KILL ON SIGHT: Zug Zug")==1, "a first name typed before the meeting matches")
+M.Gone("target"); M.Enemy("target","Boar",nil,{player=false}); cmd("kos"); assert(said("Target an enemy player")==1)
+cmd("kos list"); assert(said("KOS Zug")==1)
+"""),
+    "enemy_ignore_list_is_silent": ("", r"""
+cmd("ignore Fetto Vandike"); M.Enemy("nameplate1","Fetto","Vandike"); M.Tick(3)
+assert(near()==0 and said("Enemy nearby")==0 and #M.notices==0 and not DB.players["Fetto Vandike"])
+cmd("kos Fetto Vandike"); assert(DB.kos["Fetto Vandike"] and not DB.ignore["Fetto Vandike"], "Kill On Sight ends ignoring")
+cmd("ignore +Fetto Vandike"); assert(DB.ignore["Fetto Vandike"] and not DB.kos["Fetto Vandike"])
+cmd("ignore -Fetto Vandike"); M.Tick(2)
+assert(W.nearby["Fetto Vandike"] and said("Enemy nearby: Fetto Vandike")==1)
+cmd("ignore"); assert(said("Target an enemy player")==1)
+"""),
+    "enemy_watch_is_off_in_instances_and_when_switched_off": ("", r"""
+M.instance={type="party",name="Scarlet Monastery",mapID=189}
+M.Enemy("nameplate1","In","Dungeon"); M.Enemy("target","In","Dungeon"); M.Tick(2)
+assert(near()==0 and said("Enemy nearby")==0 and #W:Rows()==0)
+M.instance={type="pvp",name="Warsong Gulch",mapID=489}; M.Tick(2); assert(near()==0)
+M.instance=nil; cmd("enemies off"); M.Tick(2); M.FireEvent("PLAYER_TARGET_CHANGED")
+assert(near()==0 and said("Enemy nearby")==0, "off means off")
+cmd("enemies on"); assert(W.nearby["In Dungeon"] and said("Enemy nearby: In Dungeon")==1)
+"""),
+    "enemy_unflagged_and_sanctuary_are_quiet_kos_is_not": ("", r"""
+M.Enemy("nameplate1","Pve","Player",{canAttack=false})
+assert(W.nearby["Pve Player"] and said("Enemy nearby")==0 and #M.notices==0 and rows():find("not flagged",1,true))
+cmd("kos Quiet One"); M.Enemy("nameplate2","Quiet","One",{canAttack=false}); assert(said("KILL ON SIGHT: Quiet One")==1)
+C_PvP.GetZonePVPInfo=function() return "sanctuary" end
+M.Enemy("nameplate3","Booty","Bay"); cmd("kos Safe Here"); M.Enemy("nameplate4","Safe","Here")
+assert(W.nearby["Booty Bay"] and said("Enemy nearby")==0 and said("KILL ON SIGHT: Safe Here")==0, "a sanctuary stays quiet")
+cmd("enemies alerts off"); C_PvP.GetZonePVPInfo=function() return "contested" end
+M.Enemy("nameplate6","No","Alert"); assert(W.nearby["No Alert"] and said("No Alert")==0 and #M.notices==1)
+"""),
+    "enemy_town_raid_does_not_flood_chat": ("", r"""
+for i=1,20 do M.Enemy("nameplate"..i,"Raider","N"..i) end
+assert(said("Enemy nearby")==5 and said("Many enemy players nearby")==1 and #M.notices==1 and #M.played==base+1)
+assert(near()==20 and #W:Rows()==11 and rows():find("+10 more",1,true))
+cmd("enemies sound off"); M.RunTimers(130); for i=1,20 do M.Gone("nameplate"..i) end
+M.Enemy("nameplate1","Lone","Rogue"); assert(said("Enemy nearby: Lone Rogue")==1 and #M.notices==2 and #M.played==base+1, "sound off is silent")
+"""),
+    "enemy_stealth_alert_needs_a_readable_cast": ("", r"""
+C_Spell.GetSpellName=function(id) return ({[1784]="Stealth",[1856]="Vanish",[5215]="Prowl",[20580]="Shadowmeld",[77777]="Prowl",[133]="Fireball"})[id] end
+M.Enemy("nameplate1","Sneak","Thief")
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate1","Cast-1",1784)
+assert(said("Sneak Thief used Stealth near you")==1 and lastKit()==12197 and rows():find("stealth",1,true))
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate1","Cast-1",1784); assert(said("used Stealth")==1, "one alert per player per burst")
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate1","Cast-2",M.Secret())
+M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate1","Cast-3",133)
+assert(DB.counts.castSecret==1 and DB.counts.castRead==3 and DB.counts.stealth==1 and said(" used ")==1)
+M.Enemy("nameplate2","Cat","Druid",{class="DRUID"}); M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate2","Cast-4",77777)
+assert(said("Cat Druid used Prowl near you")==1, "a changed id is caught by the spell's name")
+M.SetUnit("party1",{name="Friend",player=true}); M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","party1","Cast-5",1784)
+M.Enemy("nameplate3","Boar",nil,{player=false}); M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate3","Cast-6",1784)
+assert(said(" used ")==2, "only visible enemy players")
+M.RunTimers(10); cmd("enemies stealth off"); M.FireEvent("UNIT_SPELLCAST_SUCCEEDED","nameplate1","Cast-7",1856)
+assert(said(" used ")==2 and DB.counts.stealth==2)
+"""),
+    "enemy_win_is_my_killing_blow_on_a_player_i_saw": ("", r"""
+M.SetUnit("player",{guid="Player-1-Me"}); M.SetUnit("pet",{guid="Pet-0-Wolf"})
+local a=M.Enemy("nameplate1","Fetto","Vandike"); local b=M.Enemy("nameplate2","Ann","Bee")
+M.FireEvent("PARTY_KILL","Player-1-Me",a.guid)
+assert(DB.players["Fetto Vandike"].wins==1 and said("You killed Fetto Vandike. Record against them: 1 win, 0 losses.")==1 and DB.lastKill.result=="win")
+M.FireEvent("PARTY_KILL","Pet-0-Wolf",b.guid); assert(DB.players["Ann Bee"].wins==1, "the pet's killing blow counts")
+M.FireEvent("PARTY_KILL","Player-1-Friend",a.guid); assert(DB.players["Fetto Vandike"].wins==1 and DB.lastKill.result=="not yours")
+M.FireEvent("PARTY_KILL","Player-1-Me","Player-1-NeverSeen"); assert(DB.lastKill.result=="victim never seen")
+M.FireEvent("PARTY_KILL","Player-1-Me","Creature-0-1-2-3"); assert(DB.lastKill.result=="victim never seen", "a creature kill is not recorded at all")
+cmd("enemies stats"); assert(said("Fetto Vandike")>=2 and said("met 1 · 1-0")==2)
+"""),
+    "enemy_loss_from_the_death_recap_or_the_one_who_targeted_me": ("", r"""
+local a=M.Enemy("nameplate1","Fetto","Vandike"); M.SetUnit("nameplate1target",{is="player"}); M.Tick(1)
+local p=DB.players["Fetto Vandike"]
+M.recap={id=5,events={{sourceGUID=a.guid,sourceName="Fetto"}}}
+M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(p.losses==1 and said("Fetto Vandike killed you.")==1 and DB.lastDeath.how=="recap")
+M.units["nameplate1target"]=nil; M.RunTimers(20); M.FireEvent("PLAYER_DEAD"); M.RunTimers(2); M.RunTimers(4)
+assert(p.losses==1 and DB.lastDeath.name==nil and DB.lastDeath.how:find("stale",1,true), "an old recap is not a new death")
+M.SetUnit("nameplate1target",{is="player"}); M.Tick(1)
+M.recap={id=6,events={{sourceGUID="Creature-0-1-2-3",sourceName="Boar"}}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(p.losses==1 and DB.lastDeath.how:find("not an enemy player",1,true), "a creature's killing blow is nobody's win")
+M.Tick(1); M.recap={id=7,events={}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(p.losses==2 and DB.lastDeath.how:find("^targeting"), "unreadable recap: the one enemy who had me targeted")
+M.Enemy("nameplate2","Ann","Bee"); M.SetUnit("nameplate2target",{is="player"}); M.Tick(1)
+M.recap={id=8,events={}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(p.losses==2 and not DB.players["Ann Bee"].losses and DB.lastDeath.how:find("2 had you targeted",1,true), "two suspects: nobody gets it")
+M.recap={id=9,events={{sourceName="Ann"}}}; M.FireEvent("PLAYER_DEAD"); M.RunTimers(2)
+assert(DB.players["Ann Bee"].losses==1, "a recap with a first name finds the one enemy seen with it")
+"""),
+    "enemy_party_share_sends_once_and_trusts_only_the_party": ("", r"""
+M.inGroup=true; M.SetUnit("party1",{name="Friend",realm="Realm"})
+M.Enemy("nameplate1","Fetto","Vandike",{guild="Bad;Guild|x"}); M.Tick(3)
+assert(#sent()==1 and sent()[1]=="EW;1;Fetto Vandike;ROGUE;40;BadGuildx", sent()[1])
+msg("EW;1;Zug Zug;WARRIOR;60;Horde Slayers")
+assert(W.nearby["Zug Zug"].by=="Friend" and said("Enemy nearby: Zug Zug (60 Warrior) <Horde Slayers> — seen by Friend")==1)
+assert(not DB.players["Zug Zug"] and #sent()==1 and DB.counts.party==1, "a friend's sighting is not my encounter and is not passed on")
+msg("EW;1;Zug Zug;WARRIOR;60;Horde Slayers"); msg("EW;1;Fetto Vandike;ROGUE;40;"); assert(said("seen by Friend")==1, "already known here")
+M.Enemy("nameplate3","Zug","Zug",{class="WARRIOR",level=60})
+assert(DB.players["Zug Zug"].seen==1 and DB.counts.nameplate==2 and W.nearby["Zug Zug"].by==nil, "then seen here: met")
+assert(said("Enemy nearby: Zug Zug")==1 and #sent()==1, "but not announced or sent a second time")
+msg("EW;1;Stranger One;MAGE;60;","PARTY","Stranger-Realm"); msg("EW;1;Whisper One;MAGE;60;","WHISPER"); msg("EW;2;Future One;MAGE;60;")
+msg("EW;1;;MAGE;60;"); msg("EW;1;Bad Level;MAGE;abc;"); msg("EW;1;Too;Many;Fields;MAGE;60;x")
+msg("EW;1;Odd Class;m|cffage;999;")
+assert(near()==3 and W.nearby["Odd Class"] and not W.nearby["Odd Class"].class and not W.nearby["Odd Class"].level, "bad fields are dropped, not shown")
+cmd("ignore Loud One"); msg("EW;1;Loud One;MAGE;60;"); assert(not W.nearby["Loud One"])
+cmd("enemies share off"); msg("EW;1;Late One;MAGE;60;"); M.RunTimers(5); M.Enemy("nameplate2","Ann","Bee")
+assert(not W.nearby["Late One"] and W.nearby["Ann Bee"] and #sent()==1, "share off: nothing in, nothing out")
+"""),
+    "enemy_nameplate_help_is_said_once_and_switched_only_on_request": ('M.cvars.nameplateShowAll="0"\n', HUB + r"""
+local function plateWrites() local n=0; for _,w in ipairs(M.cvarWrites) do if w.name:find("^nameplate") then n=n+1 end end return n end
+assert(said("nameplates only show in combat")==1 and DB.nameplateHint and plateWrites()==0, "the addon says it, it does not switch it")
+cmd("enemies"); assert(said("nameplates only show in combat")==2)
+M.combatLockdown=true; cmd("enemies nameplates")
+assert(plateWrites()==0 and M.cvars.nameplateShowAll=="0" and said("cannot be changed in combat")==1)
+M.combatLockdown=false; page("pvp"); assert(H.controls.enemyNameplates:IsEnabled()); click("enemyNameplates")
+assert(M.cvars.nameplateShowAll=="1" and M.cvars.nameplateShowEnemies=="1" and plateWrites()==1, "only the setting that was off is written")
+H:Refresh(); assert(not H.controls.enemyNameplates:IsEnabled())
+for _,w in ipairs(M.cvarWrites) do assert(w.name=="nameplateShowAll" or w.name=="outlineModeShowLootEffectWhenDisabled", w.name) end
+"""),
+    "enemy_hub_controls_lists_and_settings": ("", HUB + r"""
+page("pvp")
+check("enemyWatchAlerts",false); check("enemyWatchSound",false); check("enemyWatchStealth",false); check("enemyWatchShare",false)
+local set=FP.settings.enemyWatch
+assert(set.enabled and not set.alerts and not set.sound and not set.stealth and not set.share)
+check("enemyWatchEnabled",false); assert(not set.enabled); check("enemyWatchEnabled",true)
+field("kosName","fetto vandike"); field("kosReason","camper"); click("kosAdd")
+assert(DB.kos["Fetto Vandike"].reason=="camper")
+field("kosReason",""); click("kosAdd"); assert(DB.kos["Fetto Vandike"] and H.resultText:GetText():find("already on Kill On Sight",1,true), "Add never removes")
+selectRow("kosList",1); click("kosRemove"); assert(not DB.kos["Fetto Vandike"])
+field("ignoreName","Ann Bee"); click("ignoreAdd"); click("ignoreAdd"); assert(DB.ignore["Ann Bee"], "Ignore never un-ignores")
+selectRow("ignoreList",1); click("ignoreRemove"); assert(not DB.ignore["Ann Bee"])
+M.Enemy("nameplate1","Fetto","Vandike"); click("enemyList"); assert(H.resultText:GetText():find("Fetto Vandike",1,true))
+click("enemyStats"); assert(H.resultText:GetText():find("met 1",1,true))
+"""),
+    "enemy_list_supersedes_the_first_name_roster_only_when_it_has_rows": ("", r"""
+M.SetUnit("target",{name="Duelist",player=true,canAttack=true,class="MAGE",level=30}); M.FireEvent("PLAYER_TARGET_CHANGED")
+local function section(name) local on=false; for _,r in ipairs(FP.PvP:Collect()) do if r.header and r.text:find(name,1,true) then on=true end end return on end
+assert(section("Enemies seen") and not section("Enemies nearby"), "a duel opponent of my own faction stays on the old list")
+M.Enemy("nameplate1","Fetto","Vandike")
+assert(section("Enemies nearby") and not section("Enemies seen"), "no double listing")
+"""),
+}
+for name, (preload, body) in ENEMY_CASES.items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    result = subprocess.run([LUA, "-"], input=boot + ENEMY_HELPERS + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors: "..tostring(FP.db.errors[1] and FP.db.errors[1].err))\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
 # The file tool, on fixtures written the way the release client writes them: CRLF, no indentation.
 def client_lua(variable, rows):
     return ("\r\n" + variable + " = {\r\n" + "".join(row + "\r\n" for row in rows) + "}\r\n").encode()
@@ -3839,5 +4048,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + 1} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)

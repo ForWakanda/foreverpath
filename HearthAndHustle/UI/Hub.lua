@@ -447,6 +447,42 @@ function H:BuildPage(key)
 			{"pvpSpells","Supported spell timers",function() command("pvp spells") end},
 		})
 		self:Actions(p,{{"pvpClear","Clear session timers / roster",function() command("pvp clear") end,confirm="Clear the current PvP timers and session roster? This does not change your quests or waypoint route."}})
+		if FP.EnemyWatch then
+			local EW,set=FP.EnemyWatch,FP.settings.enemyWatch
+			self:Section(p,"Enemy watch (open world)")
+			self:Text(p,"",function() local st=EW:Status(); return U.Trim(st[2] or st[1]).."\n"..U.Trim(st[3] or "") end)
+			self:Check(p,"enemyWatchEnabled","Watch for enemy players near me",function() return set.enabled end,function(v) command("enemies "..onoff(v)) end)
+			self:Check(p,"enemyWatchAlerts","Alert in chat and on screen",function() return set.alerts end,function(v) command("enemies alerts "..onoff(v)) end)
+			self:Check(p,"enemyWatchSound","Play alert sounds",function() return set.sound end,function(v) command("enemies sound "..onoff(v)) end)
+			self:Check(p,"enemyWatchStealth","Alert when a visible enemy uses Stealth, Vanish, Prowl or Shadowmeld",function() return set.stealth end,function(v) command("enemies stealth "..onoff(v)) end)
+			self:Check(p,"enemyWatchShare","Share sightings with my party",function() return set.share end,function(v) command("enemies share "..onoff(v)) end)
+			self:Text(p,"It sees a player whose nameplate is on screen, or one you target, focus or mouse over. It cannot see stealthed players or anyone out of nameplate range.")
+			self:Actions(p,{
+				{"enemyNameplates","Turn on enemy nameplates",function() command("enemies nameplates") end,enabled=function() local _,ok=EW:NameplateLine(); return not ok end},
+				{"enemyList","Nearby enemies",function() command("enemies list") end},
+				{"enemyStats","Recent enemies and record",function() command("enemies stats 15") end},
+			})
+			self:Section(p,"Kill On Sight")
+			local kos=self:List(p,"kosList",function()
+				local out={}; for _,name in ipairs(EW:SortedNames(FP.db.enemyWatch.kos)) do out[#out+1]={key=name,name=name,reason=FP.db.enemyWatch.kos[name].reason} end; return out
+			end,function(item) return item.name .. (item.reason and ("  —  "..item.reason) or "") end,{count=5})
+			self:Actions(p,{{"kosRemove","Remove selected",function() local item=self:Selected(kos); if item then command("kos -"..item.name); kos.selected=nil end end,enabled=function() return self:Selected(kos)~=nil end}})
+			local kosName=self:Field(p,"kosName","Player name (blank = my target)","")
+			local kosReason=self:Field(p,"kosReason","Reason (optional)","")
+			self:Actions(p,{{"kosAdd","Add to Kill On Sight",function()
+				local name,reason=U.Trim((kosName:GetText():gsub(":",""))),U.Trim(kosReason:GetText())
+				command("kos +"..name..(reason~="" and (": "..reason) or ""))
+			end}})
+			self:Section(p,"Ignored enemies")
+			local ignored=self:List(p,"ignoreList",function()
+				local out={}; for _,name in ipairs(EW:SortedNames(FP.db.enemyWatch.ignore)) do out[#out+1]={key=name,name=name} end; return out
+			end,function(item) return item.name end,{count=4})
+			local ignoreName=self:Field(p,"ignoreName","Player name (blank = my target)","")
+			self:Actions(p,{
+				{"ignoreAdd","Ignore",function() command("ignore +"..U.Trim(ignoreName:GetText())) end},
+				{"ignoreRemove","Stop ignoring selected",function() local item=self:Selected(ignored); if item then command("ignore -"..item.name); ignored.selected=nil end end,enabled=function() return self:Selected(ignored)~=nil end},
+			})
+		end
 	elseif key=="rare" then
 		self:Text(p,"",function() local status=FP.RareWatch:StatusLines(); return status end)
 		self:HudControls(p,"rare",FP.settings.rare)

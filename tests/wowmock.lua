@@ -251,11 +251,11 @@ C_Texture = { GetAtlasInfo = function() return {} end }
 function M.SetUnit(unit, info) M.units[unit] = info end
 UnitExists = function(unit) return M.units[unit] ~= nil end
 UnitGUID = function(unit) local u = M.units[unit]; if u and u.secret then return M.Secret() end return u and u.guid end
-UnitName = function(unit) if unit == "player" then return "Chiznooch" end local u = M.units[unit]; if u and u.secret then return M.Secret() end return u and u.name, u and u.realm end
+UnitName = function(unit) if unit == "player" then return "Chiznooch" end local u = M.units[unit]; if u and u.secret then return M.Secret() end return u and u.name, u and (u.surname or u.realm) end
 UnitLevel = function(unit) if unit == "player" then return M.level or 20 end return M.units[unit] and M.units[unit].level end
 UnitIsPlayer = function(unit) if unit == "player" then return true end return M.units[unit] and M.units[unit].player or false end
 UnitIsDead = function(unit) return M.units[unit] and M.units[unit].dead or false end
-UnitIsDeadOrGhost = function() return false end
+UnitIsDeadOrGhost = function(unit) local u = unit and unit ~= "player" and M.units[unit]; return u and u.dead or false end
 UnitClassification = function(unit) return M.units[unit] and M.units[unit].classification or "normal" end
 UnitCreatureType = function(unit) return M.units[unit] and M.units[unit].ctype or "Humanoid" end
 UnitReaction = function(_, unit) return M.units[unit] and M.units[unit].reaction or 2 end
@@ -263,6 +263,37 @@ UnitClass = function(unit) if unit ~= "player" and M.units[unit] and M.units[uni
 UnitRace = function(unit) if unit ~= "player" and M.units[unit] and M.units[unit].race then return M.units[unit].race, M.units[unit].race end return "Blood Elf", "BloodElf" end
 UnitFactionGroup = function() return "Horde", "Horde" end
 UnitCanAttack = function(_, unit) return M.units[unit] and M.units[unit].canAttack or false end
+-- Enemy players (PvP/EnemyWatch.lua). M.Enemy puts one on a unit token; a
+-- nameplate token also fires the client's event.
+UnitIsEnemy = function(_, unit) return M.units[unit] and M.units[unit].enemy or false end
+UnitIsUnit = function(a, b) local u = M.units[a]; return u ~= nil and u.is == b end
+GetGuildInfo = function(unit) local u = M.units[unit]; return u and u.guild end
+Constants = Constants or {}
+Constants.CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " }
+function M.Enemy(unit, first, surname, extra)
+	local u = { name = first, surname = surname, player = true, enemy = true, canAttack = true, level = 40, class = "ROGUE", race = "Human",
+		guid = "Player-1-" .. first .. (surname or "") }
+	for k, v in pairs(extra or {}) do u[k] = v end
+	M.units[unit] = u
+	if unit:find("^nameplate") then M.FireEvent("NAME_PLATE_UNIT_ADDED", unit)
+	elseif unit == "target" then M.FireEvent("PLAYER_TARGET_CHANGED")
+	elseif unit == "focus" then M.FireEvent("PLAYER_FOCUS_CHANGED")
+	elseif unit == "mouseover" then M.FireEvent("UPDATE_MOUSEOVER_UNIT") end
+	return u
+end
+function M.Gone(unit)
+	M.units[unit] = nil
+	if unit:find("^nameplate") then M.FireEvent("NAME_PLATE_UNIT_REMOVED", unit) end
+end
+M.notices = {}
+RaidWarningFrame = RaidWarningFrame or {}
+ChatTypeInfo = ChatTypeInfo or { RAID_WARNING = { r = 1, g = 0.3, b = 0.1 } }
+RaidNotice_AddMessage = function(_, text) table.insert(M.notices, text) end
+-- Death recap: M.recap = { id = n, events = { { sourceGUID =, sourceName =, hideCaster = } } }
+C_DeathRecap = {
+	GetRecapLink = function() return M.recap and M.recap.id and ("|Hdeath:" .. M.recap.id .. "|h[recap]|h") or "" end,
+	GetRecapEvents = function() if M.recap and M.recap.secret then return M.Secret() end return M.recap and M.recap.events or {} end,
+}
 UnitIsPVP = function() return true end
 PLAYER_FACTION_GROUP = { [0] = "Horde", [1] = "Alliance" }
 RAID_CLASS_COLORS = { PRIEST = { colorStr = "ffffffff" }, MAGE = { colorStr = "ff3fc7eb" }, HUNTER = { colorStr = "ffaad372" } }
@@ -292,7 +323,8 @@ UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m, x, y } end 
 C_Minimap = { GetViewRadius = function() return 233.3 end }
 -- Console variables. A write in combat is not an error on the client: it is
 -- refused and reported as a blocked action (M.cvarProtected switches that on).
-M.cvars = { outlineModeShowLootEffectWhenDisabled = "0", graphicsOutlineMode = "2", graphicsQuality = "6" }
+M.cvars = { outlineModeShowLootEffectWhenDisabled = "0", graphicsOutlineMode = "2", graphicsQuality = "6",
+	nameplateShowEnemies = "1", nameplateShowAll = "1" }
 M.cvarWrites = {}
 C_CVar = { GetCVarBool = function() return M.rotateMinimap or false end,
 	GetCVar = function(name)
