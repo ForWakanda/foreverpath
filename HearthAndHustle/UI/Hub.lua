@@ -487,6 +487,9 @@ function H:BuildPage(key)
 		self:Check(p,"barGuardEnabled","Put back action buttons that vanish at login, spec change or level-up",function() return FP.settings.barGuard.enabled end,function(v) command("bars "..onoff(v)) end)
 		self:Check(p,"barGuardNotice","Tell me in chat when buttons were put back",function() return FP.settings.barGuard.announce end,function(v) command("bars notice "..onoff(v)) end)
 		self:Text(p,"Fills empty slots only, never in combat, and never uses an ability. Your own edits are remembered as you make them.")
+		self:Section(p,"Quest items")
+		self:Check(p,"questSparkleEnabled","Keep the game's sparkle on quest items you can pick up",function() return FP.settings.questSparkle.enabled end,function(v) command("sparkle "..onoff(v)) end)
+		self:Text(p,"Keeps one graphics setting of the game switched on, also after a graphics preset resets it. The game draws the sparkle and decides what gets one. Switching it off takes effect after a full game restart.")
 		self:Section(p,"Map pins and arrow")
 		for _,entry in ipairs({{"worldMapPins","World-map pins"},{"minimapPin","Minimap pin"}}) do
 			local key,text=entry[1],entry[2]

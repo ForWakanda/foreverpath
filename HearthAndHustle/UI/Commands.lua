@@ -34,6 +34,7 @@ local function help()
 	p("  /hh remind [on|off|buffs on|off|durability n|ammo n]   out-of-combat reminders")
 	p("  /hh trainer [level|on|off]   what a recorded class trainer teaches at a level")
 	p("  /hh bars [on|off|notice on|off]   action bar guard: puts back buttons that vanish at login, spec change or level-up")
+	p("  /hh sparkle [on|off]   quest item sparkles: keeps the game's own sparkle on quest items switched on")
 	p("  /hh probe [on|off|now|dump]   beta diagnostic: which values are secret, and when")
 	p("  /hh partyexport | partyimport <string> | partysync")
 	p("  /hh debug | /hh reset data|char confirm")
@@ -266,6 +267,8 @@ function C:Handle(msg)
 	elseif cmd == "trainer" then FP.Trainer:Command(rest)
 	elseif cmd == "bars" or cmd == "barguard" then
 		if FP.BarGuard then FP.BarGuard:Command(rest) else p("Action bar guard arrives with this update: fully exit and restart the game once.") end
+	elseif cmd == "sparkle" or cmd == "sparkles" then
+		if FP.QuestSparkle then FP.QuestSparkle:Command(rest) else p("Quest item sparkles arrive with this update: fully exit and restart the game once.") end
 	elseif cmd == "probe" then
 		local sub = rest:lower()
 		if sub == "on" then FP.settings.probe.enabled = true; p("probe on")

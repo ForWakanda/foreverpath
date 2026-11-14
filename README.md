@@ -4,6 +4,17 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Quest item sparkles (v0.20.0)
+
+Quest items lying in the world are easy to walk past. The game has its own sparkle for them, and a graphics preset switches it off. Hearth & Hustle now keeps it switched on: at login, and again about a second after a settings change resets it. Nothing to set up.
+
+- It changes one graphics setting of the game (`outlineModeShowLootEffectWhenDisabled`) and nothing else. Your Outline Mode stays as you set it. Never in combat.
+- The game draws the sparkle and decides what gets one; an addon cannot pick objects. If your Outline Mode is on and an item shows an outline and no sparkle, set **Options → Graphics → Outline Mode** to Disabled. The addon tells you once when that applies.
+- Turn it off under **Display → Quest items** or with `/hh sparkle off`. A setting the addon switched on goes back to off; one that was already on before stays yours. The game keeps drawing the sparkle until you fully exit and restart it. The setting is saved by the game itself, so untick it before removing the addon, or type `/console outlineModeShowLootEffectWhenDisabled 0`.
+- If something else keeps switching the setting off, the addon stops after four tries in a minute and says so once.
+- The setting was found by the Forever Loot Sparkles addon (GPL-3.0); this is an independent implementation with none of its code. Its author reports that quest givers sparkle too, because the game uses one setting for both.
+- Mock-tested; `C_CVar` and `CVAR_UPDATE` checked against Blizzard's Forever UI source (70938). First client session pending.
+
 ## Action bar guard (v0.19.0)
 
 On the current Forever build a character with dual specialization can log in, swap spec or level up and find action bars emptied by the server. Hearth & Hustle now remembers what is on your bars while you play and puts missing buttons back on their slots a few seconds later, with one chat line saying how many. Nothing to set up and no command to type.

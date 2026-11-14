@@ -290,7 +290,25 @@ C_Map = {
 }
 UiMapPoint = { CreateFromCoordinates = function(m, x, y) return { m, x, y } end }
 C_Minimap = { GetViewRadius = function() return 233.3 end }
-C_CVar = { GetCVarBool = function() return M.rotateMinimap or false end }
+-- Console variables. A write in combat is not an error on the client: it is
+-- refused and reported as a blocked action (M.cvarProtected switches that on).
+M.cvars = { outlineModeShowLootEffectWhenDisabled = "0", graphicsOutlineMode = "2", graphicsQuality = "6" }
+M.cvarWrites = {}
+C_CVar = { GetCVarBool = function() return M.rotateMinimap or false end,
+	GetCVar = function(name)
+		if M.secretCVars then return M.Secret() end
+		return M.cvars[name]
+	end,
+	SetCVar = function(name, value)
+		table.insert(M.cvarWrites, { name = name, value = value, combat = M.combatLockdown or false })
+		if M.cvarProtected or M.cvars[name] == nil then
+			if M.cvarProtected == true then M.FireEvent("ADDON_ACTION_BLOCKED", "HearthAndHustle", "SetCVar()") end
+			return false   -- M.cvarProtected = "silent": refused with no event at all
+		end
+		M.cvars[name] = value
+		M.FireEvent("CVAR_UPDATE", name, value)
+		return true
+	end }
 
 -- quest log
 function M.AddQuest(q)

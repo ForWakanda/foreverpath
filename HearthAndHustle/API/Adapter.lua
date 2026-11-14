@@ -1854,6 +1854,12 @@ function API.Check()
 			API.ActionBarsAvailable() and "present" or "missing", tostring(API.ActiveSpecGroup()),
 			bars and (count .. " buttons readable") or "bars not readable now (combat or secret)")
 	end)
+	probe("lootSparkle", function()
+		local state, outline = API.GetLootSparkle(), API.OutlineModeOn()
+		return state ~= nil, string.format("loot sparkle setting %s; outline mode %s",
+			state == nil and "missing" or (state == "1" and "on" or "off"),
+			outline == nil and "unreadable" or (outline and "on" or "off"))
+	end)
 	probe("classPrep", function()
 		local free = API.GetFreeBagSlots()
 		return free ~= nil, tostring(API.GetCharInfo().class) .. "; general bag slots " .. tostring(free or "unavailable")
@@ -2196,5 +2202,51 @@ function API.PlaceOnBar(slot, entry)
 	local placed = pcall(PlaceAction, slot)
 	pcall(ClearCursor)
 	if not placed then return false, "place" end
+	return true
+end
+
+-------------------------------------------------------------------------------
+-- Quest item sparkle (Modules/QuestSparkle.lua). The client's own loot sparkle
+-- is one console variable, and it is the only one this addon writes: the name
+-- is fixed here, there is no general "set a console variable" function. Outline
+-- Mode is read, never written. C_CVar.GetCVar / SetCVar and CVAR_UPDATE are
+-- documented in Blizzard's Forever source (1.60.1.70938); the variable itself
+-- belongs to the engine and is not listed there, so a client without it reads
+-- nil and the feature stays inert.
+-------------------------------------------------------------------------------
+local LOOT_SPARKLE_CVAR = "outlineModeShowLootEffectWhenDisabled"
+local OUTLINE_MODE_CVAR = "graphicsOutlineMode"
+
+local function readCVar(name)
+	if not has(C_CVar, "GetCVar") then return nil end
+	local ok, value = pcall(C_CVar.GetCVar, name)
+	value = ok and safe(value) or nil
+	if type(value) == "number" then value = tostring(value) end
+	return type(value) == "string" and value or nil
+end
+
+-- "1" (on), another string (off), or nil when the client has no such setting.
+function API.GetLootSparkle()
+	if not has(C_CVar, "SetCVar") then return nil end
+	return readCVar(LOOT_SPARKLE_CVAR)
+end
+
+-- true / false, or nil when it cannot be read. Read only.
+function API.OutlineModeOn()
+	local value = readCVar(OUTLINE_MODE_CVAR)
+	if value == nil then return nil end
+	return value ~= "0"
+end
+
+-- Switch the loot sparkle setting. Never in combat; writes only when the value
+-- differs. Returns true, or false and why.
+function API.SetLootSparkle(on)
+	local want = on and "1" or "0"
+	local current = API.GetLootSparkle()
+	if current == nil then return false, "unavailable" end
+	if current == want or (not on and current ~= "1") then return true end
+	if API.InCombat() then return false, "combat" end
+	if not pcall(C_CVar.SetCVar, LOOT_SPARKLE_CVAR, want) then return false, "error" end
+	if API.GetLootSparkle() ~= want then return false, "refused" end
 	return true
 end

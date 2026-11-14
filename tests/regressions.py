@@ -3614,6 +3614,117 @@ for name, (preload, body) in BAR_CASES.items():
         failed += 1
         print("  " + (result.stderr.splitlines() or ["no error output"])[0])
 
+# v0.20.0: quest item sparkles. The module keeps the client's own loot sparkle
+# setting switched on. Each case checks the one console variable it may write,
+# and that nothing else is ever written and nothing is written in combat.
+SPARKLE_HELPERS = r"""
+local Q=FP.QuestSparkle
+local NAME="outlineModeShowLootEffectWhenDisabled"
+local function said(text) local n=0; for _,l in ipairs(M.Chat()) do if tostring(l):find(text,1,true) then n=n+1 end end return n end
+local function writes() return #M.cvarWrites end
+local function onlyOurs()
+    for _,w in ipairs(M.cvarWrites) do assert(w.name==NAME and not w.combat, "wrote "..tostring(w.name)..(w.combat and " in combat" or "")) end
+    assert(M.cvars.graphicsOutlineMode=="2" and M.cvars.graphicsQuality=="6", "another setting changed")
+end
+-- A graphics preset: the client switches the sparkle off and announces a setting change.
+local function preset() M.cvars[NAME]="0"; M.FireEvent("CVAR_UPDATE","graphicsQuality","6"); M.RunTimers(2) end
+"""
+SPARKLE_CASES = {
+    "sparkle_login_switches_the_one_setting_on": ("", r"""
+assert(M.cvars[NAME]=="1" and writes()==1 and M.cvarWrites[1].value=="1"); onlyOurs()
+assert(FP.settings.questSparkle.enabled and FP.db.questSparkle.ours==true and FP.db.questSparkle.count==1)
+local last=FP.db.questSparkle.last
+assert(last.reason=="login" and last.was=="0" and last.outline==true and last.failed==nil and last.version==FP.version)
+assert(said("Quest items you can pick up now sparkle")==1 and said("Outline Mode is on")==1)
+M.FireEvent("PLAYER_ENTERING_WORLD"); M.FireEvent("CVAR_UPDATE","Sound_MasterVolume","1"); M.RunTimers(30)
+assert(writes()==1 and said("now sparkle")==1, "a setting that is on is not written again")
+cmd("sparkle"); assert(said("Quest item sparkles on")==1 and said("game setting: on")==1)
+cmd("apicheck")
+local row=FP.db.apicheck["70124-manual"].rows["probe:lootSparkle"]
+assert(row and row.ok and row.note=="loot sparkle setting on; outline mode on", row and row.note)
+"""),
+    "sparkle_graphics_preset_reset_is_put_back": ("", r"""
+preset(); assert(M.cvars[NAME]=="1" and writes()==2); onlyOurs()
+assert(FP.db.questSparkle.last.reason=="setting" and FP.db.questSparkle.count==2 and said("now sparkle")==1, "one chat line, ever")
+for _=1,6 do M.RunTimers(61); preset() end
+assert(M.cvars[NAME]=="1" and writes()==8 and Q.stopped==nil, "presets minutes apart are not a tug of war"); onlyOurs()
+"""),
+    "sparkle_waits_for_combat_to_end": ("M.combatLockdown=true\n", r"""
+assert(writes()==0 and M.cvars[NAME]=="0" and Q.deferred, "nothing is written in combat")
+M.FireEvent("CVAR_UPDATE","graphicsQuality","6"); M.RunTimers(5); assert(writes()==0)
+M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED")
+assert(M.cvars[NAME]=="1" and writes()==1 and FP.db.questSparkle.last.reason=="combat end"); onlyOurs()
+"""),
+    "sparkle_off_puts_back_what_it_switched_on": ("", HUB + r"""
+page("display"); check("questSparkleEnabled",false)
+assert(FP.settings.questSparkle.enabled==false and M.cvars[NAME]=="0" and writes()==2 and FP.db.questSparkle.ours==nil)
+assert(H.resultText:GetText():find("fully exit and restart",1,true), "the restart notice is shown where the tick was made")
+preset(); M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(30)
+assert(writes()==2 and M.cvars[NAME]=="0", "off means off: no writes in either direction")
+check("questSparkleEnabled",true); assert(M.cvars[NAME]=="1" and writes()==3 and FP.db.questSparkle.ours==true); onlyOurs()
+"""),
+    "sparkle_leaves_a_setting_it_found_on": ('M.cvars.outlineModeShowLootEffectWhenDisabled="1"\n', r"""
+assert(writes()==0 and FP.db.questSparkle.ours==nil and said("now sparkle")==0)
+cmd("sparkle off"); assert(writes()==0 and M.cvars[NAME]=="1" and said("stays as it is")==1, "the player's own setting is not switched off")
+cmd("sparkle"); assert(said("Quest item sparkles off")==1 and said("the game keeps it")==1)
+"""),
+    "sparkle_remembers_across_sessions_that_it_switched_it_on": (
+        'M.cvars.outlineModeShowLootEffectWhenDisabled="1"\nHearthAndHustleDB={questSparkle={ours=true,introduced=true,count=3}}\n', r"""
+assert(writes()==0 and said("now sparkle")==0)
+cmd("sparkle off"); assert(writes()==1 and M.cvars[NAME]=="0" and FP.db.questSparkle.ours==nil and said("fully exit and restart")==1); onlyOurs()
+"""),
+    "sparkle_missing_or_secret_setting_is_inert": ("M.cvars.outlineModeShowLootEffectWhenDisabled=nil\n", r"""
+assert(writes()==0 and said("now sparkle")==0)
+cmd("sparkle on"); cmd("sparkle"); assert(writes()==0 and said("this client has no such setting")==2)
+M.cvars[NAME]="0"; M.secretCVars=true
+M.FireEvent("CVAR_UPDATE",M.Secret(),M.Secret()); M.RunTimers(5); cmd("sparkle")
+assert(writes()==0 and M.cvars[NAME]=="0", "a secret value is not a value")
+M.secretCVars=nil; M.FireEvent("CVAR_UPDATE","graphicsQuality","6"); M.RunTimers(2)
+assert(writes()==1 and M.cvars[NAME]=="1"); onlyOurs()
+"""),
+    "sparkle_tug_of_war_stops_writing": ("", r"""
+for _=1,10 do preset() end
+assert(writes()==4 and M.cvars[NAME]=="0" and Q.stopped=="contested", "writes "..writes())
+assert(said("keeps switching the quest item sparkle off")==1 and FP.db.questSparkle.last.failed=="contested")
+cmd("sparkle"); assert(said("paused until the next login")==1)
+cmd("sparkle on"); assert(M.cvars[NAME]=="1" and writes()==5 and Q.stopped==nil, "asking again is the player's call"); onlyOurs()
+"""),
+    "sparkle_refused_change_pauses_until_next_login": ("M.cvarProtected=true\n", r"""
+assert(writes()==1 and M.cvars[NAME]=="0" and Q.stopped=="blocked" and said("did not accept the quest item sparkle setting")==1)
+preset(); M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(30); cmd("sparkle on")
+assert(writes()==1 and said("did not accept the quest item sparkle setting")==1, "one refusal, one line, no retries this session")
+assert(FP.db.questSparkle.ours==nil and FP.db.questSparkle.last.failed=="blocked" and said("now sparkle")==0)
+local blocked=0; for _,e in ipairs(FP.db.errors) do if e.where=="ADDON_ACTION_BLOCKED" then blocked=blocked+1 end end
+assert(blocked==1 and #FP.db.errors==1); FP.db.errors={}
+"""),
+    "sparkle_silent_refusal_also_pauses": ('M.cvarProtected="silent"\n', r"""
+assert(writes()==1 and M.cvars[NAME]=="0" and Q.stopped=="refused" and FP.db.questSparkle.last.failed=="refused")
+preset(); M.RunTimers(30); assert(writes()==1 and FP.db.questSparkle.ours==nil and said("now sparkle")==0)
+"""),
+    "sparkle_off_in_combat_waits_and_a_change_of_mind_cancels": ("", r"""
+M.combatLockdown=true; cmd("sparkle off")
+assert(writes()==1 and M.cvars[NAME]=="1" and Q.pendingOff and said("switched back after combat")==1)
+M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED")
+assert(M.cvars[NAME]=="0" and writes()==2 and FP.db.questSparkle.ours==nil)
+cmd("sparkle on"); M.combatLockdown=true; cmd("sparkle off"); cmd("sparkle on")
+assert(writes()==3 and M.cvars[NAME]=="1" and not Q.pendingOff)
+M.combatLockdown=false; M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(5)
+assert(writes()==3 and M.cvars[NAME]=="1" and FP.db.questSparkle.ours==true, "off then on again in one fight changes nothing"); onlyOurs()
+"""),
+    "sparkle_switched_off_profile_writes_nothing": ("HearthAndHustleDB={settings={questSparkle={enabled=false}}}\n", r"""
+preset(); M.FireEvent("PLAYER_ENTERING_WORLD"); M.FireEvent("PLAYER_REGEN_ENABLED"); M.RunTimers(30)
+assert(writes()==0 and M.cvars[NAME]=="0" and FP.db.questSparkle.ours==nil and said("sparkle")==0)
+cmd("sparkle off"); assert(writes()==0 and said("quest item sparkles off")==1)
+"""),
+}
+for name, (preload, body) in SPARKLE_CASES.items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    result = subprocess.run([LUA, "-"], input=boot + SPARKLE_HELPERS + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
 # The file tool, on fixtures written the way the release client writes them: CRLF, no indentation.
 def client_lua(variable, rows):
     return ("\r\n" + variable + " = {\r\n" + "".join(row + "\r\n" for row in rows) + "}\r\n").encode()
@@ -3728,5 +3839,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + 1} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)
