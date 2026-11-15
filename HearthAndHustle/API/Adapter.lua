@@ -1622,6 +1622,102 @@ function API.GetSpellName(spellID)
 end
 
 -------------------------------------------------------------------------------
+-- Healer tools (Modules/Healer.lua). Tooltip facts about the player's own
+-- spells and plain state of party members. No health, power, aura, threat or
+-- cooldown is read: those are secret on Forever. Checked against the 70938
+-- generated docs: C_Spell.GetSpellInfo / GetSpellPowerCost / GetSpellSubtext /
+-- GetSpellDescription / IsSpellInRange and UnitIsDeadOrGhost / UnitIsConnected
+-- / UnitIsVisible / UnitAffectingCombat carry no secret gate; bonus healing is
+-- SecretWhenUnitStatsRestricted. None of it has been seen in a dungeon yet, so
+-- every value is checked and a missing one is "unknown", never a guess.
+-------------------------------------------------------------------------------
+local function readHealSpell(spellID)
+	local out = { id = spellID, name = API.GetSpellName(spellID) }
+	if not out.name then return nil end
+	if has(C_Spell, "GetSpellSubtext") then
+		local sub = safe(C_Spell.GetSpellSubtext(spellID))
+		if type(sub) == "string" and sub ~= "" then out.subtext = sub end
+	end
+	if has(C_Spell, "GetSpellInfo") then
+		local info = C_Spell.GetSpellInfo(spellID)
+		if type(info) == "table" and not FP.issecret(info) then
+			local ms = safe(info.castTime)
+			if U.Finite(ms) and ms >= 0 and ms < 60000 then out.cast = ms / 1000 end
+		end
+	end
+	if has(C_Spell, "GetSpellPowerCost") then
+		local costs = C_Spell.GetSpellPowerCost(spellID)
+		if type(costs) == "table" and not FP.issecret(costs) then
+			for i = 1, math.min(#costs, 6) do
+				local c = costs[i]
+				if type(c) == "table" then
+					local kind, cost = safe(c.type), safe(c.cost)
+					if kind == 0 and U.Finite(cost) and cost > 0 and cost < 100000 then out.cost = cost end   -- 0 = mana
+				end
+			end
+		end
+	end
+	local desc = API.GetSpellDescription(spellID)
+	if type(desc) == "string" and desc ~= "" then out.desc = desc end
+	return out
+end
+
+function API.GetHealSpell(spellID)
+	if type(spellID) ~= "number" then return nil end
+	local ok, out = pcall(readHealSpell, spellID)
+	return ok and out or nil
+end
+
+function API.GetHealingBonus()
+	if not hasg("GetSpellBonusHealing") then return nil end
+	local ok, value = pcall(GetSpellBonusHealing)
+	if not ok then return nil end
+	value = safe(value)
+	if U.Finite(value) and value >= 0 and value < 100000 then return value end
+	return nil
+end
+
+-- true = in range, false = out of range, nil = the client would not say.
+function API.SpellInRange(spellID, unit)
+	if not has(C_Spell, "IsSpellInRange") then return nil end
+	local ok, value = pcall(C_Spell.IsSpellInRange, spellID, unit)
+	if not ok then return nil end
+	value = safe(value)
+	if type(value) == "boolean" then return value end
+	return nil
+end
+
+function API.InRaid()
+	if not hasg("IsInRaid") then return false end
+	local ok, value = pcall(IsInRaid)
+	return ok and safe(value) == true
+end
+
+-- The other members of a five-player party. Each flag is true, false or nil
+-- (nil = unreadable); nothing here is health, power or an aura.
+function API.GetPartyStatus()
+	local out = {}
+	if not hasg("UnitExists") then return out end
+	local function flag(fn, unit)
+		if not hasg(fn) then return nil end
+		local ok, value = pcall(_G[fn], unit)
+		if not ok then return nil end
+		value = safe(value)
+		if type(value) == "boolean" then return value end
+		return nil
+	end
+	for i = 1, 4 do
+		local unit = "party" .. i
+		if safe(UnitExists(unit)) then
+			out[#out + 1] = { unit = unit, name = API.PlayerFullName(unit) or ("Party member " .. i),
+				dead = flag("UnitIsDeadOrGhost", unit), online = flag("UnitIsConnected", unit),
+				visible = flag("UnitIsVisible", unit), combat = flag("UnitAffectingCombat", unit) }
+		end
+	end
+	return out
+end
+
+-------------------------------------------------------------------------------
 -- Addon comms (Phase 5)
 -------------------------------------------------------------------------------
 API.PREFIX = "HHUSTLE"
@@ -1885,6 +1981,18 @@ function API.Check()
 		return state ~= nil, string.format("loot sparkle setting %s; outline mode %s",
 			state == nil and "missing" or (state == "1" and "on" or "off"),
 			outline == nil and "unreadable" or (outline and "on" or "off"))
+	end)
+	probe("healer", function()
+		local spell = FP.Healer and FP.Healer:CanHeal() and FP.Healer:RangeSpell() or nil
+		if not spell then return true, "no healing spell known for this character" end
+		local info, party, bonus = API.GetHealSpell(spell) or {}, API.GetPartyStatus(), API.GetHealingBonus()
+		local function word(v) return v == nil and "unreadable" or tostring(v) end
+		local member = party[1]
+		return info.cost ~= nil and info.cast ~= nil and info.desc ~= nil,
+			string.format("main heal %d: mana %s, cast %s, tooltip %s; bonus healing %s; party %d%s",
+				spell, word(info.cost), word(info.cast), info.desc and "read" or "unreadable", word(bonus), #party,
+				member and string.format(" (first member: dead %s, online %s, visible %s, in range %s)", word(member.dead), word(member.online),
+					word(member.visible), word(API.SpellInRange(spell, member.unit))) or "")
 	end)
 	probe("enemyWatch", function()
 		local shown, always = API.EnemyNameplates()

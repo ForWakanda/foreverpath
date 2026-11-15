@@ -624,3 +624,26 @@ First client read of v0.23.0 (build 70938, save flushed 2026-11-15T06:53Z): no n
 - Limits, stated in the UI: straight lines between zone centres, not travel time; "finish this continent, then cross" is a rule of thumb, not an optimum; quests without a known location are counted, not placed.
 - Validation: nine new regression cases (seven travel, two nameplate), each failing on v0.23.0; 22 mutation controls on the new guards, all caught; real saved account and character files replayed under the mock (20 known flight points adopted, stored errors 4 → 4). The mock's world is not the client's: crossing choice, fit quality and the arrow's third line need a client session.
 
+
+### Healer tools and dungeon itinerary — v0.25.0 (2026-11-15, Claude)
+
+Owner's request after the v0.23.0 client read: a resto shaman at 50 who heals dungeons. Built without a client session in between, so each read below is a documented one (generated docs, `forever` `bebcb6b`, build 70938), checked value by value, and **none has been seen inside a dungeon yet**.
+
+**What stays impossible.** Health, missing health, incoming heals, absorbs and `UnitInRange` are `SecretReturns`; power is secret when restricted; auras, cooldowns and threat are secret in combat. So there is no lowest-member, low-health, out-of-mana, dispel or threat warning, and nothing in `Modules/Healer.lua` runs in combat. The page says so and points at the client's own raid-style party frames and click casting, which draw those values natively.
+
+**Heal rank table** (`/hh` → Healing, `/hh heal ranks [all]`). Shown only to classes with healing spells (the sidebar lists Healing for Shaman, Priest, Druid and Paladin; seventeen buttons use 26-px spacing).
+
+- Per rank: mana (`C_Spell.GetSpellPowerCost`, mana entry), cast time (`C_Spell.GetSpellInfo().castTime`), the amount parsed from the spell's own tooltip text (`C_Spell.GetSpellDescription`: `A to B`, `N over S sec`, or both), healing per mana and per second of casting (an instant counts 1.5 s). None of these calls has a secret gate in the docs.
+- Spell ids by rank are the Classic ones. A rank is used only when the client gives its id the same name as rank 1 of the family, so a wrong id drops a row instead of mislabelling one. The user's saved bars hold Healing Wave r8 (10395), Lesser Healing Wave r4 (10466) and Chain Heal r2 (10622), which agrees with the table for those three.
+- "Known" = `C_SpellBook.IsSpellKnown(id)` is true, or the spell is on the action bars the bar guard remembers (the spellbook may answer only for the highest rank; unverified).
+- **Bonus healing estimate.** `GetSpellBonusHealing` is `SecretWhenUnitStatsRestricted`; when readable, each row adds bonus × coefficient by the Classic rule: base cast time ÷ 3.5 (heal over time: duration ÷ 15), capped at 1, × (1 − (20 − learn level) × 0.0375) for a rank learned before 20. Base cast times and learn levels are a table in the module. Regrowth and Prayer of Healing get no estimate. The UI labels it "est." and says the rule is not confirmed on Forever. Whether Forever's tooltips already include bonus healing is unknown: `HearthAndHustleDB.healer.tooltip` keeps up to twelve `{id, heal, bonus, cost, cast}` samples of the main heal, so a gear change between two samples answers it.
+- A one-line mouseover macro for the selected rank is offered as text to copy. The addon creates and runs no macro (`CreateMacro`/`EditMacro` are not in the generated docs).
+
+**Between-pull check** (PvP HUD section "Healer check (between pulls)", the Healing page, `/hh heal`).
+
+- Runs only when: healer tools on, a healing class, the gear role on Best in slot is Healing, out of combat, in a party and not a raid.
+- Per party member: offline (`UnitIsConnected`), dead (`UnitIsDeadOrGhost`), out of heal range (`UnitIsVisible` false, or `C_Spell.IsSpellInRange` false for the highest known rank of the class's main heal), still in combat (`UnitAffectingCombat`). A value that comes back nil or secret says nothing: never "in range", never "out of range".
+- Own essentials: drinks at or below four (the supply module's bag count), no Ankh while Reincarnation is known, weapon imbue missing or under five minutes (classes with an imbue), and "not your healing spec" once the player has marked a spec group with **This spec is my healing spec** (`HearthAndHustleCharDB.healer.specGroup`; no talent API is read).
+- No problem → nothing in the open world; inside an instance one green line (`Party ready: 4 of 4 alive, in heal range · 23 drinks · 2 Ankh`). A 3-second ticker brings the section up when the HUD is hidden and something changes.
+- For the next data read: `HearthAndHustleDB.healer.seen` counts, per context (`inst=party dead=boolean online=boolean visible=boolean combat=boolean range=boolean`), which reads answered. `range=nil` inside a dungeon means the range check does not work there and the line should go. `/hh apicheck` gains a `probe:healer` row.
+- Validation: five regression cases (`tests/healer.py`); mock-tested only.

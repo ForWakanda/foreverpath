@@ -14,6 +14,7 @@ local function help()
 	p("  /hh settings      map pins and arrow display controls")
 	p("  /hh pickups       list available nearby pickups and guide to the closest")
 	p("  /hh trip          your quest log as stops, zone by zone, with the sea crossings")
+	p("  /hh heal [ranks|strip on|off|spec|on|off]   healer: between-pull party check, heal rank table")
 	p("  /hh dungeon [name]   open the dungeon quest checklist (also: Dungeons button)")
 	p("  /hh auto on|off   auto-advance the arrow (now " .. (FP.settings.autoNext and "on" or "off") .. ")")
 	p("  /way 45.4 70.4 [title]   waypoint on your current map (also: /hh way or /way <mapID> x y)")
@@ -232,6 +233,7 @@ function C:Handle(msg)
 		local s = FP.Planner:NextStep()
 		if s then FP.Planner:Go(s); p(FP.GOLD .. "Next:|r " .. s.title .. (s.dist and (" " .. U.FormatDistance(s.dist)) or "")) else p("nothing to plan: no quests with a known location") end
 	elseif cmd == "trip" then for _, line in ipairs(FP.Travel:Lines()) do p(line) end
+	elseif cmd == "heal" or cmd == "healer" or cmd == "healing" then FP.Healer:Command(rest)
 	elseif cmd == "auto" then
 		local v = rest:lower()
 		if v == "on" then FP.settings.autoNext = true elseif v == "off" then FP.settings.autoNext = false else FP.settings.autoNext = not FP.settings.autoNext end

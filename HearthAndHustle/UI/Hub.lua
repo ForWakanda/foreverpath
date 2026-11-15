@@ -17,6 +17,7 @@ local SECTIONS = {
 	{"waypoints", "Waypoints", "Save places, enter coordinates, and manage your destinations."},
 	{"professions", "Professions", "Choose a learned recipe and plan the materials for a batch."},
 	{"party", "Party", "Compare quest progress and exchange snapshots with your partner."},
+	{"healing", "Healing", "Your heal ranks compared, and a between-pull check for your party.", when=function() return FP.Healer:CanHeal() end},
 	{"town", "Supplies & town", "Preparation, vendor information, reminders, and trainer notes."},
 	{"pvp", "PvP", "HUD preferences, battleground objectives, and session information."},
 	{"rare", "Rare watch", "Manage the watch list and review your dungeon runs."},
@@ -81,9 +82,16 @@ function H:Create()
 	close:SetPoint("TOPRIGHT",2,2); close:SetScript("OnClick",function() f:Hide() end)
 	if UISpecialFrames then table.insert(UISpecialFrames,"HearthAndHustleHub") end
 	self.nav = {}
-	for i,section in ipairs(SECTIONS) do
+	-- A section for one kind of character is listed only for that character.
+	local visible = {}
+	for _,section in ipairs(SECTIONS) do
+		if not section.when or section.when() then visible[#visible+1] = section end
+	end
+	self.sections = visible
+	local step = #visible>16 and 26 or 28
+	for i,section in ipairs(visible) do
 		local key = section[1]
-		self.nav[key] = button(f,section[2],16,-78-(i-1)*28,142,function() self:Select(key) end)
+		self.nav[key] = button(f,section[2],16,-78-(i-1)*step,142,function() self:Select(key) end)
 	end
 	button(f,"Compact panel",16,-532,142,function() FP.Panel:Toggle() end)
 	button(f,"Quest map settings",16,-564,142,function() self:Select("display") end)
@@ -117,7 +125,7 @@ end
 
 function H:Select(key)
 	local section
-	for _,s in ipairs(SECTIONS) do if s[1]==key then section=s end end
+	for _,s in ipairs(self.sections) do if s[1]==key then section=s end end
 	if not section then return end
 	self:CancelConfirm()
 	if not self.pages[key] then self:BuildPage(key) end
@@ -393,6 +401,33 @@ function H:BuildPage(key)
 			{"partyCopy","Create copyable snapshot",function() code:SetText(FP.Party:ExportString()); code:HighlightText(); code:SetFocus(); FP:Print("Press Ctrl-C to copy the selected text. Share it with your partner.") end},
 			{"partyImport","Import pasted snapshot",function() command("partyimport "..U.Trim(code:GetText())) end},
 		})
+	elseif key=="healing" then
+		local HL=FP.Healer
+		self.controls.healStatus=self:Text(p,"",function() return HL:StatusText() end,112)
+		self:Check(p,"healStrip","Show the between-pull check on the HUD while I am in a party",function() return FP.settings.healer.strip end,function(v) command("heal strip "..onoff(v)) end)
+		self:Actions(p,{
+			{"healSpec","This spec is my healing spec",function() command("heal spec") end},
+			{"healSpecClear","Forget my healing spec",function() command("heal spec clear") end,enabled=function() return FP.cdb.healer.specGroup~=nil end},
+			{"healCheck","Check my party now",function() command("heal") end},
+		})
+		self:Text(p,"Out of combat, in a five-player party, the check lists who is dead, offline, out of heal range or still fighting, and your own drinks and essentials. Inside a dungeon it also says when everyone is ready. It never reads health, mana or debuffs: the game hides those from addons.")
+		self:Section(p,"Heal ranks")
+		self.controls.healBonus=self:Text(p,"",function() return HL:BonusText() end,58)
+		local all,sort=false,"rank"
+		local list=self:List(p,"healRanks",function() return HL:Sorted(all,sort) end,function(row) return HL:RowLabel(row) end,{count=8})
+		self:Actions(p,{
+			{"healSort","Sort",function() sort=HL:NextSort(sort); list.page=1 end},
+			{"healAll","Show every rank",function() all=not all; list.page=1; list.selected=nil end},
+		})
+		table.insert(p.refreshers,function()
+			self.controls.healSort:SetText("Sorted "..HL:SortName(sort))
+			self.controls.healAll:SetText(all and "Show only ranks I know" or "Show every rank")
+		end)
+		self.controls.healDetails=self:Text(p,"",function() return HL:RowDetails(self:Selected(list)) end,104)
+		self:Field(p,"healMacro","Mouseover macro for the selected rank",function() return HL:Macro(self:Selected(list)) end)
+		self:Text(p,"Click the macro text, press Ctrl-A then Ctrl-C, and paste it into a macro of your own (/macro). It heals whoever the mouse is over, else your target, else you. Hearth & Hustle never creates or runs a macro.")
+		self:Section(p,"What the game already gives a healer")
+		self:Text(p,"The game's own raid-style party frames draw health and debuffs natively, where addons cannot read them, and its click casting (Click Bindings) puts a heal on a mouse button over those frames. Both are in the game's options. Use them before any addon frame.")
 	elseif key=="town" then
 		self:Section(p,"Class supplies")
 		self:Check(p,"prepEnabled","Enable preparation checklist",function() return FP.cdb.prep.enabled end,function(v) command("prep "..onoff(v)) end)

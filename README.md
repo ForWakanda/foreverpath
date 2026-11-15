@@ -4,6 +4,14 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Healer tools (v0.25.0)
+
+For Shaman, Priest, Druid and Paladin. `/hh` → **Healing**, or `/hh heal`.
+
+- **Heal ranks.** Every healing rank you know with its mana, cast time and the amount from its own tooltip, and what that is per mana and per second. With bonus healing from gear it adds an estimate by the Classic rule (cast time ÷ 3.5), marked "est."; that rule is not confirmed on Forever. `*` marks the most healing per mana. Select a rank for a one-line mouseover macro to copy; the addon never creates or runs a macro.
+- **Between-pull check.** Out of combat, in a five-player party, with your gear role set to Healing: who is dead, offline, out of heal range or still fighting, plus your drinks, your Ankh (Shaman), your weapon imbue, and whether you are in the spec you marked as your healing spec. It shows on the HUD and on the Healing page; inside a dungeon it also says when everyone is ready.
+- **What it cannot do.** Forever hides health, mana, debuffs, threat and cooldowns from addons. Nothing here warns about them and nothing runs in combat. The game's own raid-style party frames and click casting cover that part.
+
 ## Guidance explanations (v0.23.0)
 
 The compact quest panel shows why guidance chose its destination: your selected

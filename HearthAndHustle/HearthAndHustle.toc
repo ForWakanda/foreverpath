@@ -45,6 +45,7 @@ PvP\EnemyWatch.lua
 PvP\Battleground.lua
 PvP\Coordination.lua
 Modules\ClassPrep.lua
+Modules\Healer.lua
 UI\Panel.lua
 UI\Dungeons.lua
 UI\QuestChains.lua

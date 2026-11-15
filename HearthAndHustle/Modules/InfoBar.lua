@@ -26,6 +26,8 @@ local BUFFS = {
 }
 local IMBUES = { SHAMAN = { 8017, 8018, 8019, 10399, 8024, 8027, 8030, 16339, 16341, 16342, 8033, 8038, 10456, 16355, 16356, 8232, 8235, 10486, 16362 } }
 
+Bar.IMBUES = IMBUES   -- also read by the healer check
+
 local function s() return FP.settings.bar end
 local function r() return FP.settings.reminders end
 
