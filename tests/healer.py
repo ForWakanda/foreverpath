@@ -116,6 +116,8 @@ local dead=UnitIsDeadOrGhost
 UnitIsDeadOrGhost=function(unit) if unit=="party1" then return M.Secret() end return dead(unit) end
 C_Spell.IsSpellInRange=function(id,unit) if unit=="party1" then return M.Secret() end return M.range[unit] end
 c=HL:Check();assert(c.problems==0 and not has(c.rows,"Anna") and not has(c.rows,"in heal range"))
+assert(c.unread==1 and c.alive==3 and not has(c.rows,"Party ready") and has(c.rows,"Party state unreadable here for 1 of 4"), "a party it cannot read is not called ready")
+M.instance=nil;c=HL:Check();assert(#c.rows==0, "and in the open world it stays quiet");M.instance={name="Zul'Farrak"}
 UnitIsDeadOrGhost=dead
 -- who gets the check: healing role only, five-player parties only, and it can be switched off
 M.raid=true;assert(HL:Check()==nil);M.raid=false

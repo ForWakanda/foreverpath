@@ -291,7 +291,7 @@ function Heal:Check()
 	if API.InRaid() then return nil, "In a raid group: the check covers five-player parties." end
 	local party = API.InGroup() and API.GetPartyStatus() or {}
 	if #party == 0 then return nil, "Not in a party." end
-	local rows, problems, alive, ranged = {}, 0, 0, true
+	local rows, problems, alive, ranged, unread = {}, 0, 0, true, 0
 	local function add(text) problems = problems + 1; rows[#rows + 1] = { text = text } end
 	local spell = self:RangeSpell()
 	for i, m in ipairs(party) do
@@ -304,6 +304,7 @@ function Heal:Check()
 		local name = U.Truncate(m.name, 24)
 		if m.online == false then add(FP.GREY .. name .. ": offline|r")
 		elseif m.dead == true then add(FP.RED .. name .. ": dead|r")
+		elseif m.dead == nil then unread = unread + 1   -- the client would not say: not "alive"
 		else
 			alive = alive + 1
 			if m.visible == false or inRange == false then add(FP.GOLD .. name .. ": out of heal range|r")
@@ -336,11 +337,16 @@ function Heal:Check()
 		end
 	end
 	-- Inside a dungeon an all-clear is worth a line; in the open world silence is.
-	if problems == 0 and API.InInstance() then
+	-- A party whose state the client withholds is never called ready.
+	if unread > 0 then
+		if problems > 0 or API.InInstance() then
+			rows[#rows + 1] = { text = FP.GREY .. "Party state unreadable here for " .. unread .. " of " .. #party .. "|r" }
+		end
+	elseif problems == 0 and API.InInstance() then
 		rows[1] = { text = FP.GREEN .. "Party ready: " .. alive .. " of " .. #party .. " alive" .. (ranged and spell and ", in heal range" or "")
 			.. (#extras > 0 and (" · " .. table.concat(extras, " · ")) or "") .. "|r" }
 	end
-	return { rows = rows, problems = problems, alive = alive, size = #party }
+	return { rows = rows, problems = problems, alive = alive, size = #party, unread = unread }
 end
 
 function Heal:Lines()
@@ -398,7 +404,8 @@ function Heal:Command(rest)
 	elseif sub == "" then
 		local check, why = self:Check()
 		if not check then FP:Print("Between-pull check: " .. tostring(why))
-		elseif #check.rows == 0 then FP:Print("Between-pull check: nothing to report (" .. check.alive .. " of " .. check.size .. " alive).")
+		elseif #check.rows == 0 then FP:Print("Between-pull check: nothing to report (" .. check.alive .. " of " .. check.size .. " alive"
+			.. (check.unread > 0 and (", " .. check.unread .. " unreadable") or "") .. ").")
 		else for _, row in ipairs(check.rows) do FP:Print(row.text) end end
 	else
 		FP:Print("/hh heal | on | off | strip on|off | spec | spec clear | ranks [all]")
