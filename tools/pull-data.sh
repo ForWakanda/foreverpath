@@ -14,13 +14,13 @@ while IFS= read -r f; do
   if [[ "$(basename "$(dirname "$(dirname "$f")")")" == "Account" || "$(dirname "$(dirname "$f")")" == *"/Account/"* && "$(basename "$(dirname "$f")")" == "SavedVariables" && "$(dirname "$(dirname "$f")")" == "$WTF/"* && "$(dirname "$(dirname "$(dirname "$f")")")" == "$WTF" ]]; then
     dest="$ROOT/data/HearthAndHustleDB-$acct-$ts.lua"
     cp "$f" "$dest"; cp "$f" "$ROOT/data/HearthAndHustleDB-latest.lua"
-    echo "account DB: $f -> $(basename "$dest") ($(stat -c %s "$f") bytes)"
+    echo "account DB: $f -> $(basename "$dest") ($(wc -c < "$f" | tr -d " ") bytes)"
   else
     char="$(basename "$(dirname "$(dirname "$f")")")"
     realm="$(basename "$(dirname "$(dirname "$(dirname "$f")")")")"
     dest="$ROOT/data/chars/HearthAndHustleCharDB-${realm// /_}-${char}-$ts.lua"
     cp "$f" "$dest"
-    echo "char DB: $realm/$char ($(stat -c %s "$f") bytes)"
+    echo "char DB: $realm/$char ($(wc -c < "$f" | tr -d " ") bytes)"
   fi
 done < <(find "$WTF" -type f -name 'HearthAndHustle.lua' 2>/dev/null)
 [ $found -eq 1 ] || { echo "no HearthAndHustle.lua found under $WTF yet (log out or /reload once in game to flush SavedVariables)"; exit 0; }
