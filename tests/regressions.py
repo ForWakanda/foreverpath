@@ -3398,6 +3398,8 @@ from travel import cases as travel_cases
 CASES.update(travel_cases(HUB))
 from healer import cases as healer_cases
 CASES.update(healer_cases(HUB))
+from dungeon_plan import cases as dungeon_plan_cases
+CASES.update(dungeon_plan_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

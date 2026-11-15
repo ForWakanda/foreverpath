@@ -264,10 +264,32 @@ function H:BuildPage(key)
 	elseif key=="gear" then
 		FP.GearPanel:Build(self,p)
 	elseif key=="dungeons" then
-		self:Text(p,"Choose a dungeon to prepare quests and guide to its entrance. Inspecting the checklist does not change your route.")
-		local list=self:List(p,"hubDungeons",function() return FP.Dungeons:List() end,function(row) return row.data.name.." · "..tostring(row.data.recommendedLevel or "Level unknown") end)
-		self:Actions(p,{{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end}})
-		self:Text(p,"Entrance routes and quest pickup / objective / turn-in guidance are available inside the checklist. Interior paths and boss order are not mapped.")
+		local DP=FP.DungeonPlan
+		self:Text(p,"Choose a dungeon for its itinerary: what to turn in, which quests to pick up on the way and in what order, the entrance, what waits inside, and the drops worth having for your role. Browsing changes nothing.")
+		local list=self:List(p,"hubDungeons",function() return DP:List() end,function(row) return DP:ListLabel(row) end,{count=5})
+		-- Open on the dungeon you are most likely here for, on the page that shows it.
+		list.selected=DP:Default()
+		for i,row in ipairs(DP:List()) do if row.key==list.selected then list.page=math.ceil(i/5) end end
+		local plan,steps,shown
+		self.controls.dungeonSummary=self:Text(p,"",function()
+			local row=self:Selected(list)
+			plan=row and DP:Build(row.key) or nil
+			if steps and shown~=(row and row.key) then shown=row and row.key; steps.page=1; steps.selected=nil end
+			return DP:Summary(plan)
+		end,76)
+		steps=self:List(p,"dungeonPlan",function() return plan and plan.rows or {} end,function(row) return DP:RowLabel(row) end,{count=8})
+		self.controls.dungeonPlanDetails=self:Text(p,"",function() return DP:RowDetails(plan,self:Selected(steps)) end,150)
+		self:Actions(p,{
+			{"dungeonGuide","Guide to selected step",function() DP:Guide(plan,self:Selected(steps)) end,enabled=function() return DP:CanGuide(self:Selected(steps)) end},
+			{"dungeonWish","Save drop to wishlist",function() DP:ToggleWish(self:Selected(steps)) end,
+				enabled=function() local row=self:Selected(steps); return row~=nil and row.type=="gear" and not API.InCombat() end},
+			{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end},
+		})
+		table.insert(p.refreshers,function()
+			local row=self:Selected(steps)
+			self.controls.dungeonWish:SetText(row and row.type=="gear" and row.wished and "Remove from wishlist" or "Save drop to wishlist")
+		end)
+		self:Text(p,"Pickups are ordered nearest zone first, with the zeppelin or ship where one is needed, and end at the entrance. Distances are straight lines. The quest list is a community reference, not a guarantee of what Forever offers you; the full checklist has every quest, including other factions. Interior paths and boss order are not mapped.")
 	elseif key=="locations" then
 		FP.QuestLocationPanel:Build(self,p)
 	elseif key=="rewards" then
