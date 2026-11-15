@@ -3394,6 +3394,8 @@ from quest_guidance import cases as quest_guidance_cases
 CASES.update(quest_guidance_cases(OBJECTIVES, HUB))
 from usability import cases as usability_cases
 CASES.update(usability_cases(HUB))
+from travel import cases as travel_cases
+CASES.update(travel_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

@@ -58,6 +58,7 @@ FP.defaults = {
 	apicheck = {},
 	errors = {},
 	enemyWatch = { kos = {}, ignore = {}, players = {}, counts = {} },   -- Kill On Sight, ignore, everyone met with wins/losses
+	travel = { fits = {} },   -- how well flight point positions could be worked out (read after a session)
 	questSparkle = {},   -- whether the sparkle setting was switched on by this addon, and the last look
 }
 
@@ -75,6 +76,7 @@ FP.charDefaults = {
 	lastRoute = {},
 	lootSeen = {},
 	barGuard = { specs = {}, log = {} },   -- remembered action bars per spec group
+	flights = {},   -- flight points this character has seen on a flight map (route help)
 }
 
 -- Renamed from "ForeverPath" in v0.17.0. A SavedVariables file copied to the new

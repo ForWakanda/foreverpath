@@ -22,11 +22,18 @@ ages and saved records separately. Possible attackers never appear as confirmed
 losses. Ignored players can be restored through **Ignored enemies** on the same page.
 Browsing does not select a game target, send a party message or change your route.
 
+## Trip plan and sea crossings (v0.24.0)
+
+- **Across the sea.** When your next step is on the other continent the arrow leads to the zeppelin or ship that crosses and names it ("Zeppelin to Undercity"), instead of stopping at "other continent". Your destination stays what it was.
+- **Flight points.** Under the arrow, the nearest flight point you know to a far destination ("flight point: Hammerfall, Arathi"). It learns the points from the flight maps you open. If it cannot work out where they are it only names a point in the destination's own zone.
+- **Trip plan** (`/hh` → Trip plan, or `/hh trip`): your whole quest log as stops, one per zone, nearest first, with ready turn-ins pulled forward, the crossing, then the other continent. Pick a stop and click **Guide to selected stop**; nothing changes until you do.
+- Straight-line estimates only: no terrain, flight or ride times. Horde and neutral crossings come from the quest database's zeppelin and ship masters; the Alliance ships are the Classic routes with approximate docks and are labelled that way.
+
 ## Enemy watch (v0.21.0)
 
 For world PvP: Hearth & Hustle now tells you when players of the other faction are near you in the open world, the way the Spy addon does.
 
-- **Nameplates first.** With enemy nameplates off outside combat it only sees players you target or mouse over. The PvP page says so at the top, with a **Turn on enemy nameplates** button; the setting changes only when you click it.
+- **Nameplates first (v0.24.0).** With enemy nameplates off outside combat it only sees players you target or mouse over. The PvP page says so at the top, with a **Turn on enemy nameplates** button; the setting changes only when you click it.
 - **What it sees.** Forever closes the combat log to addons, so it only knows what your client already shows: a player whose nameplate is on screen, or one you target, focus or mouse over. It cannot see a stealthed player or anyone out of nameplate range. Turn on enemy nameplates and "always show nameplates" (Options → Nameplates, or `/hh enemies nameplates`); without them it only sees players you mouse over or target. The addon tells you once if they are off and never switches them on by itself.
 - **Alerts.** A chat line, an on-screen notice and a sound for a new enemy, a louder one for a Kill On Sight player, and one when a visible enemy uses Stealth, Vanish, Prowl or Shadowmeld (only when the client lets the cast be read). A player who cannot attack you and whom you cannot attack (unflagged on a PvE realm) is listed without an alert. Sanctuaries are quiet. A raid on a town gives five lines and one summary, not a flood.
 - **Nearby list** on the PvP HUD: name, level, class, guild, how long ago, Kill On Sight players first. Players are kept by their full name (first name and surname).

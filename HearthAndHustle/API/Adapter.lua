@@ -1934,7 +1934,7 @@ function API.CaptureNavigation()
 		local arrow = FP.Arrow
 		return { t = U.Now(), version = FP.version, build = FP.clientBuild,
 			arrowShown = arrow.frame:IsShown(), arrowEnabled = FP.settings.arrow.shown,
-			arrowTitle = arrow.title:GetText(), arrowText = arrow.dist:GetText(), texture = arrow.tex:GetTexture(),
+			arrowTitle = arrow.title:GetText(), arrowText = arrow.dist:GetText(), arrowLeg = arrow.leg and arrow.leg:GetText() or nil, texture = arrow.tex:GetTexture(),
 			mapID = mapID, quests = API.GetQuestLog(), pois = API.GetQuestsOnMap(mapID), selected = API.GetSelectedQuest(),
 			offers = API.GetQuestOffers(mapID), active = U.Copy(FP.Waypoints:GetActive() or {}),
 			waiting = U.Copy(FP.Planner.waiting or {}), paused = FP.Planner.paused }

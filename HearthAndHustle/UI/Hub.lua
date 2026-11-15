@@ -10,6 +10,7 @@ local SECTIONS = {
 	{"gear", "Best in slot", "Find gear by slot, compare stats and plan your next upgrade."},
 	{"dungeons", "Dungeons", "Entrance guidance, quest preparation and pickup routes."},
 	{"navigation", "Navigation", "Choose your next quest or resume your route."},
+	{"trip", "Trip plan", "Your whole quest log as stops, zone by zone, with the sea crossings."},
 	{"locations", "Quest locations", "Find quest targets, inspect known locations and show them on the map."},
 	{"rewards", "Quest rewards", "Compare reward items, equipped gear, and vendor values."},
 	{"chains", "Quest chains", "Explore prerequisites, optional lead-ins, and what comes next."},
@@ -82,7 +83,7 @@ function H:Create()
 	self.nav = {}
 	for i,section in ipairs(SECTIONS) do
 		local key = section[1]
-		self.nav[key] = button(f,section[2],16,-78-(i-1)*29,142,function() self:Select(key) end)
+		self.nav[key] = button(f,section[2],16,-78-(i-1)*28,142,function() self:Select(key) end)
 	end
 	button(f,"Compact panel",16,-532,142,function() FP.Panel:Toggle() end)
 	button(f,"Quest map settings",16,-564,142,function() self:Select("display") end)
@@ -129,7 +130,7 @@ function H:Select(key)
 	end
 	for k,b in pairs(self.nav) do if k==key then b:Disable() else b:Enable() end end
 	self.selected=key
-	if key=="navigation" then FP.Planner:Build() end
+	if key=="navigation" or key=="trip" then FP.Planner:Build() end
 	if key=="chains" then FP.QuestChains:StartIndex() end
 	self.heading:SetText(section[2]); self.subtitle:SetText(section[3])
 	self:Refresh()
@@ -238,7 +239,10 @@ function H:BuildOverview(p)
   b:SetScript("OnClick",function() self:Select(key) end);self.controls["home_"..key]=b
  end
  p.y=p.y+324
- self:Actions(p,{{"homeEnemies","Enemy watch: nearby and recent players",function() self:Select("pvp") end}})
+ self:Actions(p,{
+  {"homeTrip","Trip plan: order my quest log",function() self:Select("trip") end},
+  {"homeEnemies","Enemy watch: nearby and recent players",function() self:Select("pvp") end},
+ })
  if FP.EnemyWatch then
   self.controls.homeEnemyNotice=self:Text(p,"",function() local notice=FP.EnemyWatch:NameplateNotice(); return notice and (FP.RED..notice.."|r Open PvP for the button.") or "" end,30)
  end
@@ -266,8 +270,9 @@ function H:BuildPage(key)
 		self.controls.guidanceDetails=self:Text(p,"",function()
 			local wp=FP.Waypoints:GetActive()
 			local reason,detail=FP.Planner:Guidance()
-			return (wp and ("Current: "..U.Truncate(wp.title,85).."\n") or "")..reason.."\n"..detail
-		end,100)
+			local travel=wp and FP.Travel:Describe(wp)
+			return (wp and ("Current: "..U.Truncate(wp.title,85).."\n") or "")..reason.."\n"..detail..(travel and ("\n"..travel) or "")
+		end,132)
 		self:Actions(p,{
 			{"resume","Resume guidance",function() FP.Planner:ResumeGuidance() end},
 			{"pause","Pause selection",function() FP.Planner.paused=true;FP:Fire("WAYPOINTS_CHANGED");FP:Print("Guidance paused for this session.") end},
@@ -312,6 +317,18 @@ function H:BuildPage(key)
 			{"skipQuest","Defer current quest",function() local n=self:Number(mins,"minutes",1,60,true); if n then command("skip "..n) end end},
 			{"restoreQuests","Restore deferred quests",function() command("skip clear") end},
 		})
+	elseif key=="trip" then
+		local T=FP.Travel
+		local plan
+		self.controls.tripSummary=self:Text(p,"",function() plan=T:Plan(); return T:Summary(plan) end,64)
+		local list=self:List(p,"tripStops",function() return (plan or T:Plan()).rows end,function(row) return T:RowLabel(row) end,{count=9})
+		self.controls.tripDetails=self:Text(p,"",function() return T:RowDetails(self:Selected(list)) end,124)
+		self:Actions(p,{
+			{"tripGuide","Guide to selected stop",function() T:Guide(self:Selected(list)) end,
+				enabled=function() local row=self:Selected(list); return row~=nil and row.type=="stop" end},
+			{"tripRefresh","Refresh quest list",function() FP.Planner:Build() end},
+		})
+		self:Text(p,"Browsing changes nothing. Guide to selected stop heads for that zone's ready turn-in, or its nearest step, and keeps it until done. When your next step is across the sea the arrow leads to the zeppelin or ship; the line under it names the nearest flight point you know. Distances are straight lines between zones: no terrain, flight or ride times.")
 	elseif key=="waypoints" then
 		local list=self:List(p,"waypointList",function()
 			local out={}; for _,wp in ipairs(FP.Waypoints.list) do out[#out+1]={key=wp.id,wp=wp} end; return out
