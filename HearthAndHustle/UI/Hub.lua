@@ -239,6 +239,9 @@ function H:BuildOverview(p)
  end
  p.y=p.y+324
  self:Actions(p,{{"homeEnemies","Enemy watch: nearby and recent players",function() self:Select("pvp") end}})
+ if FP.EnemyWatch then
+  self.controls.homeEnemyNotice=self:Text(p,"",function() local notice=FP.EnemyWatch:NameplateNotice(); return notice and (FP.RED..notice.."|r Open PvP for the button.") or "" end,30)
+ end
  self:Text(p,"Quest maps work automatically. Use Display for source markers, event hints and overlay settings; the remaining tools are always in the sidebar.")
 end
 
@@ -464,8 +467,8 @@ function H:BuildPage(key)
 			self:Check(p,"enemyWatchStealth","Alert when a visible enemy uses Stealth, Vanish, Prowl or Shadowmeld",function() return set.stealth end,function(v) command("enemies stealth "..onoff(v)) end)
 			self:Check(p,"enemyWatchShare","Share sightings with my party",function() return set.share end,function(v) command("enemies share "..onoff(v)) end)
 			self:Text(p,"It sees a player whose nameplate is on screen, or one you target, focus or mouse over. It cannot see stealthed players or anyone out of nameplate range.")
+			self:Check(p,"enemyWatchNotice","Remind me while enemy nameplates are off (login line and PvP HUD)",function() return set.nameplateNotice end,function(v) command("enemies notice "..onoff(v)) end)
 			self:Actions(p,{
-				{"enemyNameplates","Turn on enemy nameplates",function() command("enemies nameplates") end,enabled=function() local _,ok=EW:NameplateLine(); return not ok end},
 				{"enemyList","Nearby enemies",function() command("enemies list") end},
 				{"enemyStats","Recent enemies and record",function() command("enemies stats 15") end},
 			})
@@ -699,6 +702,12 @@ end
 function H:BuildEnemyBrowser(p)
 	local EW=FP.EnemyWatch
 	self:Section(p,"Enemy watch: nearby and recent players")
+	-- What the watch can see comes first: with nameplates off it is nearly blind.
+	self.controls.enemySight=self:Text(p,"",function()
+		local notice=EW:NameplateNotice()
+		return (notice and (FP.RED..notice.."|r") or (FP.GREEN.."Enemy nameplates are on: players in nameplate range are seen.|r")).."\n"..EW:SeenLine()
+	end,44)
+	self:Actions(p,{{"enemyNameplates","Turn on enemy nameplates",function() EW:TurnOnNameplates(); FP:Fire("PVP_CHANGED") end,enabled=function() return EW:NameplateNotice()~=nil end}})
 	self:Text(p,"Select a full name to inspect sightings and manage your lists. Party reports show when they were received; older encounters do not mean the player is still nearby.")
 	local search=self:Field(p,"enemySearch","Find a player","")
 	local list=self:List(p,"enemyPlayers",function() return EW:Browse(search:GetText()) end,function(row) return EW:BrowseLabel(row) end,{count=4})
