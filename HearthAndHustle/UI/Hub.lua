@@ -17,6 +17,7 @@ local SECTIONS = {
 	{"waypoints", "Waypoints", "Save places, enter coordinates, and manage your destinations."},
 	{"professions", "Professions", "Choose a learned recipe and plan the materials for a batch."},
 	{"party", "Party", "Compare quest progress and exchange snapshots with your partner."},
+	{"healing", "Healing", "Your heal ranks compared, and a between-pull check for your party.", when=function() return FP.Healer:CanHeal() end},
 	{"town", "Supplies & town", "Preparation, vendor information, reminders, and trainer notes."},
 	{"pvp", "PvP", "HUD preferences, battleground objectives, and session information."},
 	{"rare", "Rare watch", "Manage the watch list and review your dungeon runs."},
@@ -81,9 +82,16 @@ function H:Create()
 	close:SetPoint("TOPRIGHT",2,2); close:SetScript("OnClick",function() f:Hide() end)
 	if UISpecialFrames then table.insert(UISpecialFrames,"HearthAndHustleHub") end
 	self.nav = {}
-	for i,section in ipairs(SECTIONS) do
+	-- A section for one kind of character is listed only for that character.
+	local visible = {}
+	for _,section in ipairs(SECTIONS) do
+		if not section.when or section.when() then visible[#visible+1] = section end
+	end
+	self.sections = visible
+	local step = #visible>16 and 26 or 28
+	for i,section in ipairs(visible) do
 		local key = section[1]
-		self.nav[key] = button(f,section[2],16,-78-(i-1)*28,142,function() self:Select(key) end)
+		self.nav[key] = button(f,section[2],16,-78-(i-1)*step,142,function() self:Select(key) end)
 	end
 	button(f,"Compact panel",16,-532,142,function() FP.Panel:Toggle() end)
 	button(f,"Quest map settings",16,-564,142,function() self:Select("display") end)
@@ -117,7 +125,7 @@ end
 
 function H:Select(key)
 	local section
-	for _,s in ipairs(SECTIONS) do if s[1]==key then section=s end end
+	for _,s in ipairs(self.sections) do if s[1]==key then section=s end end
 	if not section then return end
 	self:CancelConfirm()
 	if not self.pages[key] then self:BuildPage(key) end
@@ -256,10 +264,32 @@ function H:BuildPage(key)
 	elseif key=="gear" then
 		FP.GearPanel:Build(self,p)
 	elseif key=="dungeons" then
-		self:Text(p,"Choose a dungeon to prepare quests and guide to its entrance. Inspecting the checklist does not change your route.")
-		local list=self:List(p,"hubDungeons",function() return FP.Dungeons:List() end,function(row) return row.data.name.." · "..tostring(row.data.recommendedLevel or "Level unknown") end)
-		self:Actions(p,{{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end}})
-		self:Text(p,"Entrance routes and quest pickup / objective / turn-in guidance are available inside the checklist. Interior paths and boss order are not mapped.")
+		local DP=FP.DungeonPlan
+		self:Text(p,"Choose a dungeon for its itinerary: what to turn in, which quests to pick up on the way and in what order, the entrance, what waits inside, and the drops worth having for your role. Browsing changes nothing.")
+		local list=self:List(p,"hubDungeons",function() return DP:List() end,function(row) return DP:ListLabel(row) end,{count=5})
+		-- Open on the dungeon you are most likely here for, on the page that shows it.
+		list.selected=DP:Default()
+		for i,row in ipairs(DP:List()) do if row.key==list.selected then list.page=math.ceil(i/5) end end
+		local plan,steps,shown
+		self.controls.dungeonSummary=self:Text(p,"",function()
+			local row=self:Selected(list)
+			plan=row and DP:Build(row.key) or nil
+			if steps and shown~=(row and row.key) then shown=row and row.key; steps.page=1; steps.selected=nil end
+			return DP:Summary(plan)
+		end,76)
+		steps=self:List(p,"dungeonPlan",function() return plan and plan.rows or {} end,function(row) return DP:RowLabel(row) end,{count=8})
+		self.controls.dungeonPlanDetails=self:Text(p,"",function() return DP:RowDetails(plan,self:Selected(steps)) end,150)
+		self:Actions(p,{
+			{"dungeonGuide","Guide to selected step",function() DP:Guide(plan,self:Selected(steps)) end,enabled=function() return DP:CanGuide(self:Selected(steps)) end},
+			{"dungeonWish","Save drop to wishlist",function() DP:ToggleWish(self:Selected(steps)) end,
+				enabled=function() local row=self:Selected(steps); return row~=nil and row.type=="gear" and not API.InCombat() end},
+			{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end},
+		})
+		table.insert(p.refreshers,function()
+			local row=self:Selected(steps)
+			self.controls.dungeonWish:SetText(row and row.type=="gear" and row.wished and "Remove from wishlist" or "Save drop to wishlist")
+		end)
+		self:Text(p,"Pickups are ordered nearest zone first, with the zeppelin or ship where one is needed, and end at the entrance. Distances are straight lines. The quest list is a community reference, not a guarantee of what Forever offers you; the full checklist has every quest, including other factions. Interior paths and boss order are not mapped.")
 	elseif key=="locations" then
 		FP.QuestLocationPanel:Build(self,p)
 	elseif key=="rewards" then
@@ -393,6 +423,33 @@ function H:BuildPage(key)
 			{"partyCopy","Create copyable snapshot",function() code:SetText(FP.Party:ExportString()); code:HighlightText(); code:SetFocus(); FP:Print("Press Ctrl-C to copy the selected text. Share it with your partner.") end},
 			{"partyImport","Import pasted snapshot",function() command("partyimport "..U.Trim(code:GetText())) end},
 		})
+	elseif key=="healing" then
+		local HL=FP.Healer
+		self.controls.healStatus=self:Text(p,"",function() return HL:StatusText() end,112)
+		self:Check(p,"healStrip","Show the between-pull check on the HUD while I am in a party",function() return FP.settings.healer.strip end,function(v) command("heal strip "..onoff(v)) end)
+		self:Actions(p,{
+			{"healSpec","This spec is my healing spec",function() command("heal spec") end},
+			{"healSpecClear","Forget my healing spec",function() command("heal spec clear") end,enabled=function() return FP.cdb.healer.specGroup~=nil end},
+			{"healCheck","Check my party now",function() command("heal") end},
+		})
+		self:Text(p,"Out of combat, in a five-player party, the check lists who is dead, offline, out of heal range or still fighting, and your own drinks and essentials. Inside a dungeon it also says when everyone is ready. It never reads health, mana or debuffs: the game hides those from addons.")
+		self:Section(p,"Heal ranks")
+		self.controls.healBonus=self:Text(p,"",function() return HL:BonusText() end,58)
+		local all,sort=false,"rank"
+		local list=self:List(p,"healRanks",function() return HL:Sorted(all,sort) end,function(row) return HL:RowLabel(row) end,{count=8})
+		self:Actions(p,{
+			{"healSort","Sort",function() sort=HL:NextSort(sort); list.page=1 end},
+			{"healAll","Show every rank",function() all=not all; list.page=1; list.selected=nil end},
+		})
+		table.insert(p.refreshers,function()
+			self.controls.healSort:SetText("Sorted "..HL:SortName(sort))
+			self.controls.healAll:SetText(all and "Show only ranks I know" or "Show every rank")
+		end)
+		self.controls.healDetails=self:Text(p,"",function() return HL:RowDetails(self:Selected(list)) end,104)
+		self:Field(p,"healMacro","Mouseover macro for the selected rank",function() return HL:Macro(self:Selected(list)) end)
+		self:Text(p,"Click the macro text, press Ctrl-A then Ctrl-C, and paste it into a macro of your own (/macro). It heals whoever the mouse is over, else your target, else you. Hearth & Hustle never creates or runs a macro.")
+		self:Section(p,"What the game already gives a healer")
+		self:Text(p,"The game's own raid-style party frames draw health and debuffs natively, where addons cannot read them, and its click casting (Click Bindings) puts a heal on a mouse button over those frames. Both are in the game's options. Use them before any addon frame.")
 	elseif key=="town" then
 		self:Section(p,"Class supplies")
 		self:Check(p,"prepEnabled","Enable preparation checklist",function() return FP.cdb.prep.enabled end,function(v) command("prep "..onoff(v)) end)

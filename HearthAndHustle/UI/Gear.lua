@@ -120,10 +120,8 @@ function P:Dungeons(row)
  local out,seen={},{}
  for i,kind in ipairs(row.item.sourceTypes) do
   if kind=="Dungeon" then
-   local query=row.item.sources[i]:lower()
-   if query=="temple of atal'hakkar" then query="sunken temple" end
    for _,d in ipairs(FP.Dungeons:List()) do
-    if d.data.name:lower():find(query,1,true) and not seen[d.key] then out[#out+1]=d;seen[d.key]=true end
+    if G:SourceIsDungeon(row.item.sources[i],d.data.name) and not seen[d.key] then out[#out+1]=d;seen[d.key]=true end
    end
   end
  end

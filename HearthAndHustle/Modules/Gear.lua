@@ -87,6 +87,23 @@ function G:ClassMatches(item,char)
  if sub==9 then return char.class=="SHAMAN" end
  return sub<=0
 end
+-- Does a reference source name mean this dungeon (or one of its wings)? The
+-- item reference says "The Temple of Atal'Hakkar", "Blackrock Spire",
+-- "Scarlet Monastery"; the dungeon list says "The Sunken Temple", "Lower
+-- Blackrock Spire", "Scarlet Monastery: Library".
+function G:SourceIsDungeon(source,dungeonName)
+ if type(source)~="string" or type(dungeonName)~="string" then return false end
+ local s=source:lower():gsub("^the ","")
+ if s=="temple of atal'hakkar" then s="sunken temple" end
+ return s~="" and dungeonName:lower():find(s,1,true)~=nil
+end
+-- The boss an item drops from in this dungeon, true when no boss is recorded,
+-- nil when the item is not listed for it.
+function G:DropsIn(item,dungeonName)
+ for i,kind in ipairs(item.sourceTypes) do
+  if kind=="Dungeon" and self:SourceIsDungeon(item.sources[i],dungeonName) then return item.bosses[1] or true end
+ end
+end
 -- Quest rewards rarely list a required level and their item level tracks the
 -- quest level; quests a few levels above the character are routinely done.
 G.PROXY_MARGIN=5
@@ -149,8 +166,9 @@ function G:Details(row,slot)
 end
 function G:OnEnable()
  local function refresh()
-  if FP.Hub and FP.Hub.frame and FP.Hub.frame:IsShown() and FP.Hub.selected=="gear" then
-   FP.Throttle("gear-refresh",.25,function() if FP.Hub.selected=="gear" then FP.Hub:Refresh() end end)
+  local page=FP.Hub and FP.Hub.frame and FP.Hub.frame:IsShown() and FP.Hub.selected
+  if page=="gear" or page=="dungeons" then
+   FP.Throttle("gear-refresh",.25,function() if FP.Hub.selected==page then FP.Hub:Refresh() end end)
   end
  end
  for _,event in ipairs({"PLAYER_EQUIPMENT_CHANGED","GET_ITEM_INFO_RECEIVED","PLAYER_LEVEL_UP","PLAYER_REGEN_ENABLED","PLAYER_REGEN_DISABLED"}) do FP:RegisterEvent(event,refresh) end

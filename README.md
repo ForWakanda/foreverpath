@@ -4,6 +4,25 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Healer tools (v0.25.0)
+
+For Shaman, Priest, Druid and Paladin. `/hh` → **Healing**, or `/hh heal`.
+
+- **Heal ranks.** Every healing rank you know with its mana, cast time and the amount from its own tooltip, and what that is per mana and per second. With bonus healing from gear it adds an estimate by the Classic rule (cast time ÷ 3.5), marked "est."; that rule is not confirmed on Forever. `*` marks the most healing per mana. Select a rank for a one-line mouseover macro to copy; the addon never creates or runs a macro.
+- **Between-pull check.** Out of combat, in a five-player party, with your gear role set to Healing: who is dead, offline, out of heal range or still fighting, plus your drinks, your Ankh (Shaman), your weapon imbue, and whether you are in the spec you marked as your healing spec. It shows on the HUD and on the Healing page; inside a dungeon it also says when everyone is ready.
+- **What it cannot do.** Forever hides health, mana, debuffs, threat and cooldowns from addons. Nothing here warns about them and nothing runs in combat. The game's own raid-style party frames and click casting cover that part.
+
+## Dungeon itinerary (v0.25.0)
+
+`/hh` → **Dungeons**, or `/hh dungeon plan [name]`. Choose a dungeon and get the run as a list:
+
+- **Turn in first**, then **Before you enter**: every quest you can pick up, grouped by zone, nearest zone first, with the zeppelin or ship where one is needed, ending at the entrance.
+- **Inside**: quests already in your log, givers that stand inside, quests that start from a drop.
+- **Not available yet**: quests behind a prerequisite or a level, so you do not ride out for them.
+- **Drops for your role**: items from this dungeon that score higher than what you wear, for the role chosen on Best in slot. **Save drop to wishlist** keeps one on the list.
+
+Select a step and click **Guide to selected step**; nothing changes until you do. The quest list is a community reference, distances are straight lines, and interior paths are not mapped. The full checklist with every quest is one button away.
+
 ## Guidance explanations (v0.23.0)
 
 The compact quest panel shows why guidance chose its destination: your selected

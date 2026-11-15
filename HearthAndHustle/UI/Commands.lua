@@ -14,7 +14,9 @@ local function help()
 	p("  /hh settings      map pins and arrow display controls")
 	p("  /hh pickups       list available nearby pickups and guide to the closest")
 	p("  /hh trip          your quest log as stops, zone by zone, with the sea crossings")
+	p("  /hh heal [ranks|strip on|off|spec|on|off]   healer: between-pull party check, heal rank table")
 	p("  /hh dungeon [name]   open the dungeon quest checklist (also: Dungeons button)")
+	p("  /hh dungeon plan [name]   itinerary for a dungeon: pickups in order, entrance, inside, drops for your role")
 	p("  /hh auto on|off   auto-advance the arrow (now " .. (FP.settings.autoNext and "on" or "off") .. ")")
 	p("  /way 45.4 70.4 [title]   waypoint on your current map (also: /hh way or /way <mapID> x y)")
 	p("  /hh way here [title] | way list | way next | way clear | way rm <id>")
@@ -207,6 +209,9 @@ function C:Handle(msg)
 	if cmd == "" or cmd == "home" then FP.Hub:Toggle()
 	elseif cmd == "panel" and rest == "" then FP.Panel:Toggle()
 	elseif cmd == "help" or cmd == "?" then help()
+	elseif (cmd == "dungeon" or cmd == "dungeons") and (rest:lower() == "plan" or rest:lower():match("^plan%s")) then
+		local key, problem = FP.DungeonPlan:Find(rest:sub(5))
+		if not key then p(problem) else for _, line in ipairs(FP.DungeonPlan:Lines(key)) do p(line) end end
 	elseif cmd == "dungeon" or cmd == "dungeons" then FP.DungeonPanel:Open(rest)
 	elseif cmd == "settings" then FP.Panel:OpenSettings()
 	elseif cmd == "guide" then
@@ -232,6 +237,7 @@ function C:Handle(msg)
 		local s = FP.Planner:NextStep()
 		if s then FP.Planner:Go(s); p(FP.GOLD .. "Next:|r " .. s.title .. (s.dist and (" " .. U.FormatDistance(s.dist)) or "")) else p("nothing to plan: no quests with a known location") end
 	elseif cmd == "trip" then for _, line in ipairs(FP.Travel:Lines()) do p(line) end
+	elseif cmd == "heal" or cmd == "healer" or cmd == "healing" then FP.Healer:Command(rest)
 	elseif cmd == "auto" then
 		local v = rest:lower()
 		if v == "on" then FP.settings.autoNext = true elseif v == "off" then FP.settings.autoNext = false else FP.settings.autoNext = not FP.settings.autoNext end
