@@ -46,7 +46,7 @@ FP.defaults = {
 		reminders = { enabled = true, buffs = true, durability = 20, ammo = 200 },   -- out-of-combat reminders (/hh remind)
 		trainer = { enabled = true },   -- trainer notes (/hh trainer)
 		barGuard = { enabled = true, announce = true },   -- puts back action buttons the server dropped (/hh bars)
-		enemyWatch = { enabled = true, alerts = true, sound = true, stealth = true, share = true },   -- enemy players nearby in the open world (/hh enemies)
+		enemyWatch = { enabled = true, alerts = true, sound = true, stealth = true, share = true, nameplateNotice = true },   -- enemy players nearby in the open world (/hh enemies)
 		questSparkle = { enabled = true },   -- keeps the game's sparkle on quest items switched on (/hh sparkle)
 	},
 	data = {
@@ -58,6 +58,7 @@ FP.defaults = {
 	apicheck = {},
 	errors = {},
 	enemyWatch = { kos = {}, ignore = {}, players = {}, counts = {} },   -- Kill On Sight, ignore, everyone met with wins/losses
+	travel = { fits = {} },   -- how well flight point positions could be worked out (read after a session)
 	questSparkle = {},   -- whether the sparkle setting was switched on by this addon, and the last look
 }
 
@@ -75,6 +76,7 @@ FP.charDefaults = {
 	lastRoute = {},
 	lootSeen = {},
 	barGuard = { specs = {}, log = {} },   -- remembered action bars per spec group
+	flights = {},   -- flight points this character has seen on a flight map (route help)
 }
 
 -- Renamed from "ForeverPath" in v0.17.0. A SavedVariables file copied to the new

@@ -3394,6 +3394,8 @@ from quest_guidance import cases as quest_guidance_cases
 CASES.update(quest_guidance_cases(OBJECTIVES, HUB))
 from usability import cases as usability_cases
 CASES.update(usability_cases(HUB))
+from travel import cases as travel_cases
+CASES.update(travel_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():
@@ -3939,6 +3941,16 @@ assert(section("Enemies nearby") and not section("Enemies seen"), "no double lis
 for name, (preload, body) in ENEMY_CASES.items():
     boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
     result = subprocess.run([LUA, "-"], input=boot + ENEMY_HELPERS + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors: "..tostring(FP.db.errors[1] and FP.db.errors[1].err))\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
+# Nameplate notice: saved state and client settings exist before login.
+from nameplate_notice import nameplate_cases
+for name, (preload, body) in nameplate_cases(HUB).items():
+    boot = BOOT.replace('if not HearthAndHustleDB and not ForeverPathDB then', preload + 'if not HearthAndHustleDB and not ForeverPathDB then')
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors: "..tostring(FP.db.errors[1] and FP.db.errors[1].err))\n', text=True, capture_output=True)
     print(("FAIL " if result.returncode else "PASS ") + name)
     if result.returncode:
         failed += 1

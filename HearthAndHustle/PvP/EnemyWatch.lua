@@ -503,6 +503,10 @@ function W:Rows()
 			.. FP.GREY .. table.concat(bits, " ") .. (note and ("  " .. note) or "") .. "|r" }
 	end
 	if #list > MAX_LINES then rows[#rows + 1] = { text = FP.GREY .. "+" .. (#list - MAX_LINES) .. " more|r" } end
+	-- Only beside a list it qualifies: an empty HUD stays hidden.
+	if #rows > 0 and s().nameplateNotice and self:NameplateNotice() then
+		rows[#rows + 1] = { text = FP.GOLD .. "nameplates off: only your target / mouseover|r" }
+	end
 	return rows
 end
 
@@ -512,6 +516,35 @@ function W:NameplateLine()
 	if always == false then return "nameplates only show in combat: outside combat only players you target or mouse over are seen", false end
 	if shown == nil then return "enemy nameplate setting not readable", true end
 	return "enemy nameplates on", true
+end
+
+-- Standing notice while the watch can only see who the player points at.
+-- nil when nameplates are on, the setting cannot be read or the watch is off.
+function W:NameplateNotice()
+	if not s().enabled or not API.EnemyWatchAvailable() then return nil end
+	local line, ok = self:NameplateLine()
+	if ok then return nil end
+	return (line:gsub("^%l", string.upper)) .. "."
+end
+
+-- How enemies have been seen so far (all sessions): shows what nameplates add.
+function W:SeenLine()
+	local c = store().counts
+	local plate, pointed = c.nameplate or 0, (c.target or 0) + (c.mouseover or 0) + (c.focus or 0)
+	if plate + pointed == 0 then return "No enemy players seen yet." end
+	return string.format("Sightings so far: %d from nameplates, %d from your target or mouseover.", plate, pointed)
+end
+
+-- The player's click (PvP page button or /hh enemies nameplates). Never called
+-- by the addon on its own.
+function W:TurnOnNameplates()
+	local ok, why = API.EnableEnemyNameplates()
+	local shown, always = API.EnemyNameplates()
+	store().nameplates = { t = API.Now(), version = FP.version, by = "click", result = ok and "on" or why, shown = shown, always = always }
+	if ok then FP:Print("Enemy nameplates are on and shown outside combat.")
+	elseif why == "combat" then FP:Print("Nameplate settings cannot be changed in combat. Try again after the fight.")
+	else FP:Print("The client did not accept the nameplate settings. Switch them on under Options > Nameplates (enemy nameplates, always show).") end
+	return ok
 end
 
 function W:Status()
@@ -572,11 +605,8 @@ function W:Command(rest)
 	elseif sub == "sound" then toggle(set, "sound", val, "sound")
 	elseif sub == "stealth" then toggle(set, "stealth", val, "stealth alerts")
 	elseif sub == "share" then toggle(set, "share", val, "party share")
-	elseif sub == "nameplates" then
-		local ok, why = API.EnableEnemyNameplates()
-		if ok then FP:Print("Enemy nameplates are on and shown outside combat.")
-		elseif why == "combat" then FP:Print("Nameplate settings cannot be changed in combat. Try again after the fight.")
-		else FP:Print("The client did not accept the nameplate settings. Switch them on under Options > Nameplates (enemy nameplates, always show).") end
+	elseif sub == "nameplates" then self:TurnOnNameplates()
+	elseif sub == "notice" then toggle(set, "nameplateNotice", val, "nameplate reminder")
 	elseif sub == "list" then
 		local rows = self:Rows()
 		if #rows == 0 then FP:Print("No enemy players nearby.") end
@@ -588,7 +618,7 @@ function W:Command(rest)
 		FP:Print("nearby enemy list cleared")
 	else
 		for _, line in ipairs(self:Status()) do FP:Print(line) end
-		FP:Print("/hh enemies on|off | alerts|sound|stealth|share on|off | nameplates | list | stats [n] | clear")
+		FP:Print("/hh enemies on|off | alerts|sound|stealth|share|notice on|off | nameplates | list | stats [n] | clear")
 		FP:Print("/hh kos [name][: reason] | /hh kos list   ·   /hh ignore [name] | /hh ignore list   (no name = your target; +name adds, -name removes)")
 	end
 	FP:Fire("PVP_CHANGED")
@@ -698,13 +728,18 @@ function W:OnEnable()
 	if C_Timer and C_Timer.NewTicker then
 		self.ticker = C_Timer.NewTicker(SCAN, function() FP.pcall("enemy-scan", W.Scan, W) end)
 	end
-	-- Without nameplates outside combat almost nobody is seen: say so once.
+	-- Without nameplates outside combat almost nobody is seen. A single line in
+	-- chat was easy to miss (client read 2026-11-15: every sighting came from the
+	-- target or mouseover), so say it each login while it applies; the standing
+	-- notice and its button are on the PvP page.
 	FP.After(8, function()
 		local st = store()
-		if st.nameplateHint or not W:Active() then return end
+		local shown, always = API.EnemyNameplates()
+		st.nameplateState = { t = API.Now(), version = FP.version, shown = shown, always = always }
+		if not s().nameplateNotice or not W:Active() then return end
 		local line, ok = W:NameplateLine()
 		if ok then return end
 		st.nameplateHint = true
-		FP:Print("Enemy watch: " .. line .. "." .. FP.GREY .. " /hh enemies nameplates switches them on.|r")
+		FP:Print("Enemy watch: " .. line .. "." .. FP.GREY .. " Open /hh > PvP for the button, or /hh enemies nameplates.|r")
 	end)
 end

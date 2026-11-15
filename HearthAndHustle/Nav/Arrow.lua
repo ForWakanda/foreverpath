@@ -44,6 +44,8 @@ function Arrow:OnInit()
 		GameTooltip:SetOwner(frame, "ANCHOR_BOTTOM")
 		GameTooltip:AddLine(tostring(wp.title), 1, 0.82, 0)
 		if wp.desc then GameTooltip:AddLine(tostring(wp.desc), 1, 1, 1, true) end
+		local travel = FP.Waypoints:GetActive() == wp and FP.Travel:Describe(wp) or nil
+		if travel then GameTooltip:AddLine(travel, 0.6, 0.9, 1, true) end
 		GameTooltip:AddLine(API.GetMapName(wp.mapID) .. "  " .. U.FormatCoords(wp.x, wp.y), 0.7, 0.7, 0.7)
 		GameTooltip:AddLine("Drag to move. Right-click: next waypoint. Shift-right-click: clear all.", 0.5, 0.8, 1, true)
 		GameTooltip:Show()
@@ -69,6 +71,14 @@ function Arrow:OnInit()
 	local dist = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	self.dist = dist
 	dist:SetPoint("TOP", title, "BOTTOM", 0, -1)
+
+	-- Travel note: the rest of a long trip (sea crossing, known flight point).
+	local leg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	self.leg = leg
+	leg:SetTextColor(0.62, 0.62, 0.62)
+	leg:SetPoint("TOP", dist, "BOTTOM", 0, -1)
+	leg:SetWidth(220)
+	leg:SetJustifyH("CENTER")
 
 	self:ApplySettings()
 	f:Hide()
@@ -115,6 +125,7 @@ function Arrow:OnUpdate(elapsed)
 	if elapsedAcc < 0.05 then return end
 	elapsedAcc = 0
 	local wp = displayedWaypoint()
+	self.leg:SetText("")
 	if not wp then
 		self.tex:Hide()
 		local steps = FP.Planner.steps or {}
@@ -133,7 +144,20 @@ function Arrow:OnUpdate(elapsed)
 	local pos = FP.Pos.cache
 	local d, bearing, sameContinent = FP.Pos:VectorTo(wp)
 	self.title:SetText(U.Truncate(wp.title, 40))
-	if not d then
+	-- Across the sea: lead to the zeppelin or ship that crosses, not nowhere.
+	local leg = (not d and sameContinent == false) and FP.Travel:Leg(wp) or nil
+	if leg then
+		local name = FP.Travel:LegTitle(leg)
+		self.leg:SetText(FP.Travel:Hint(wp, leg) or "")
+		if leg.here then
+			self.dist:SetText(FP.GREEN .. "Board here: " .. name .. "|r")
+			self.tex:SetRotation(0)
+			self.tex:SetVertexColor(0.2, 1, 0.2)
+			return
+		end
+		self.dist:SetText(name .. "  " .. U.FormatDistance(leg.dist))
+		d, bearing = leg.dist, leg.bearing
+	elseif not d then
 		self.tex:SetRotation(0)
 		self.tex:SetVertexColor(0.5, 0.5, 0.5)
 		if sameContinent == false then
@@ -146,11 +170,14 @@ function Arrow:OnUpdate(elapsed)
 		return
 	end
 	local facing = pos.facing
-	local text = U.FormatDistance(d)
-	if pos.speed and pos.speed > 1 and d > 20 then
-		text = text .. FP.GREY .. "  " .. U.FormatTime(d / pos.speed) .. "|r"
+	if not leg then
+		local text = U.FormatDistance(d)
+		if pos.speed and pos.speed > 1 and d > 20 then
+			text = text .. FP.GREY .. "  " .. U.FormatTime(d / pos.speed) .. "|r"
+		end
+		self.dist:SetText(text)
+		self.leg:SetText(FP.Travel:Hint(wp) or "")
 	end
-	self.dist:SetText(text)
 	if facing then
 		local rel = U.NormalizeAngle(bearing - facing)
 		if FP.settings.arrow.flip then rel = -rel end
