@@ -47,7 +47,7 @@ FP.defaults = {
 		trainer = { enabled = true },   -- trainer notes (/hh trainer)
 		barGuard = { enabled = true, announce = true },   -- puts back action buttons the server dropped (/hh bars)
 		enemyWatch = { enabled = true, alerts = true, sound = true, stealth = true, share = true, nameplateNotice = true },   -- enemy players nearby in the open world (/hh enemies)
-		questSparkle = { enabled = true, nearby = false },   -- native effect; optional nearby-object overlay
+		questSparkle = { enabled = true },   -- keeps the game's sparkle on quest items switched on (/hh sparkle)
 		healer = { enabled = true, strip = true, water = 4 },   -- heal rank table and between-pull party check (/hh heal)
 	},
 	data = {

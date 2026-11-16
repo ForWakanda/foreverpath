@@ -77,22 +77,18 @@ For world PvP: Hearth & Hustle now tells you when players of the other faction a
 - This is an independent implementation. Spy (Forever) is all rights reserved; none of its code, sounds or art is used. Its port showed which game functions still work for this on Forever.
 - Mock-tested and checked against Blizzard's Forever UI source (70938). First client session pending.
 
-## Quest item and nearby-object sparkles (v0.27.0)
+## Quest item sparkles (v0.20.0; nearby-object sparkles removed in v0.27.1)
 
-**Native quest sparkles** stay enabled automatically. WoW decides which objects receive this effect; some lootable objects, including the reported Un'Goro dirt piles, can remain unhighlighted even while this setting is on.
+Quest items lying in the world are easy to walk past. The game has its own sparkle for them, and a graphics preset switches it off. Hearth & Hustle keeps it switched on: at login, and again about a second after a settings change resets it. Nothing to set up.
 
-**Optional nearby-object sparkles:** open the Hearth & Hustle window → **Display → Quest items → Enable nearby sparkles**. This adds a pulsing gold sparkle around the nameplate of the object the game's Interact Key selects, without needing a quest-object list. It can cover dirt piles, quest containers, herbs, ore and chests. Only one object at a time, within roughly 15 yards; hidden in combat. Players, NPCs and corpses receive no extra effect. It cannot reveal every object across a zone.
-
-Enabling this mode also enables the game's Interact Key and object indicators. That can affect the recipient of untargeted heals/buffs, so the mode starts **off** and explains the tradeoff before setup. **Disable / restore** turns it off and restores settings it changed, preserving later player/addon changes. Do this before uninstalling: WoW saves these settings itself. Setup is never reapplied automatically after login or a graphics reset. A pending undo is retained across reloads.
-
-The existing native mode is independent:
-
-- Native mode maintains one graphics setting (`outlineModeShowLootEffectWhenDisabled`). Your Outline Mode stays as you set it. Never in combat.
-- The game draws the sparkle and decides what gets one; an addon cannot pick objects. If your Outline Mode is on and an item shows an outline and no sparkle, set **Options → Graphics → Outline Mode** to Disabled. The addon tells you once when that applies.
+- It changes one graphics setting of the game (`outlineModeShowLootEffectWhenDisabled`) and nothing else. Your Outline Mode stays as you set it. Never in combat.
+- The game draws the sparkle and decides what gets one. Some objects never get one (Un'Goro dirt piles, herbs, ore), and an addon cannot add it. If your Outline Mode is on and an item shows an outline and no sparkle, set **Options → Graphics → Outline Mode** to Disabled. The addon tells you once when that applies.
 - Turn it off under **Display → Quest items** or with `/hh sparkle off`. A setting the addon switched on goes back to off; one that was already on before stays yours. The game keeps drawing the sparkle until you fully exit and restart it. The setting is saved by the game itself, so untick it before removing the addon, or type `/console outlineModeShowLootEffectWhenDisabled 0`.
 - If something else keeps switching the setting off, the addon stops after four tries in a minute and says so once.
 - The setting was found by the Forever Loot Sparkles addon (GPL-3.0); this is an independent implementation with none of its code. Its author reports that quest givers sparkle too, because the game uses one setting for both.
-- Native sparkles have been seen in game. The additional nearby-object mode is mock-tested against the Forever API surface (70938); actual dirt-pile detection and visual placement still need client verification.
+- The sparkle has been seen in game, also with Outline Mode on.
+
+**Nearby-object sparkles (v0.27.0) are gone.** That mode drew stars on the one object the game's Interact Key selects. It needed the Interact Key mode switched on, reached about 15 yards, and that mode also changes who an untargeted heal or buff lands on. If you switched it on, v0.27.1 puts the game settings it changed back to what they were at your next login (outside combat), leaves alone any you changed since, and tells you once. If the game refuses, it prints the `/console` lines to type.
 
 ## Action bar guard (v0.19.0)
 

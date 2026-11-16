@@ -147,7 +147,7 @@ function Q:Lines()
 		.. ((state == "1" and not s().enabled) and " (the game keeps it until you switch it off there)" or "")
 		.. ((self.deferred or self.pendingOff) and " (change pending: combat or setting unavailable)" or "")
 	if s().enabled and API.OutlineModeOn() then out[#out + 1] = "  " .. OUTLINE_HINT end
-	out[#out + 1] = "Some lootable objects do not receive the native effect. Display > Quest items has an optional nearby-object sparkle."
+	out[#out + 1] = "The game decides which objects get the sparkle. Some never do (Un'Goro dirt piles, herbs, ore), and an addon cannot add it."
 	return out
 end
 
