@@ -753,7 +753,9 @@ function H:List(p,id,get,describe,options)
 		for i,b in ipairs(list.rows) do
 			b.item=list.items[(list.page-1)*count+i]
 			if b.item then
-				b:SetText((list.selected==b.item.key and FP.GOLD .. "> " or "") .. U.Truncate(describe(b.item),options.width and 36 or 82) .. "|r"); b:Show()
+				-- options.color: a colour escape for an unselected row (gear rows are tinted by item quality)
+				local tint=list.selected==b.item.key and (FP.GOLD .. "> ") or (options.color and options.color(b.item)) or ""
+				b:SetText(tint .. U.Truncate(describe(b.item),options.width and 36 or 82) .. "|r"); b:Show()
 			else b:Hide() end
 		end
 	end)
