@@ -3402,6 +3402,8 @@ from dungeon_plan import cases as dungeon_plan_cases
 CASES.update(dungeon_plan_cases(HUB))
 from gear_finder import cases as gear_finder_cases
 CASES.update(gear_finder_cases(HUB))
+from nearby_sparkle import cases as nearby_sparkle_cases
+CASES.update(nearby_sparkle_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():
@@ -3652,9 +3654,9 @@ assert(M.cvars[NAME]=="1" and writes()==1 and M.cvarWrites[1].value=="1"); onlyO
 assert(FP.settings.questSparkle.enabled and FP.db.questSparkle.ours==true and FP.db.questSparkle.count==1)
 local last=FP.db.questSparkle.last
 assert(last.reason=="login" and last.was=="0" and last.outline==true and last.failed==nil and last.version==FP.version)
-assert(said("Quest items you can pick up now sparkle")==1 and said("Outline Mode is on")==1)
+assert(said("The game's quest sparkle setting is enabled")==1 and said("Outline Mode is on")==1)
 M.FireEvent("PLAYER_ENTERING_WORLD"); M.FireEvent("CVAR_UPDATE","Sound_MasterVolume","1"); M.RunTimers(30)
-assert(writes()==1 and said("now sparkle")==1, "a setting that is on is not written again")
+assert(writes()==1 and said("quest sparkle setting is enabled")==1, "a setting that is on is not written again")
 cmd("sparkle"); assert(said("Quest item sparkles on")==1 and said("game setting: on")==1)
 cmd("apicheck")
 local row=FP.db.apicheck["70124-manual"].rows["probe:lootSparkle"]
@@ -3662,7 +3664,7 @@ assert(row and row.ok and row.note=="loot sparkle setting on; outline mode on", 
 """),
     "sparkle_graphics_preset_reset_is_put_back": ("", r"""
 preset(); assert(M.cvars[NAME]=="1" and writes()==2); onlyOurs()
-assert(FP.db.questSparkle.last.reason=="setting" and FP.db.questSparkle.count==2 and said("now sparkle")==1, "one chat line, ever")
+assert(FP.db.questSparkle.last.reason=="setting" and FP.db.questSparkle.count==2 and said("quest sparkle setting is enabled")==1, "one chat line, ever")
 for _=1,6 do M.RunTimers(61); preset() end
 assert(M.cvars[NAME]=="1" and writes()==8 and Q.stopped==nil, "presets minutes apart are not a tug of war"); onlyOurs()
 """),
@@ -3681,17 +3683,17 @@ assert(writes()==2 and M.cvars[NAME]=="0", "off means off: no writes in either d
 check("questSparkleEnabled",true); assert(M.cvars[NAME]=="1" and writes()==3 and FP.db.questSparkle.ours==true); onlyOurs()
 """),
     "sparkle_leaves_a_setting_it_found_on": ('M.cvars.outlineModeShowLootEffectWhenDisabled="1"\n', r"""
-assert(writes()==0 and FP.db.questSparkle.ours==nil and said("now sparkle")==0)
+assert(writes()==0 and FP.db.questSparkle.ours==nil and said("quest sparkle setting is enabled")==0)
 cmd("sparkle off"); assert(writes()==0 and M.cvars[NAME]=="1" and said("stays as it is")==1, "the player's own setting is not switched off")
 cmd("sparkle"); assert(said("Quest item sparkles off")==1 and said("the game keeps it")==1)
 """),
     "sparkle_remembers_across_sessions_that_it_switched_it_on": (
         'M.cvars.outlineModeShowLootEffectWhenDisabled="1"\nHearthAndHustleDB={questSparkle={ours=true,introduced=true,count=3}}\n', r"""
-assert(writes()==0 and said("now sparkle")==0)
+assert(writes()==0 and said("quest sparkle setting is enabled")==0)
 cmd("sparkle off"); assert(writes()==1 and M.cvars[NAME]=="0" and FP.db.questSparkle.ours==nil and said("fully exit and restart")==1); onlyOurs()
 """),
     "sparkle_missing_or_secret_setting_is_inert": ("M.cvars.outlineModeShowLootEffectWhenDisabled=nil\n", r"""
-assert(writes()==0 and said("now sparkle")==0)
+assert(writes()==0 and said("quest sparkle setting is enabled")==0)
 cmd("sparkle on"); cmd("sparkle"); assert(writes()==0 and said("this client has no such setting")==2)
 M.cvars[NAME]="0"; M.secretCVars=true
 M.FireEvent("CVAR_UPDATE",M.Secret(),M.Secret()); M.RunTimers(5); cmd("sparkle")
@@ -3710,13 +3712,13 @@ cmd("sparkle on"); assert(M.cvars[NAME]=="1" and writes()==5 and Q.stopped==nil,
 assert(writes()==1 and M.cvars[NAME]=="0" and Q.stopped=="blocked" and said("did not accept the quest item sparkle setting")==1)
 preset(); M.FireEvent("PLAYER_ENTERING_WORLD"); M.RunTimers(30); cmd("sparkle on")
 assert(writes()==1 and said("did not accept the quest item sparkle setting")==1, "one refusal, one line, no retries this session")
-assert(FP.db.questSparkle.ours==nil and FP.db.questSparkle.last.failed=="blocked" and said("now sparkle")==0)
+assert(FP.db.questSparkle.ours==nil and FP.db.questSparkle.last.failed=="blocked" and said("quest sparkle setting is enabled")==0)
 local blocked=0; for _,e in ipairs(FP.db.errors) do if e.where=="ADDON_ACTION_BLOCKED" then blocked=blocked+1 end end
 assert(blocked==1 and #FP.db.errors==1); FP.db.errors={}
 """),
     "sparkle_silent_refusal_also_pauses": ('M.cvarProtected="silent"\n', r"""
 assert(writes()==1 and M.cvars[NAME]=="0" and Q.stopped=="refused" and FP.db.questSparkle.last.failed=="refused")
-preset(); M.RunTimers(30); assert(writes()==1 and FP.db.questSparkle.ours==nil and said("now sparkle")==0)
+preset(); M.RunTimers(30); assert(writes()==1 and FP.db.questSparkle.ours==nil and said("quest sparkle setting is enabled")==0)
 """),
     "sparkle_off_in_combat_waits_and_a_change_of_mind_cancels": ("", r"""
 M.combatLockdown=true; cmd("sparkle off")
