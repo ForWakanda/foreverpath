@@ -3400,6 +3400,8 @@ from healer import cases as healer_cases
 CASES.update(healer_cases(HUB))
 from dungeon_plan import cases as dungeon_plan_cases
 CASES.update(dungeon_plan_cases(HUB))
+from gear_finder import cases as gear_finder_cases
+CASES.update(gear_finder_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

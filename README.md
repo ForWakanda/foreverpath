@@ -4,6 +4,19 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Gear finder (v0.26.0)
+
+`/hh` → **Best in slot**. The page now says what it is showing, and you can ask it for exactly the thing you are after: "the best two-hander for my second spec".
+
+- **Ranked for** walks your class's roles (a Shaman: Strength melee, Spell damage, Healing) and only changes what this page shows. Your own role, the one the Healing page and the dungeon drop lists follow, stays put until you press **Make … my role**. A healer can look up melee weapons without switching the healer check off.
+- **Hands** (main hand): any, two-hand only, one-hand only. **Type**: the weapon or armour types on offer for the slot (Axe, Mace, Staff …). **Sort** (weapons): best score, weapon DPS, or biggest hits (average damage per swing, what a slow weapon is picked for).
+- **Source** offers only kinds the reference really has, and the creature-drop kind is called what it is: **World / raid drop** (every drop with no dungeon listed, raid bosses included). A row names the creature when the reference does (`Drop: C'Thun`).
+- Every row carries the facts: `2. Taran Icebreaker · 2H Mace · 49.7 dps · speed 3.80 · L47 · Drop`, tinted by item quality. The line above the list states the whole filter (`302 items · Main hand · two-hand only · up to level 60 · any source · ranked for Strength melee · best score first`).
+- Items that belong to the other faction (a reputation they ask for, or an honor-rank name such as *Grand Marshal's*) are left out and counted in that line; one tick shows them again.
+- The selected item, directly under the list: damage range and speed, quality and binding, what it asks for, where it comes from, what is not in the score (hit, crit, procs), and for a two-hander the change against **both** hands you wear.
+
+Rankings are still estimates from editable stat weights over a dated reference, not a simulation; weapon speed, hit, crit and procs are shown, not scored.
+
 ## Healer tools (v0.25.0)
 
 For Shaman, Priest, Druid and Paladin. `/hh` → **Healing**, or `/hh heal`.
