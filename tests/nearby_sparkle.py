@@ -28,6 +28,17 @@ local function enable() assert(N:Enable()); assert(FP.settings.questSparkle.near
 
 def cases(hub):
     return {
+        'nearby_sparkle_normalized_numeric_cvars_enable_and_restore': HELPERS+r'''
+local original=C_CVar.SetCVar
+C_CVar.SetCVar=function(name,value)
+ local result=original(name,value)
+ if name=="SoftTargetInteractRange" then M.cvars[name]=string.format("%.6f",tonumber(value)) end
+ return result
+end
+enable(); assert(shown() and M.cvars.SoftTargetInteractRange=="15.000000")
+assert(N:Disable() and M.cvars.SoftTargetInteractRange=="10.000000")
+assert(#FP.db.questSparkle.nearby.restore==0)
+''',
         'nearby_sparkle_default_does_not_enable_interaction': HELPERS+r'''
 local writes=#M.cvarWrites
 M.FireEvent("PLAYER_ENTERING_WORLD"); M.FireEvent("PLAYER_SOFT_INTERACT_CHANGED",M.Secret(),M.Secret()); M.RunTimers(3)

@@ -2427,9 +2427,9 @@ function API.SetNearbySparkleSetting(name, value)
 	if not allowed or not num or num ~= num or math.abs(num) > 1000000 then return false, "invalid" end
 	if API.InCombat() then return false, "combat" end
 	if not has(C_CVar, "SetCVar") or readCVar(name) == nil then return false, "unavailable" end
-	if readCVar(name) == value then return true end
+	if tonumber(readCVar(name)) == num then return true end
 	local ok = pcall(C_CVar.SetCVar, name, value)
-	if not ok or readCVar(name) ~= value then return false, "refused" end
+	if not ok or tonumber(readCVar(name)) ~= num then return false, "refused" end
 	return true
 end
 

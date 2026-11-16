@@ -38,7 +38,7 @@ function N:Restore()
 	for i = #st.restore, 1, -1 do
 		local row = st.restore[i]
 		local value = current[row.name]
-		if value ~= nil and value ~= row.applied then
+		if value ~= nil and tonumber(value) ~= tonumber(row.applied) then
 			table.remove(st.restore, i)
 		elseif value ~= nil then
 			local ok = API.SetNearbySparkleSetting(row.name, row.before)
