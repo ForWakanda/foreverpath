@@ -3402,8 +3402,6 @@ from dungeon_plan import cases as dungeon_plan_cases
 CASES.update(dungeon_plan_cases(HUB))
 from gear_finder import cases as gear_finder_cases
 CASES.update(gear_finder_cases(HUB))
-from nearby_sparkle import cases as nearby_sparkle_cases
-CASES.update(nearby_sparkle_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():
@@ -3739,6 +3737,18 @@ cmd("sparkle off"); assert(writes()==0 and said("quest item sparkles off")==1)
 for name, (preload, body) in SPARKLE_CASES.items():
     boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
     result = subprocess.run([LUA, "-"], input=boot + SPARKLE_HELPERS + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
+    print(("FAIL " if result.returncode else "PASS ") + name)
+    if result.returncode:
+        failed += 1
+        print("  " + (result.stderr.splitlines() or ["no error output"])[0])
+
+# v0.27.1: nearby-object sparkles are retired. A profile that switched the
+# v0.27.0 mode on gets its game settings back; nothing can switch it on again.
+from nearby_sparkle import cases as nearby_retired_cases, HELPERS as NEARBY_HELPERS, HUB_PLACEHOLDER
+for name, (preload, body) in nearby_retired_cases().items():
+    boot = BOOT.replace('local FP = {}', preload + '\nlocal FP = {}')
+    body = NEARBY_HELPERS + body.replace(HUB_PLACEHOLDER, HUB)
+    result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
     print(("FAIL " if result.returncode else "PASS ") + name)
     if result.returncode:
         failed += 1
@@ -4088,5 +4098,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + len(REVIEW_FIX_CASES) + 1} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + len(REVIEW_FIX_CASES) + len(nearby_retired_cases()) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)

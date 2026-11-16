@@ -609,14 +609,7 @@ function H:BuildPage(key)
 		self:Text(p,"Fills empty slots only, never in combat, and never uses an ability. Your own edits are remembered as you make them.")
 		self:Section(p,"Quest items")
 		self:Check(p,"questSparkleEnabled","Keep WoW's native quest sparkle setting enabled",function() return FP.settings.questSparkle.enabled end,function(v) command("sparkle "..onoff(v)) end)
-		self:Text(p,"Keeps one graphics setting of the game switched on, also after a graphics preset resets it. The game draws the sparkle and decides what gets one. Switching it off takes effect after a full game restart.")
-		self.controls.nearbySparkleStatus=self:Text(p,"",function() return table.concat(FP.NearbySparkle:Lines(),"\n") end,88)
-		self:Text(p,"Optional extra sparkle for objects the native effect misses, such as dirt piles. Enables the game's Interact Key and nearby object indicators. Untargeted heals or buffs may then choose a nearby unit; disable this mode if that interferes with your play.")
-		self:Actions(p,{
-			{"nearbySparkleEnable","Enable nearby sparkles",function() FP.NearbySparkle:Enable() end,
-				confirm="Enable the Interact Key and nearby object indicators?\nOne object at a time, about 15 yards. Untargeted heals/buffs may select a nearby unit.\nDisable / restore undoes this setup. Native sparkles stay unchanged."},
-			{"nearbySparkleDisable","Disable / restore",function() FP.NearbySparkle:Disable() end},
-		})
+		self:Text(p,"Keeps one graphics setting of the game switched on, also after a graphics preset resets it. The game draws the sparkle and decides what gets one: some objects never do, and an addon cannot add it. Switching it off takes effect after a full game restart.")
 		self:Section(p,"Map pins and arrow")
 		for _,entry in ipairs({{"worldMapPins","World-map pins"},{"minimapPin","Minimap pin"}}) do
 			local key,text=entry[1],entry[2]
