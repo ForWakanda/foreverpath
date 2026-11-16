@@ -42,6 +42,8 @@ end
 function Q:Apply(reason)
 	if not FP.dbReady or not s().enabled or self.stopped then return end
 	local was = API.GetLootSparkle()
+	store().observed = { t = API.Now(), version = FP.version, build = FP.clientBuild,
+		value = was, outline = API.OutlineModeOn(), reason = reason }
 	if was == nil or was == "1" then return end   -- no such setting on this client, or already on
 	if API.InCombat() then self.deferred = true; return end
 	local now = API.Time()
@@ -75,7 +77,7 @@ function Q:Apply(reason)
 	self:Note(reason, was)
 	if not st.introduced then
 		st.introduced = true
-		FP:Print("Quest items you can pick up now sparkle: the game's own effect, kept switched on."
+		FP:Print("The game's quest sparkle setting is enabled. WoW decides which objects receive the effect."
 			.. (API.OutlineModeOn() and (" " .. OUTLINE_HINT) or "") .. FP.GREY .. " /hh sparkle|r")
 	end
 end
@@ -145,6 +147,7 @@ function Q:Lines()
 		.. ((state == "1" and not s().enabled) and " (the game keeps it until you switch it off there)" or "")
 		.. ((self.deferred or self.pendingOff) and " (change pending: combat or setting unavailable)" or "")
 	if s().enabled and API.OutlineModeOn() then out[#out + 1] = "  " .. OUTLINE_HINT end
+	out[#out + 1] = "Some lootable objects do not receive the native effect. Display > Quest items has an optional nearby-object sparkle."
 	return out
 end
 
@@ -179,6 +182,7 @@ function Q:Command(rest)
 		end
 	else
 		for _, line in ipairs(self:Lines()) do FP:Print(line) end
+		if FP.NearbySparkle then for _, line in ipairs(FP.NearbySparkle:Lines()) do FP:Print(line) end end
 		FP:Print("/hh sparkle on|off")
 	end
 end

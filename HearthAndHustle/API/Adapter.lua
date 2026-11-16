@@ -2352,7 +2352,7 @@ end
 
 -------------------------------------------------------------------------------
 -- Quest item sparkle (Modules/QuestSparkle.lua). The client's own loot sparkle
--- is one console variable, and it is the only one this addon writes: the name
+-- is one console variable, the only one this feature maintains: the name
 -- is fixed here, there is no general "set a console variable" function. Outline
 -- Mode is read, never written. C_CVar.GetCVar / SetCVar and CVAR_UPDATE are
 -- documented in Blizzard's Forever source (1.60.1.70938); the variable itself
@@ -2394,6 +2394,65 @@ function API.SetLootSparkle(on)
 	if not pcall(C_CVar.SetCVar, LOOT_SPARKLE_CVAR, want) then return false, "error" end
 	if API.GetLootSparkle() ~= want then return false, "refused" end
 	return true
+end
+
+-- Optional nearby-object display. Setup/undo are explicit player actions,
+-- never login or per-target writes. Keep this allow-list local to the adapter.
+local NEARBY_SPARKLE_SETTINGS = {
+	{ "SoftTargetInteractRange", "15" },
+	{ "SoftTargetInteractArc", "2" },
+	{ "SoftTargetInteractOnlyInRange", "0" },
+	{ "SoftTargetNameplateInteract", "1" },
+	{ "SoftTargetIconInteract", "1" },
+	{ "SoftTargetIconGameObject", "1" },
+	{ "SoftTargetInteract", "3" }, -- enable only after the display settings
+}
+
+function API.NearbySparkleSettings()
+	local rows = {}
+	for _, setting in ipairs(NEARBY_SPARKLE_SETTINGS) do
+		rows[#rows + 1] = { name = setting[1], want = setting[2], value = readCVar(setting[1]) }
+	end
+	return rows
+end
+
+function API.NearbySparkleAvailable()
+	return hasg("UnitIsGameObject") and hasg("UnitGUID") and has(C_NamePlate, "GetNamePlateForUnit")
+end
+
+function API.SetNearbySparkleSetting(name, value)
+	local allowed = false
+	for _, setting in ipairs(NEARBY_SPARKLE_SETTINGS) do if name == setting[1] then allowed = true; break end end
+	local num = type(value) == "string" and tonumber(value) or nil
+	if not allowed or not num or num ~= num or math.abs(num) > 1000000 then return false, "invalid" end
+	if API.InCombat() then return false, "combat" end
+	if not has(C_CVar, "SetCVar") or readCVar(name) == nil then return false, "unavailable" end
+	if readCVar(name) == value then return true end
+	local ok = pcall(C_CVar.SetCVar, name, value)
+	if not ok or readCVar(name) ~= value then return false, "refused" end
+	return true
+end
+
+-- No enumeration or target selection: only the object the game already exposes.
+-- Exclude forbidden nameplates, all living units and corpses, and secret reads.
+function API.NearbySparkleObject()
+	if API.InCombat() then return nil, "combat" end
+	if not API.NearbySparkleAvailable() then return nil, "unavailable" end
+	local ok, object = pcall(UnitIsGameObject, "softinteract")
+	if not ok or safe(object) ~= true then return nil, "no object" end
+	local got, plate = pcall(C_NamePlate.GetNamePlateForUnit, "softinteract", false)
+	plate = got and safe(plate) or nil
+	if not plate then return nil, "no nameplate" end
+	if type(plate.IsForbidden) ~= "function" then return nil, "unavailable" end
+	local checked, forbidden = pcall(plate.IsForbidden, plate)
+	if not checked or safe(forbidden) ~= false then return nil, "forbidden nameplate" end
+	local shown, visible = pcall(plate.IsShown, plate)
+	if not shown or safe(visible) ~= true then return nil, "hidden nameplate" end
+	local name, guid
+	if hasg("UnitName") then local read, v = pcall(UnitName, "softinteract"); name = read and safe(v) or nil end
+	if hasg("UnitGUID") then local read, v = pcall(UnitGUID, "softinteract"); guid = read and safe(v) or nil end
+	if type(guid) ~= "string" or not guid:match("^GameObject%-") then return nil, "unreadable object" end
+	return { plate = plate, guid = guid, name = type(name) == "string" and name or "Nearby object" }
 end
 
 -------------------------------------------------------------------------------
