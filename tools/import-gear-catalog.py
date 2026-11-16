@@ -69,6 +69,27 @@ for x in json.loads(raw):
         bosses=x['bossNames'],icon=x['iconName'],classes=classes[1].strip() if classes else None,
         restrictions=bool(re.search(r'Requires (?!Level)|Races:|Classes:|Unique',plain)),
         effects=bool(re.search(r'Chance on hit:|Use:|Set :|Set:|<!--useEffect',h)))
+    # Optional facts, written only when the reference states them (keeps the file small).
+    extra=dict(quality=number(r'<b class="q(\d)">',h),
+        dmgMin=number(r'<!--dmg-->([\d.]+) - [\d.]+ (?:[A-Z][a-z]+ )?Damage',h),dmgMax=number(r'<!--dmg-->[\d.]+ - ([\d.]+) (?:[A-Z][a-z]+ )?Damage',h),
+        speed=number(r'Speed <!--spd-->([\d.]+)',h),
+        # Melee/ranged lines only: "…critical strike with spells by" and "…hit with spells by" do not match.
+        crit=number(r'Equip: Improves your chance to get a critical strike by ([\d.]+)%',plain),
+        hit=number(r'Equip: Improves your chance to hit by ([\d.]+)%',plain),
+        dropChance=number(r'whtt-dropchance">Drop Chance: ([\d.]+)%',h))
+    bind=re.search(r'Binds when (picked up|equipped)',h)
+    if bind: extra['bind']='pickup' if bind[1]=='picked up' else 'equip'
+    dropped=re.search(r'whtt-droppedby">Dropped by: ([^<]+)<',h)
+    if dropped: extra['droppedBy']=html.unescape(dropped[1]).strip()
+    # Everything the item asks for besides a level: a reputation ("Darkspear Raiders - Revered"),
+    # an honor rank ("Grand Marshal"), a skill ("Engineering (250)"). An item open to both sides
+    # lists one reputation per side.
+    needs=[]
+    for chunk in re.findall(r'(?:<br>|<td>)Requires (?!Level)(.*?)(?=<br>|<!--|<div|</td>|$)',h):
+        need=re.sub(r'\s+',' ',html.unescape(re.sub(r'<[^>]*>','',chunk))).strip()
+        if need and len(need)<=60 and need not in needs: needs.append(need)
+    if needs: extra['requires']=needs
+    row.update((k,v) for k,v in extra.items() if v is not None)
     items.append(row)
 items.sort(key=lambda x:x['id'])
 assert len(items)>5000 and len({x['id'] for x in items})==len(items)

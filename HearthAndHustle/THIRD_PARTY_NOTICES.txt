@@ -37,7 +37,9 @@ upstream distribution contains its own LICENSE.md and gpl-3.0.md; preserve them.
 QuestieDB is a Questie team project; Hearth & Hustle is an independent consumer.
 
 
-Forever item reference facts (names, IDs, numeric stats and source labels):
+Forever item reference facts (names, IDs, numeric stats, weapon damage and
+speed, quality, binding, required reputation/rank/skill names, the creature
+an item is listed as dropping from with its listed chance, and source labels):
 https://github.com/Napalmsteak/WoW-Classic-Item-Caches
 Revision eff4560809de2e852e9164183e3edf5a795edd20, Forever Cache.json
 Upstream record dates span 2026-10-21 through 2026-11-07.
