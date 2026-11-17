@@ -183,6 +183,14 @@ wishlist. **Edit stat weights** shows every scoring weight and accepts your own
 priorities. Dungeon items link to the checklist; QuestieDB supplies reward quest
 links with chain/pickup guidance where known. Multiple quest sources can be cycled.
 
+**Windfury burst (shamans).** With the page ranked for Strength melee, the Main hand
+slot has a fourth sort, and one button, **Windfury two-handers: biggest burst first**,
+sets the whole list up. It estimates what one Windfury Weapon proc lands at once (the
+swing plus two extra attacks): slow, hard-hitting weapons lead. The details show the
+arithmetic and say which numbers came from your client (attack power, the bonus in
+your spell's tooltip) and which are Classic rules or assumptions. It ranks the size of
+the hit; damage over time follows weapon DPS whatever the speed.
+
 These are **estimated stat rankings within the filtered catalog**, not simulation
 results or a claim of definitive BiS. The reference snapshot runs through November 7, 2026 (some records are older);
 the detail pane separately shows current-client stats when loaded. Procs, sets,

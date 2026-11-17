@@ -2211,6 +2211,21 @@ function API.EnsureGearCatalog()
  return type(FP.GearCatalog)=="table" and type(FP.GearCatalog.items)=="table"
 end
 
+-- Attack power as the character sheet shows it (base plus buffs and debuffs).
+-- Forever docs (70938): UnitAttackPower is SecretWhenUnitStatsRestricted, the
+-- same gate as bonus healing, which the client gave out of combat. nil in
+-- combat, when the client hides it, or when the number is not plausible.
+function API.GetAttackPower()
+ if API.InCombat() or not hasg("UnitAttackPower") then return nil end
+ local ok,base,pos,neg=pcall(UnitAttackPower,"player")
+ if not ok then return nil end
+ base,pos,neg=safe(base),safe(pos),safe(neg)
+ if not U.Finite(base) then return nil end
+ local total=base+(U.Finite(pos) and pos or 0)+(U.Finite(neg) and neg or 0)
+ if total<0 or total>100000 then return nil end
+ return total
+end
+
 function API.CanDualWield()
  if API.InCombat() or not hasg("CanDualWield") then return false end
  local ok,value=pcall(CanDualWield)

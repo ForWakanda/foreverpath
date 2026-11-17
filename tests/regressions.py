@@ -3407,6 +3407,8 @@ from gear_finder import cases as gear_finder_cases
 CASES.update(gear_finder_cases(HUB))
 from save_diet import cases as save_diet_cases
 CASES.update(save_diet_cases(HUB))
+from windfury import cases as windfury_cases
+CASES.update(windfury_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

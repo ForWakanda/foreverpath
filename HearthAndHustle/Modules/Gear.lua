@@ -178,11 +178,92 @@ end
 G.hands={"any","two","one"}
 G.handLabels={any="Any",two="Two-hand",one="One-hand"}
 G.sorts={"score","dps","hit"}
-G.sortLabels={score="Best score",dps="Weapon DPS",hit="Biggest hits"}
+G.sortLabels={score="Best score",dps="Weapon DPS",hit="Biggest hits",wf="Windfury burst"}
 function G:IsWeaponSlot(slot) return slot=="MAIN" or slot=="OFF" or slot=="RANGED" end
 -- Average damage of one swing: what a slow weapon is chosen for.
 function G:HitSize(item)
  if U.Finite(item.dmgMin) and U.Finite(item.dmgMax) then return (item.dmgMin+item.dmgMax)/2 end
+end
+-------------------------------------------------------------------------------
+-- Windfury burst (shaman, melee role, main hand). An estimate of what one
+-- Windfury Weapon proc lands at once: the swing that set it off plus the extra
+-- attacks, each extra one with the spell's bonus attack power.
+--   burst = (1+extra) x average weapon damage
+--         + speed x ((1+extra) x attack power + extra x Windfury bonus) / 14
+-- then x (1 + the weapon's own crit% and hit%) as an expected value. Attack
+-- power / 14 per second of weapon speed, 2 attack power per Strength and the
+-- fallback bonus per rank are the Classic rules, not confirmed on Forever; the
+-- bonus is read from the client's own spell tooltip when it can be. Sustained
+-- Windfury damage follows weapon DPS, not speed; this ranks the size of the hit.
+-------------------------------------------------------------------------------
+G.WINDFURY={ids={8232,8235,10486,16362},learn={30,40,50,60},classic={104,119,249,333},extra=2,apPerSpeed=14,apPerStr=2}
+function G:WindfuryFor(slot,role)
+ return slot=="MAIN" and role=="melee" and API.GetCharInfo().class=="SHAMAN"
+end
+-- The sorts a slot offers; the Windfury one only where it means something.
+function G:Sorts(slot,role)
+ if not self:WindfuryFor(slot,role) then return self.sorts end
+ return {"score","dps","hit","wf"}
+end
+local function weaponAP(stats)
+ if type(stats)~="table" then return nil end
+ local ap,str=stats.ITEM_MOD_ATTACK_POWER_SHORT or 0,stats.ITEM_MOD_STRENGTH_SHORT or 0
+ if not (U.Finite(ap) and U.Finite(str)) then return nil end
+ return ap+G.WINDFURY.apPerStr*str
+end
+-- What the estimate stands on, and where each number came from.
+function G:WindfuryContext()
+ local now=API.Time()
+ if self.wfMemo and now-self.wfMemo.t<2 then return self.wfMemo.ctx end
+ local W=self.WINDFURY
+ local level=API.PlayerLevel()
+ local ctx={extra=W.extra}
+ -- the bonus: the highest rank the character knows, else the rank for its level
+ local rank
+ for i=#W.ids,1,-1 do if API.KnowsSpell(W.ids[i])==true then rank=i;ctx.rankSource="the rank you know";break end end
+ if not rank then
+  rank=1
+  for i=1,#W.ids do if U.Finite(level) and level>=W.learn[i] then rank=i end end
+  ctx.rankSource="the rank for your level"
+ end
+ ctx.rank=rank
+ local desc=API.GetSpellDescription(W.ids[rank])
+ local read=type(desc)=="string" and desc:match("(%d[%d,]*) extra attack power")
+ read=read and tonumber((read:gsub(",","")))
+ if U.Finite(read) and read>0 and read<10000 then ctx.bonus,ctx.bonusSource=read,"your client's Windfury Weapon tooltip"
+ else ctx.bonus,ctx.bonusSource=W.classic[rank],"the Classic value, not read from your client" end
+ -- attack power: the character's own without the weapons it wears (a candidate brings its own)
+ local ap=API.GetAttackPower()
+ if ap then
+  local main,off=weaponAP(API.GetRewardEquipment(16).stats),weaponAP(API.GetRewardEquipment(17).stats)
+  ctx.ap=math.max(0,ap-(main or 0))
+  ctx.apTwoHand=math.max(0,ctx.ap-(off or 0))
+  ctx.apSource=(main and off) and "yours, without the weapons you wear" or "yours; a worn weapon could not be read, so its Strength may be counted twice"
+ else
+  ctx.ap=U.Finite(level) and level*10 or 500
+  ctx.apTwoHand=ctx.ap
+  ctx.apSource="assumed from your level, because your client did not give yours"
+ end
+ self.wfMemo={t=now,ctx=ctx}
+ -- kept for the next data pull: could the client's numbers be read?
+ if FP.db then
+  FP.db.windfury={t=U.Now(),version=FP.version,build=FP.clientBuild,rank=rank,rankSource=ctx.rankSource,bonus=ctx.bonus,bonusSource=ctx.bonusSource,
+   ap=ctx.ap,apRead=ap~=nil}
+ end
+ return ctx
+end
+-- burst, and the parts it was made of; nil for an item without damage or speed.
+function G:Windfury(item,ctx)
+ local avg=self:HitSize(item)
+ if not avg or not U.Finite(item.speed) or item.speed<=0 or item.classID~=2 then return nil end
+ ctx=ctx or self:WindfuryContext()
+ local W=self.WINDFURY
+ local own=weaponAP(item.stats) or 0
+ local ap=(item.equipLoc=="INVTYPE_2HWEAPON" and ctx.apTwoHand or ctx.ap)+own
+ local swings=1+ctx.extra
+ local chance=1+((U.Finite(item.crit) and item.crit or 0)+(U.Finite(item.hit) and item.hit or 0))/100
+ local burst=(swings*avg+item.speed*(swings*ap+ctx.extra*ctx.bonus)/W.apPerSpeed)*chance
+ return burst,{avg=avg,ap=ap,own=own,swings=swings,chance=chance}
 end
 -- filter: slot, level, unknown, source, query as before; role (one of the
 -- character's roles, default its own), hands ("two"/"one", main hand only),
@@ -224,12 +305,22 @@ function G:Rows(filter)
  end
  table.sort(types)
  local sort=filter.sort
+ -- a Windfury sort left over from another slot or role means nothing here
+ if sort=="wf" then
+  local own,_,keys=self:Profile()
+  if not self:WindfuryFor(filter.slot,contains(keys,filter.role) and filter.role or own) then sort=nil end
+ end
+ if sort=="wf" then
+  local ctx=self:WindfuryContext()
+  for _,row in ipairs(rows) do row.wf=self:Windfury(row.item,ctx) end
+ end
  local function measure(row)
   if sort=="dps" then return row.item.stats.ITEM_MOD_DAMAGE_PER_SECOND_SHORT or -1 end
+  if sort=="wf" then return row.wf or -1 end
   return self:HitSize(row.item) or -1
  end
  table.sort(rows,function(a,b)
-  if sort=="dps" or sort=="hit" then local x,y=measure(a),measure(b);if x~=y then return x>y end end
+  if sort=="dps" or sort=="hit" or sort=="wf" then local x,y=measure(a),measure(b);if x~=y then return x>y end end
   if a.score~=b.score then return (a.score or -1)>(b.score or -1) end
   return a.item.id<b.item.id
  end)
@@ -286,6 +377,7 @@ function G:RowText(row,weights)
   local dps=item.stats.ITEM_MOD_DAMAGE_PER_SECOND_SHORT
   if U.Finite(dps) then parts[#parts+1]=string.format("%.1f dps",dps) end
   if U.Finite(item.speed) then parts[#parts+1]=string.format("speed %.2f",item.speed) end
+  if row.wf then parts[#parts+1]=string.format("WF %d",math.floor(row.wf+.5)) end
  end
  parts[#parts+1]=U.Finite(item.minLevel) and ("L"..amount(item.minLevel)) or (U.Finite(item.level) and ("ilvl "..amount(item.level)) or "L?")
  local rank,facts=tostring(row.rank or "?")..". ",table.concat(parts," · ")
@@ -336,6 +428,20 @@ function G:Details(row,slot,role)
  if U.Finite(item.hit) then unscored[#unscored+1]="+"..percent(item.hit).."% hit" end
  if item.effects then unscored[#unscored+1]="a proc, use or set effect (hover the item)" end
  if #unscored>0 then lines[#lines+1]="Not in the score: "..table.concat(unscored,", ") end
+ if self:WindfuryFor(slot,role) then
+  local ctx=self:WindfuryContext()
+  local burst,parts=self:Windfury(item,ctx)
+  if burst then
+   lines[#lines+1]=string.format("\nWindfury burst (estimate): %d. One proc lands the swing and %d extra attacks at once:",math.floor(burst+.5),ctx.extra)
+   lines[#lines+1]=string.format("%d x %s average damage + speed %.2f x (%d x %d attack power + %d x %d Windfury bonus) / 14%s",
+    parts.swings,amount(math.floor(parts.avg*10+.5)/10),item.speed,parts.swings,math.floor(parts.ap+.5),ctx.extra,ctx.bonus,
+    parts.chance>1 and string.format(", x %.2f for its crit and hit",parts.chance) or "")
+   local base=item.equipLoc=="INVTYPE_2HWEAPON" and ctx.apTwoHand or ctx.ap
+   lines[#lines+1]=string.format("Attack power %d: ",math.floor(base+.5))..ctx.apSource..(parts.own>0 and string.format("; plus %d from this weapon",math.floor(parts.own+.5)) or "").."."
+   lines[#lines+1]=string.format("Windfury bonus %d (rank %d, %s): ",ctx.bonus,ctx.rank,ctx.rankSource)..ctx.bonusSource.."."
+   lines[#lines+1]="It ranks the size of the hit. Damage over time follows weapon DPS, whatever the speed."
+  end
+ end
  -- where it comes from
  local where={}
  for i,kind in ipairs(item.sourceTypes) do
