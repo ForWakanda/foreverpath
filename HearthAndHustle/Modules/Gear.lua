@@ -47,6 +47,28 @@ function G:Browse()
  if not contains(keys,key) then key=own end
  return key,self.profiles[key],keys,own
 end
+-- The role of a second spec, for lists that weigh both (the dungeon ranking).
+-- Chosen by a click (`gear.second`: a role, or false for none). Until then it
+-- is the role last browsed on the gear page, when that is not the own role.
+function G:Second()
+ local own,_,keys=self:Profile()
+ local key=FP.cdb.gear.second
+ if key==false then return nil end
+ if key==nil then key=FP.cdb.gear.browse end
+ if key~=own and contains(keys,key) then return key,self.profiles[key] end
+end
+-- none -> each of the class's other roles -> none
+function G:CycleSecond()
+ local own,_,keys=self:Profile()
+ local others={}
+ for _,key in ipairs(keys) do if key~=own then others[#others+1]=key end end
+ local current=self:Second()
+ local nextKey=others[1]
+ for i,key in ipairs(others) do if key==current then nextKey=others[i+1] end end
+ if current==nil then nextKey=others[1] end
+ FP.cdb.gear.second=nextKey or false
+ return self:Second()
+end
 -- Weights of one of the character's roles; its own role when none (or an unknown one) is named.
 function G:Weights(role)
  local key,p,keys=self:Profile()
@@ -104,6 +126,144 @@ function G:ClassMatches(item,char)
  if sub==8 then return char.class=="DRUID" end
  if sub==9 then return char.class=="SHAMAN" end
  return sub<=0
+end
+-- What the character has for a role: every worn piece and every equippable item
+-- in its bags, scored for that role. The bank is not seen. Per slot group a
+-- list of scores, best first; the hands are kept apart because a two-hander
+-- stands against a main hand and an off hand together.
+--   owned.slots[KEY] = {scores}, owned.two / owned.main / owned.off = best score,
+--   owned.unknown[KEY] = true when a worn piece of that group could not be read.
+local MAIN_LOC={INVTYPE_WEAPON=true,INVTYPE_WEAPONMAINHAND=true}
+local OFF_LOC={INVTYPE_SHIELD=true,INVTYPE_HOLDABLE=true,INVTYPE_WEAPONOFFHAND=true}
+function G:HandOf(equipLoc)
+ if equipLoc=="INVTYPE_2HWEAPON" then return "two" end
+ if MAIN_LOC[equipLoc] then return "main" end
+ if OFF_LOC[equipLoc] then return "off" end
+end
+function G:Owned(role)
+ if API.InCombat() then return nil end
+ local weights=self:Weights(role)
+ local owned={slots={},unknown={},unread=0,bagsRead=false,loading=0}
+ for _,s in ipairs(self.slots) do if s[1]~="MAIN" and s[1]~="OFF" then owned.slots[s[1]]={} end end
+ local function place(item)
+  local hand=self:HandOf(item.equipLoc)
+  if hand then
+   local score=self:Score(item.stats,weights,hand=="off" and "OFF" or "MAIN")
+   if score and score>(owned[hand] or 0) then owned[hand]=score end
+   return
+  end
+  for key,list in pairs(owned.slots) do
+   if self:SlotMatches(item,key) then
+    local score=self:Score(item.stats,weights,key)
+    if score then list[#list+1]=score end
+    return
+   end
+  end
+ end
+ for _,s in ipairs(self.slots) do
+  for i=3,#s do
+   local gear=API.GetRewardEquipment(s[i])
+   if gear.status=="equipped" and gear.stats and gear.equipLoc then place(gear)
+   elseif gear.status~="empty" then
+    owned.unread=owned.unread+1
+    owned.unknown[(s[1]=="MAIN" or s[1]=="OFF") and "HANDS" or s[1]]=true
+   end
+  end
+ end
+ local bags=API.GetBagGear()
+ if bags then
+  owned.bagsRead,owned.loading=true,bags.loading or 0
+  local char=API.GetCharInfo()
+  for _,item in ipairs(bags) do
+   -- carried is not owned for this purpose unless it can be worn: not a higher-level piece, not another class's
+   local wearable=not (U.Finite(item.minLevel) and U.Finite(char.level) and item.minLevel>char.level)
+   if wearable and U.Finite(item.classID) and U.Finite(item.subclassID) then wearable=self:ClassMatches(item,char) end
+   if wearable then place(item) end
+  end
+ end
+ for _,list in pairs(owned.slots) do table.sort(list,function(a,b) return a>b end) end
+ owned.hands=math.max(owned.two or 0,(owned.main or 0)+(owned.off or 0))
+ -- the whole set's score: what an upgrade is a share of
+ local base=owned.hands
+ for _,s in ipairs(self.slots) do
+  local list=owned.slots[s[1]]
+  if list then for i=1,#s-2 do base=base+(list[i] or 0) end end
+ end
+ owned.base=base
+ return owned
+end
+-- What a set of candidate items would add for a role over what is owned: the
+-- gain in score and the items that make it. Each slot group counts once (two
+-- for rings and trinkets); for the hands the better of a two-hander or a main
+-- and off hand pair. items: {item=, slot={KEY,label,...}, boss=} already
+-- filtered to what the character can use.
+function G:Gain(owned,role,items)
+ local weights=self:Weights(role)
+ local out={gain=0,items={},skipped=0}
+ local perSlot,hands={}, {}
+ for _,c in ipairs(items) do
+  local hand=self:HandOf(c.item.equipLoc)
+  local key=hand and "HANDS" or c.slot[1]
+  if owned.unknown[key] then out.skipped=out.skipped+1
+  else
+   local score=self:Score(c.item.stats,weights,hand and (hand=="off" and "OFF" or "MAIN") or key)
+   if score then
+    local row={item=c.item,slot=c.slot,boss=c.boss,score=score,later=c.later}
+    if hand then
+     if not hands[hand] or score>hands[hand].score then hands[hand]=row end
+    else
+     perSlot[key]=perSlot[key] or {}
+     table.insert(perSlot[key],row)
+    end
+   end
+  end
+ end
+ for _,s in ipairs(self.slots) do
+  local cands=perSlot[s[1]]
+  if cands then
+   table.sort(cands,function(a,b) if a.score~=b.score then return a.score>b.score end return a.item.id<b.item.id end)
+   local have=owned.slots[s[1]] or {}
+   -- the n best of what is owned and what drops, against the n best owned
+   local n,taken,ci,hi=#s-2,0,1,1
+   while taken<n do
+    local c,h=cands[ci],have[hi] or 0
+    if c and c.score>h then
+     -- it takes the place of the weakest piece still counted
+     local replaced=have[n-(ci-1)] or 0
+     c.delta=c.score-replaced
+     if c.delta>0 then out.gain=out.gain+c.delta;out.items[#out.items+1]=c end
+     ci=ci+1
+    else hi=hi+1 end
+    taken=taken+1
+   end
+  end
+ end
+ -- hands
+ if next(hands) then
+  local two=hands.two and hands.two.score or -1
+  local main=math.max(hands.main and hands.main.score or 0,owned.main or 0)
+  local off=math.max(hands.off and hands.off.score or 0,owned.off or 0)
+  local pair=main+off
+  if two>owned.hands and two>=pair then
+   hands.two.delta=two-owned.hands
+   out.gain=out.gain+hands.two.delta;out.items[#out.items+1]=hands.two
+  elseif pair>owned.hands then
+   -- the pair's gain, shared out between the pieces that are new
+   local gain=pair-owned.hands
+   local newMain=hands.main and hands.main.score>(owned.main or 0) and hands.main or nil
+   local newOff=hands.off and hands.off.score>(owned.off or 0) and hands.off or nil
+   if newMain and newOff then
+    local a,b=newMain.score-(owned.main or 0),newOff.score-(owned.off or 0)
+    newMain.delta,newOff.delta=gain*a/(a+b),gain*b/(a+b)
+   elseif newMain then newMain.delta=gain
+   elseif newOff then newOff.delta=gain end
+   for _,row in ipairs({newMain or false,newOff or false}) do if row then out.items[#out.items+1]=row end end
+   if newMain or newOff then out.gain=out.gain+gain end
+  end
+ end
+ table.sort(out.items,function(a,b) if a.delta~=b.delta then return a.delta>b.delta end return a.item.id<b.item.id end)
+ out.pct=owned.base>0 and out.gain/owned.base*100 or nil
+ return out
 end
 -- Does a reference source name mean this dungeon (or one of its wings)? The
 -- item reference says "The Temple of Atal'Hakkar", "Blackrock Spire",

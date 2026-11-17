@@ -3409,6 +3409,8 @@ from save_diet import cases as save_diet_cases
 CASES.update(save_diet_cases(HUB))
 from windfury import cases as windfury_cases
 CASES.update(windfury_cases(HUB))
+from dungeon_next import cases as dungeon_next_cases
+CASES.update(dungeon_next_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

@@ -2099,7 +2099,8 @@ function API.GetRewardItem(link)
 	local v=rewardCall(fn,link)
 	if not v or not rewardString(v[2]) then requestRewardItem(link);return nil end
 	local item={link=link,name=v[2],level=rewardNumber(v[5]),minLevel=rewardNumber(v[6]),
-		subtype=rewardString(v[8]),equipLoc=rewardString(v[10]),price=rewardNumber(v[12])}
+		subtype=rewardString(v[8]),equipLoc=rewardString(v[10]),price=rewardNumber(v[12]),
+		classID=rewardNumber(v[13]),subclassID=rewardNumber(v[14])}
 	local stats=rewardFirst(has(C_Item,"GetItemStats") and C_Item.GetItemStats or _G.GetItemStats,link)
 	if type(stats)=="table" then
 		-- A partially unreadable table cannot safely supply zero for omitted stats.
@@ -2209,6 +2210,34 @@ function API.EnsureGearCatalog()
  if type(loader)~="function" then return false end
  pcall(loader,"HearthAndHustle_GearData")
  return type(FP.GearCatalog)=="table" and type(FP.GearCatalog.items)=="table"
+end
+
+-- Items carried in the bags as API.GetRewardItem reads them (name, equipLoc,
+-- stats), for "the best you own" comparisons. Read-only, out of combat.
+-- nil = bags unreadable; .loading counts items the client has not loaded yet.
+function API.GetBagGear()
+ if API.InCombat() or not has(C_Container,"GetContainerNumSlots") or not has(C_Container,"GetContainerItemInfo") then return nil end
+ local lastBag=NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+ if not U.Finite(lastBag) or lastBag<0 or lastBag>10 then return nil end
+ local out={loading=0}
+ for bag=0,lastBag do
+  local ok,slots=pcall(C_Container.GetContainerNumSlots,bag)
+  slots=safe(slots)
+  if not ok or not U.Finite(slots) or slots<0 or slots>200 then return nil end
+  for slot=1,slots do
+   local good,info=pcall(C_Container.GetContainerItemInfo,bag,slot)
+   if not good then return nil end
+   if type(info)=="table" then
+    local link=safe(info.hyperlink)
+    if type(link)=="string" and link~="" then
+     local item=API.GetRewardItem(link)
+     if not item then out.loading=out.loading+1
+     elseif item.equipLoc and item.stats then out[#out+1]=item end
+    end
+   end
+  end
+ end
+ return out
 end
 
 -- Attack power as the character sheet shows it (base plus buffs and debuffs).

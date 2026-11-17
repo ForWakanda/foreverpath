@@ -25,6 +25,25 @@ For Shaman, Priest, Druid and Paladin. `/hh` → **Healing**, or `/hh heal`.
 - **Between-pull check.** Out of combat, in a five-player party, with your gear role set to Healing: who is dead, offline, out of heal range or still fighting, plus your drinks, your Ankh (Shaman), your weapon imbue, and whether you are in the spec you marked as your healing spec. It shows on the HUD and on the Healing page; inside a dungeon it also says when everyone is ready.
 - **What it cannot do.** Forever hides health, mana, debuffs, threat and cooldowns from addons. Nothing here warns about them and nothing runs in combat. The game's own raid-style party frames and click casting cover that part.
 
+## Which dungeon next (v0.28.0)
+
+`/hh` → **Dungeons** (top of the page), or `/hh dungeon next`. The dungeons around your
+level, ranked by what their drops would add to your gear: for your own role and, if
+you have one, a second spec (**Second spec** button; until you choose, it is the role
+you last looked up on the gear page).
+
+- Each role is compared with **the best you carry for it**, worn or in your bags, so a
+  second spec is measured against its own gear. The bank is not seen.
+- One drop per slot counts (two for rings and trinkets); a two-hander is weighed
+  against a main hand and off hand together. The row shows the gain as a share of
+  that role's whole set; the details name the drops, their bosses and what each adds.
+- **Show its itinerary below** opens the run for the selected dungeon.
+- Limits it tells you about: the item reference names a dungeon, not a wing, so
+  Scarlet Monastery, Stratholme, Blackrock Spire and Dire Maul are one row each; the
+  dungeons new on Forever have no drops in the reference and are listed as not
+  ranked. Estimates from your stat weights; a listed drop is not proof it exists on
+  Forever.
+
 ## Dungeon itinerary (v0.25.0)
 
 `/hh` → **Dungeons**, or `/hh dungeon plan [name]`. Choose a dungeon and get the run as a list:
