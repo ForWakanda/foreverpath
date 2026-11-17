@@ -265,8 +265,30 @@ function H:BuildPage(key)
 		FP.GearPanel:Build(self,p)
 	elseif key=="dungeons" then
 		local DP=FP.DungeonPlan
+		-- Which dungeon next: ranked by what the drops would add for the character's role and a second spec.
+		local list
+		local ranked,rankInfo={},{}
+		self:Section(p,"Which dungeon next")
+		self.controls.dungeonNextSummary=self:Text(p,"",function() ranked,rankInfo=DP:Next(); return DP:NextSummary(ranked,rankInfo) end,48)
+		local nextList=self:List(p,"dungeonNext",function() return ranked end,function(row) return DP:NextLabel(row) end,{count=4})
+		self.controls.dungeonNextDetails=self:Text(p,"",function() return DP:NextDetails(self:Selected(nextList),rankInfo) end,170)
+		self:Actions(p,{
+			{"dungeonSecond","Second spec",function() FP.Gear:CycleSecond(); nextList.page,nextList.selected=1,nil end,
+				enabled=function() local _,_,keys=FP.Gear:Profile(); return #keys>1 and not API.InCombat() end},
+			{"dungeonNextOpen","Show its itinerary below",function()
+				local row=self:Selected(nextList)
+				if not row then return end
+				list.selected=row.key
+				for i,item in ipairs(DP:List()) do if item.key==row.key then list.page=math.ceil(i/5) end end
+			end,enabled=function() return self:Selected(nextList)~=nil end},
+		})
+		table.insert(p.refreshers,function()
+			local _,profile=FP.Gear:Second()
+			self.controls.dungeonSecond:SetText("Second spec: "..(profile and profile.name or "none"))
+		end)
+		self:Section(p,"Itinerary")
 		self:Text(p,"Choose a dungeon for its itinerary: what to turn in, which quests to pick up on the way and in what order, the entrance, what waits inside, and the drops worth having for your role. Browsing changes nothing.")
-		local list=self:List(p,"hubDungeons",function() return DP:List() end,function(row) return DP:ListLabel(row) end,{count=5})
+		list=self:List(p,"hubDungeons",function() return DP:List() end,function(row) return DP:ListLabel(row) end,{count=5})
 		-- Open on the dungeon you are most likely here for, on the page that shows it.
 		list.selected=DP:Default()
 		for i,row in ipairs(DP:List()) do if row.key==list.selected then list.page=math.ceil(i/5) end end
@@ -641,7 +663,8 @@ function H:BuildPage(key)
 		self:Check(p,"barFPS","Show FPS and latency",function() return FP.settings.bar.fps end,function(v) command("bar fps "..onoff(v)) end)
 	elseif key=="tools" then
 		self:Text(p,"",function() return "Recorded: "..FP.Recorder:Summary().."\nStored errors: "..#(FP.db.errors or {}) end)
-		self:Check(p,"recording","Record observations",function() return FP.settings.record end,function(v) command("record "..onoff(v)) end)
+		self:Check(p,"recording","Record what the addon reads back (quest givers, turn-ins, trainers, flight points)",function() return FP.settings.record end,function(v) command("record "..onoff(v)) end)
+		self:Check(p,"recordingDataset","Also keep the research dataset (creatures, loot, vendors, progress log): megabytes of save file",function() return FP.settings.record and FP.settings.recordDataset end,function(v) command("record dataset "..onoff(v)) end)
 		self:Check(p,"debugging","Debug messages",function() return FP.settings.debug end,function(v) if FP.settings.debug~=v then command("debug") end end)
 		self:Check(p,"probing","Enable API probes",function() return FP.settings.probe.enabled end,function(v) command("probe "..onoff(v)) end)
 		self:Actions(p,{

@@ -47,6 +47,28 @@ function G:Browse()
  if not contains(keys,key) then key=own end
  return key,self.profiles[key],keys,own
 end
+-- The role of a second spec, for lists that weigh both (the dungeon ranking).
+-- Chosen by a click (`gear.second`: a role, or false for none). Until then it
+-- is the role last browsed on the gear page, when that is not the own role.
+function G:Second()
+ local own,_,keys=self:Profile()
+ local key=FP.cdb.gear.second
+ if key==false then return nil end
+ if key==nil then key=FP.cdb.gear.browse end
+ if key~=own and contains(keys,key) then return key,self.profiles[key] end
+end
+-- none -> each of the class's other roles -> none
+function G:CycleSecond()
+ local own,_,keys=self:Profile()
+ local others={}
+ for _,key in ipairs(keys) do if key~=own then others[#others+1]=key end end
+ local current=self:Second()
+ local nextKey=others[1]
+ for i,key in ipairs(others) do if key==current then nextKey=others[i+1] end end
+ if current==nil then nextKey=others[1] end
+ FP.cdb.gear.second=nextKey or false
+ return self:Second()
+end
 -- Weights of one of the character's roles; its own role when none (or an unknown one) is named.
 function G:Weights(role)
  local key,p,keys=self:Profile()
@@ -104,6 +126,144 @@ function G:ClassMatches(item,char)
  if sub==8 then return char.class=="DRUID" end
  if sub==9 then return char.class=="SHAMAN" end
  return sub<=0
+end
+-- What the character has for a role: every worn piece and every equippable item
+-- in its bags, scored for that role. The bank is not seen. Per slot group a
+-- list of scores, best first; the hands are kept apart because a two-hander
+-- stands against a main hand and an off hand together.
+--   owned.slots[KEY] = {scores}, owned.two / owned.main / owned.off = best score,
+--   owned.unknown[KEY] = true when a worn piece of that group could not be read.
+local MAIN_LOC={INVTYPE_WEAPON=true,INVTYPE_WEAPONMAINHAND=true}
+local OFF_LOC={INVTYPE_SHIELD=true,INVTYPE_HOLDABLE=true,INVTYPE_WEAPONOFFHAND=true}
+function G:HandOf(equipLoc)
+ if equipLoc=="INVTYPE_2HWEAPON" then return "two" end
+ if MAIN_LOC[equipLoc] then return "main" end
+ if OFF_LOC[equipLoc] then return "off" end
+end
+function G:Owned(role)
+ if API.InCombat() then return nil end
+ local weights=self:Weights(role)
+ local owned={slots={},unknown={},unread=0,bagsRead=false,loading=0}
+ for _,s in ipairs(self.slots) do if s[1]~="MAIN" and s[1]~="OFF" then owned.slots[s[1]]={} end end
+ local function place(item)
+  local hand=self:HandOf(item.equipLoc)
+  if hand then
+   local score=self:Score(item.stats,weights,hand=="off" and "OFF" or "MAIN")
+   if score and score>(owned[hand] or 0) then owned[hand]=score end
+   return
+  end
+  for key,list in pairs(owned.slots) do
+   if self:SlotMatches(item,key) then
+    local score=self:Score(item.stats,weights,key)
+    if score then list[#list+1]=score end
+    return
+   end
+  end
+ end
+ for _,s in ipairs(self.slots) do
+  for i=3,#s do
+   local gear=API.GetRewardEquipment(s[i])
+   if gear.status=="equipped" and gear.stats and gear.equipLoc then place(gear)
+   elseif gear.status~="empty" then
+    owned.unread=owned.unread+1
+    owned.unknown[(s[1]=="MAIN" or s[1]=="OFF") and "HANDS" or s[1]]=true
+   end
+  end
+ end
+ local bags=API.GetBagGear()
+ if bags then
+  owned.bagsRead,owned.loading=true,bags.loading or 0
+  local char=API.GetCharInfo()
+  for _,item in ipairs(bags) do
+   -- carried is not owned for this purpose unless it can be worn: not a higher-level piece, not another class's
+   local wearable=not (U.Finite(item.minLevel) and U.Finite(char.level) and item.minLevel>char.level)
+   if wearable and U.Finite(item.classID) and U.Finite(item.subclassID) then wearable=self:ClassMatches(item,char) end
+   if wearable then place(item) end
+  end
+ end
+ for _,list in pairs(owned.slots) do table.sort(list,function(a,b) return a>b end) end
+ owned.hands=math.max(owned.two or 0,(owned.main or 0)+(owned.off or 0))
+ -- the whole set's score: what an upgrade is a share of
+ local base=owned.hands
+ for _,s in ipairs(self.slots) do
+  local list=owned.slots[s[1]]
+  if list then for i=1,#s-2 do base=base+(list[i] or 0) end end
+ end
+ owned.base=base
+ return owned
+end
+-- What a set of candidate items would add for a role over what is owned: the
+-- gain in score and the items that make it. Each slot group counts once (two
+-- for rings and trinkets); for the hands the better of a two-hander or a main
+-- and off hand pair. items: {item=, slot={KEY,label,...}, boss=} already
+-- filtered to what the character can use.
+function G:Gain(owned,role,items)
+ local weights=self:Weights(role)
+ local out={gain=0,items={},skipped=0}
+ local perSlot,hands={}, {}
+ for _,c in ipairs(items) do
+  local hand=self:HandOf(c.item.equipLoc)
+  local key=hand and "HANDS" or c.slot[1]
+  if owned.unknown[key] then out.skipped=out.skipped+1
+  else
+   local score=self:Score(c.item.stats,weights,hand and (hand=="off" and "OFF" or "MAIN") or key)
+   if score then
+    local row={item=c.item,slot=c.slot,boss=c.boss,score=score,later=c.later}
+    if hand then
+     if not hands[hand] or score>hands[hand].score then hands[hand]=row end
+    else
+     perSlot[key]=perSlot[key] or {}
+     table.insert(perSlot[key],row)
+    end
+   end
+  end
+ end
+ for _,s in ipairs(self.slots) do
+  local cands=perSlot[s[1]]
+  if cands then
+   table.sort(cands,function(a,b) if a.score~=b.score then return a.score>b.score end return a.item.id<b.item.id end)
+   local have=owned.slots[s[1]] or {}
+   -- the n best of what is owned and what drops, against the n best owned
+   local n,taken,ci,hi=#s-2,0,1,1
+   while taken<n do
+    local c,h=cands[ci],have[hi] or 0
+    if c and c.score>h then
+     -- it takes the place of the weakest piece still counted
+     local replaced=have[n-(ci-1)] or 0
+     c.delta=c.score-replaced
+     if c.delta>0 then out.gain=out.gain+c.delta;out.items[#out.items+1]=c end
+     ci=ci+1
+    else hi=hi+1 end
+    taken=taken+1
+   end
+  end
+ end
+ -- hands
+ if next(hands) then
+  local two=hands.two and hands.two.score or -1
+  local main=math.max(hands.main and hands.main.score or 0,owned.main or 0)
+  local off=math.max(hands.off and hands.off.score or 0,owned.off or 0)
+  local pair=main+off
+  if two>owned.hands and two>=pair then
+   hands.two.delta=two-owned.hands
+   out.gain=out.gain+hands.two.delta;out.items[#out.items+1]=hands.two
+  elseif pair>owned.hands then
+   -- the pair's gain, shared out between the pieces that are new
+   local gain=pair-owned.hands
+   local newMain=hands.main and hands.main.score>(owned.main or 0) and hands.main or nil
+   local newOff=hands.off and hands.off.score>(owned.off or 0) and hands.off or nil
+   if newMain and newOff then
+    local a,b=newMain.score-(owned.main or 0),newOff.score-(owned.off or 0)
+    newMain.delta,newOff.delta=gain*a/(a+b),gain*b/(a+b)
+   elseif newMain then newMain.delta=gain
+   elseif newOff then newOff.delta=gain end
+   for _,row in ipairs({newMain or false,newOff or false}) do if row then out.items[#out.items+1]=row end end
+   if newMain or newOff then out.gain=out.gain+gain end
+  end
+ end
+ table.sort(out.items,function(a,b) if a.delta~=b.delta then return a.delta>b.delta end return a.item.id<b.item.id end)
+ out.pct=owned.base>0 and out.gain/owned.base*100 or nil
+ return out
 end
 -- Does a reference source name mean this dungeon (or one of its wings)? The
 -- item reference says "The Temple of Atal'Hakkar", "Blackrock Spire",
@@ -178,11 +338,92 @@ end
 G.hands={"any","two","one"}
 G.handLabels={any="Any",two="Two-hand",one="One-hand"}
 G.sorts={"score","dps","hit"}
-G.sortLabels={score="Best score",dps="Weapon DPS",hit="Biggest hits"}
+G.sortLabels={score="Best score",dps="Weapon DPS",hit="Biggest hits",wf="Windfury burst"}
 function G:IsWeaponSlot(slot) return slot=="MAIN" or slot=="OFF" or slot=="RANGED" end
 -- Average damage of one swing: what a slow weapon is chosen for.
 function G:HitSize(item)
  if U.Finite(item.dmgMin) and U.Finite(item.dmgMax) then return (item.dmgMin+item.dmgMax)/2 end
+end
+-------------------------------------------------------------------------------
+-- Windfury burst (shaman, melee role, main hand). An estimate of what one
+-- Windfury Weapon proc lands at once: the swing that set it off plus the extra
+-- attacks, each extra one with the spell's bonus attack power.
+--   burst = (1+extra) x average weapon damage
+--         + speed x ((1+extra) x attack power + extra x Windfury bonus) / 14
+-- then x (1 + the weapon's own crit% and hit%) as an expected value. Attack
+-- power / 14 per second of weapon speed, 2 attack power per Strength and the
+-- fallback bonus per rank are the Classic rules, not confirmed on Forever; the
+-- bonus is read from the client's own spell tooltip when it can be. Sustained
+-- Windfury damage follows weapon DPS, not speed; this ranks the size of the hit.
+-------------------------------------------------------------------------------
+G.WINDFURY={ids={8232,8235,10486,16362},learn={30,40,50,60},classic={104,119,249,333},extra=2,apPerSpeed=14,apPerStr=2}
+function G:WindfuryFor(slot,role)
+ return slot=="MAIN" and role=="melee" and API.GetCharInfo().class=="SHAMAN"
+end
+-- The sorts a slot offers; the Windfury one only where it means something.
+function G:Sorts(slot,role)
+ if not self:WindfuryFor(slot,role) then return self.sorts end
+ return {"score","dps","hit","wf"}
+end
+local function weaponAP(stats)
+ if type(stats)~="table" then return nil end
+ local ap,str=stats.ITEM_MOD_ATTACK_POWER_SHORT or 0,stats.ITEM_MOD_STRENGTH_SHORT or 0
+ if not (U.Finite(ap) and U.Finite(str)) then return nil end
+ return ap+G.WINDFURY.apPerStr*str
+end
+-- What the estimate stands on, and where each number came from.
+function G:WindfuryContext()
+ local now=API.Time()
+ if self.wfMemo and now-self.wfMemo.t<2 then return self.wfMemo.ctx end
+ local W=self.WINDFURY
+ local level=API.PlayerLevel()
+ local ctx={extra=W.extra}
+ -- the bonus: the highest rank the character knows, else the rank for its level
+ local rank
+ for i=#W.ids,1,-1 do if API.KnowsSpell(W.ids[i])==true then rank=i;ctx.rankSource="the rank you know";break end end
+ if not rank then
+  rank=1
+  for i=1,#W.ids do if U.Finite(level) and level>=W.learn[i] then rank=i end end
+  ctx.rankSource="the rank for your level"
+ end
+ ctx.rank=rank
+ local desc=API.GetSpellDescription(W.ids[rank])
+ local read=type(desc)=="string" and desc:match("(%d[%d,]*) extra attack power")
+ read=read and tonumber((read:gsub(",","")))
+ if U.Finite(read) and read>0 and read<10000 then ctx.bonus,ctx.bonusSource=read,"your client's Windfury Weapon tooltip"
+ else ctx.bonus,ctx.bonusSource=W.classic[rank],"the Classic value, not read from your client" end
+ -- attack power: the character's own without the weapons it wears (a candidate brings its own)
+ local ap=API.GetAttackPower()
+ if ap then
+  local main,off=weaponAP(API.GetRewardEquipment(16).stats),weaponAP(API.GetRewardEquipment(17).stats)
+  ctx.ap=math.max(0,ap-(main or 0))
+  ctx.apTwoHand=math.max(0,ctx.ap-(off or 0))
+  ctx.apSource=(main and off) and "yours, without the weapons you wear" or "yours; a worn weapon could not be read, so its Strength may be counted twice"
+ else
+  ctx.ap=U.Finite(level) and level*10 or 500
+  ctx.apTwoHand=ctx.ap
+  ctx.apSource="assumed from your level, because your client did not give yours"
+ end
+ self.wfMemo={t=now,ctx=ctx}
+ -- kept for the next data pull: could the client's numbers be read?
+ if FP.db then
+  FP.db.windfury={t=U.Now(),version=FP.version,build=FP.clientBuild,rank=rank,rankSource=ctx.rankSource,bonus=ctx.bonus,bonusSource=ctx.bonusSource,
+   ap=ctx.ap,apRead=ap~=nil}
+ end
+ return ctx
+end
+-- burst, and the parts it was made of; nil for an item without damage or speed.
+function G:Windfury(item,ctx)
+ local avg=self:HitSize(item)
+ if not avg or not U.Finite(item.speed) or item.speed<=0 or item.classID~=2 then return nil end
+ ctx=ctx or self:WindfuryContext()
+ local W=self.WINDFURY
+ local own=weaponAP(item.stats) or 0
+ local ap=(item.equipLoc=="INVTYPE_2HWEAPON" and ctx.apTwoHand or ctx.ap)+own
+ local swings=1+ctx.extra
+ local chance=1+((U.Finite(item.crit) and item.crit or 0)+(U.Finite(item.hit) and item.hit or 0))/100
+ local burst=(swings*avg+item.speed*(swings*ap+ctx.extra*ctx.bonus)/W.apPerSpeed)*chance
+ return burst,{avg=avg,ap=ap,own=own,swings=swings,chance=chance}
 end
 -- filter: slot, level, unknown, source, query as before; role (one of the
 -- character's roles, default its own), hands ("two"/"one", main hand only),
@@ -224,12 +465,22 @@ function G:Rows(filter)
  end
  table.sort(types)
  local sort=filter.sort
+ -- a Windfury sort left over from another slot or role means nothing here
+ if sort=="wf" then
+  local own,_,keys=self:Profile()
+  if not self:WindfuryFor(filter.slot,contains(keys,filter.role) and filter.role or own) then sort=nil end
+ end
+ if sort=="wf" then
+  local ctx=self:WindfuryContext()
+  for _,row in ipairs(rows) do row.wf=self:Windfury(row.item,ctx) end
+ end
  local function measure(row)
   if sort=="dps" then return row.item.stats.ITEM_MOD_DAMAGE_PER_SECOND_SHORT or -1 end
+  if sort=="wf" then return row.wf or -1 end
   return self:HitSize(row.item) or -1
  end
  table.sort(rows,function(a,b)
-  if sort=="dps" or sort=="hit" then local x,y=measure(a),measure(b);if x~=y then return x>y end end
+  if sort=="dps" or sort=="hit" or sort=="wf" then local x,y=measure(a),measure(b);if x~=y then return x>y end end
   if a.score~=b.score then return (a.score or -1)>(b.score or -1) end
   return a.item.id<b.item.id
  end)
@@ -286,6 +537,7 @@ function G:RowText(row,weights)
   local dps=item.stats.ITEM_MOD_DAMAGE_PER_SECOND_SHORT
   if U.Finite(dps) then parts[#parts+1]=string.format("%.1f dps",dps) end
   if U.Finite(item.speed) then parts[#parts+1]=string.format("speed %.2f",item.speed) end
+  if row.wf then parts[#parts+1]=string.format("WF %d",math.floor(row.wf+.5)) end
  end
  parts[#parts+1]=U.Finite(item.minLevel) and ("L"..amount(item.minLevel)) or (U.Finite(item.level) and ("ilvl "..amount(item.level)) or "L?")
  local rank,facts=tostring(row.rank or "?")..". ",table.concat(parts," · ")
@@ -336,6 +588,20 @@ function G:Details(row,slot,role)
  if U.Finite(item.hit) then unscored[#unscored+1]="+"..percent(item.hit).."% hit" end
  if item.effects then unscored[#unscored+1]="a proc, use or set effect (hover the item)" end
  if #unscored>0 then lines[#lines+1]="Not in the score: "..table.concat(unscored,", ") end
+ if self:WindfuryFor(slot,role) then
+  local ctx=self:WindfuryContext()
+  local burst,parts=self:Windfury(item,ctx)
+  if burst then
+   lines[#lines+1]=string.format("\nWindfury burst (estimate): %d. One proc lands the swing and %d extra attacks at once:",math.floor(burst+.5),ctx.extra)
+   lines[#lines+1]=string.format("%d x %s average damage + speed %.2f x (%d x %d attack power + %d x %d Windfury bonus) / 14%s",
+    parts.swings,amount(math.floor(parts.avg*10+.5)/10),item.speed,parts.swings,math.floor(parts.ap+.5),ctx.extra,ctx.bonus,
+    parts.chance>1 and string.format(", x %.2f for its crit and hit",parts.chance) or "")
+   local base=item.equipLoc=="INVTYPE_2HWEAPON" and ctx.apTwoHand or ctx.ap
+   lines[#lines+1]=string.format("Attack power %d: ",math.floor(base+.5))..ctx.apSource..(parts.own>0 and string.format("; plus %d from this weapon",math.floor(parts.own+.5)) or "").."."
+   lines[#lines+1]=string.format("Windfury bonus %d (rank %d, %s): ",ctx.bonus,ctx.rank,ctx.rankSource)..ctx.bonusSource.."."
+   lines[#lines+1]="It ranks the size of the hit. Damage over time follows weapon DPS, whatever the speed."
+  end
+ end
  -- where it comes from
  local where={}
  for i,kind in ipairs(item.sourceTypes) do

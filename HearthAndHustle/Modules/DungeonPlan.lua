@@ -143,6 +143,201 @@ function DP:Gear(key)
 end
 
 -------------------------------------------------------------------------------
+-- Which dungeon next: the dungeons around your level ranked by what their
+-- drops would add to your gear, for your own role and for a second spec.
+--
+-- Per role, a dungeon's value is the score its best drop per slot adds over the
+-- best you carry for that role (worn or in your bags; the bank is not seen),
+-- as a share of that role's whole set. Roles are added up as shares, since
+-- their scores use different weights. The item reference lists drops per
+-- dungeon, not per wing, so wings share one row; a dungeon it has no drops for
+-- is named as not rankable, never ranked as worthless. Reference data and
+-- estimates: nothing here says a drop exists on Forever or will drop for you.
+-------------------------------------------------------------------------------
+local NEXT_ITEMS = 4          -- upgrades named per role in the details
+
+-- reference source name -> the catalogue dungeons it means (several for wings)
+function DP:Sources()
+	local gear = FP.GearCatalog
+	if self.sources and self.sourcesFor == gear then return self.sources, self.unlisted end
+	local G, names = FP.Gear, {}
+	for _, item in ipairs(gear.items) do
+		for i, kind in ipairs(item.sourceTypes) do
+			if kind == "Dungeon" and type(item.sources[i]) == "string" then names[item.sources[i]] = true end
+		end
+	end
+	local sources, covered = {}, {}
+	for name in pairs(names) do
+		local group = { source = name, dungeons = {} }
+		for _, row in ipairs(FP.Dungeons:List()) do
+			if G:SourceIsDungeon(name, row.data.name) then group.dungeons[#group.dungeons + 1] = row; covered[row.key] = true end
+		end
+		if #group.dungeons > 0 then sources[#sources + 1] = group end
+	end
+	table.sort(sources, function(a, b) return a.source < b.source end)
+	local unlisted = {}
+	for _, row in ipairs(FP.Dungeons:List()) do if not covered[row.key] then unlisted[#unlisted + 1] = row end end
+	self.sources, self.unlisted, self.sourcesFor = sources, unlisted, gear
+	return sources, unlisted
+end
+
+function DP:Next()
+	if API.InCombat() then return {}, { note = "The ranking resumes after combat." } end
+	if not API.EnsureGearCatalog() then return {}, { note = "Gear data unavailable: install both Hearth & Hustle folders." } end
+	local G, char = FP.Gear, API.GetCharInfo()
+	local level = char.level
+	if not U.Finite(level) then return {}, { note = "Character information unavailable." } end
+	local own, ownProfile = G:Profile()
+	local second, secondProfile = G:Second()
+	local roles = { { key = own, name = ownProfile.name } }
+	if second then roles[2] = { key = second, name = secondProfile.name } end
+	-- one answer until the gear, the level, the roles or their weights change
+	local stamp = { level, self.gearStamp or 0 }
+	for _, role in ipairs(roles) do
+		stamp[#stamp + 1] = role.key
+		local weights = G:Weights(role.key)
+		for _, stat in ipairs(G.stats) do stamp[#stamp + 1] = weights[stat[1]] end
+	end
+	stamp = table.concat(stamp, ":")
+	if self.nextMemo and self.nextMemo.stamp == stamp then return self.nextMemo.rows, self.nextMemo.info end
+	local info = { roles = roles, tooHigh = 0, nothing = 0, unlisted = {}, unread = 0, loading = 0, bags = true }
+	for _, role in ipairs(roles) do
+		role.owned = G:Owned(role.key)
+		if not role.owned then return {}, { note = "The ranking resumes after combat." } end
+		info.unread = math.max(info.unread, role.owned.unread)
+		info.loading = math.max(info.loading, role.owned.loading)
+		info.bags = info.bags and role.owned.bagsRead
+	end
+	local sources, unlisted = self:Sources()
+	for _, row in ipairs(unlisted) do
+		if self:Fits(row.data, level) then info.unlisted[#info.unlisted + 1] = row.data.name end
+	end
+	-- the reference's drops, by source name
+	local drops = {}
+	for _, item in ipairs(FP.GearCatalog.items) do
+		for i, kind in ipairs(item.sourceTypes) do
+			if kind == "Dungeon" and G:ClassMatches(item, char) then
+				local known = U.Finite(item.minLevel)
+				local soon = (known and item.minLevel <= level + LEVEL_AHEAD)
+					or (not known and U.Finite(item.level) and item.level <= level + G.PROXY_MARGIN)
+				local slot
+				for _, candidate in ipairs(G.slots) do if G:SlotMatches(item, candidate[1]) then slot = candidate; break end end
+				if soon and slot then
+					local name = item.sources[i]
+					drops[name] = drops[name] or {}
+					table.insert(drops[name], { item = item, slot = slot, boss = item.bosses[1],
+						later = known and item.minLevel > level and item.minLevel or nil })
+				end
+			end
+		end
+	end
+	local rows = {}
+	for _, group in ipairs(sources) do
+		local lo, hi, open, inLog = nil, nil, nil, 0
+		for _, row in ipairs(group.dungeons) do
+			local a, b = self:Levels(row.data)
+			if a then lo, hi = math.min(lo or a, a), math.max(hi or b, b) end
+			if not open or (self:Fits(row.data, level) and not self:Fits(open.data, level)) then open = row end
+			for _, id in ipairs(row.data.quests) do
+				if API.GetDungeonQuestState(id).onQuest == true then inLog = inLog + 1 end
+			end
+		end
+		if lo and lo > level + LEVEL_AHEAD then
+			info.tooHigh = info.tooHigh + 1
+		elseif lo then
+			local out = { key = open.key, source = group.source, wings = #group.dungeons, lo = lo, hi = hi, inLog = inLog,
+				fits = level >= lo and level <= hi, name = #group.dungeons == 1 and open.data.name or (group.source:gsub("^The ", "")),
+				roles = {}, total = 0, gain = 0 }
+			for i, role in ipairs(roles) do
+				local result = G:Gain(role.owned, role.key, drops[group.source] or {})
+				result.name, result.key = role.name, role.key
+				out.roles[i] = result
+				out.total = out.total + (result.pct or 0)
+				out.gain = out.gain + result.gain
+			end
+			if out.gain > 0 then rows[#rows + 1] = out else info.nothing = info.nothing + 1 end
+		end
+	end
+	table.sort(rows, function(a, b)
+		if a.total ~= b.total then return a.total > b.total end
+		if a.gain ~= b.gain then return a.gain > b.gain end
+		if a.inLog ~= b.inLog then return a.inLog > b.inLog end
+		return a.name < b.name
+	end)
+	for i, row in ipairs(rows) do row.rank = i end
+	self.nextMemo = { stamp = stamp, rows = rows, info = info }
+	-- kept for the next data pull: what the ranking could read, and what it put first
+	if FP.db then
+		FP.db.dungeonNext = { t = U.Now(), version = FP.version, level = level, own = own, second = second or false,
+			bagsRead = info.bags, unread = info.unread, loading = info.loading, rows = #rows, first = rows[1] and rows[1].name or nil }
+	end
+	return rows, info
+end
+
+-- "+6%": the share of the role's whole set; a plain score when the set has none to compare with
+local function share(result)
+	if result.gain <= 0 then return "nothing better" end
+	return result.pct and string.format("+%.0f%%", math.max(1, result.pct)) or string.format("+%.0f score", result.gain)
+end
+
+-- "1. Maraudon · 46-55 · Healing +6% · Strength melee +11% · 2 in your log" (kept short: the list cuts a row at 82 characters)
+function DP:NextLabel(row)
+	local parts = { row.rank .. ". " .. row.name, row.lo .. "-" .. row.hi }
+	for _, result in ipairs(row.roles) do parts[#parts + 1] = result.name .. " " .. share(result) end
+	if row.inLog > 0 then parts[#parts + 1] = row.inLog .. " in your log" end
+	return table.concat(parts, " · ")
+end
+
+function DP:NextSummary(rows, info)
+	if info.note then return info.note end
+	local names = {}
+	for i, role in ipairs(info.roles) do names[i] = FP.GOLD .. role.name .. "|r" .. (i == 2 and " (second spec)" or "") end
+	local lines = { "Ranked for " .. table.concat(names, " and ") .. ": " .. (#rows == 0 and "no listed dungeon drop beats what you carry."
+		or (plural(#rows, "dungeon") .. " with drops better than what you carry, most to gain first.")) }
+	local notes = {}
+	if #info.unlisted > 0 then notes[#notes + 1] = "No drops in the item reference, so not ranked: " .. table.concat(info.unlisted, ", ") .. "." end
+	if info.tooHigh > 0 then notes[#notes + 1] = plural(info.tooHigh, "higher-level dungeon") .. " not listed yet." end
+	if info.unread > 0 then notes[#notes + 1] = FP.RED .. plural(info.unread, "worn piece") .. " could not be read; " .. (info.unread == 1 and "its slot is" or "their slots are") .. " left out.|r" end
+	if not info.bags then notes[#notes + 1] = "Your bags could not be read: compared with what you wear only."
+	elseif info.loading > 0 then notes[#notes + 1] = plural(info.loading, "bag item") .. " still loading." end
+	if #notes > 0 then lines[#lines + 1] = FP.GREY .. table.concat(notes, " ") .. "|r" end
+	return table.concat(lines, "\n")
+end
+
+function DP:NextDetails(row, info)
+	if not row then
+		return "Select a dungeon to see which drops it is ranked for. Each role is compared with the best you carry for it, worn or in your bags; gear in the bank is not seen."
+	end
+	local lines = { FP.GOLD .. row.name .. "|r  (" .. row.lo .. "-" .. row.hi .. ")"
+		.. (row.wings > 1 and ("  ·  " .. row.wings .. " wings; the reference does not say which wing a drop is in") or "")
+		.. (row.inLog > 0 and ("  ·  " .. plural(row.inLog, "quest") .. " in your log") or "") }
+	for _, result in ipairs(row.roles) do
+		if result.gain <= 0 then
+			lines[#lines + 1] = result.name .. ": nothing listed here beats what you carry."
+		else
+			lines[#lines + 1] = result.name .. ": " .. share(result) .. " from " .. plural(#result.items, "slot") .. string.format(" (score +%.1f%s)", result.gain,
+				result.pct and string.format(" on %.0f", result.gain / result.pct * 100) or "")
+			for i = 1, math.min(NEXT_ITEMS, #result.items) do
+				local c = result.items[i]
+				lines[#lines + 1] = "  " .. (FP.Gear:HandOf(c.item.equipLoc) == "two" and "Two-hand" or c.slot[2]) .. ": " .. c.item.name
+					.. (c.boss and (" (" .. c.boss .. ")") or "") .. string.format(" %+.1f", c.delta) .. (c.later and (", at level " .. c.later) or "")
+			end
+			if #result.items > NEXT_ITEMS then lines[#lines + 1] = "  and " .. (#result.items - NEXT_ITEMS) .. " more" end
+		end
+		if result.skipped > 0 then lines[#lines + 1] = FP.GREY .. "  " .. plural(result.skipped, "drop") .. " left out: the piece you wear in that slot could not be read.|r" end
+	end
+	lines[#lines + 1] = FP.GREY .. "Estimate from your stat weights and a reference item list; it does not confirm a drop exists on Forever. Gear in the bank is not seen.|r"
+	return table.concat(lines, "\n")
+end
+
+function DP:NextLines(limit)
+	local rows, info = self:Next()
+	local out = { self:NextSummary(rows, info) }
+	for i = 1, math.min(limit or 5, #rows) do out[#out + 1] = "  " .. self:NextLabel(rows[i]) end
+	return out
+end
+
+-------------------------------------------------------------------------------
 -- The plan
 -------------------------------------------------------------------------------
 -- Where a quest is picked up: a live offer on this map first, then the nearest
@@ -417,6 +612,6 @@ end
 
 function DP:OnEnable()
 	local function stale() self.gearStamp = (self.gearStamp or 0) + 1; self.memo = nil end
-	for _, event in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "GET_ITEM_INFO_RECEIVED", "PLAYER_LEVEL_UP" }) do FP:RegisterEvent(event, stale) end
-	FP:On("QUESTLOG_SCANNED", function() self.memo = nil end)
+	for _, event in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "GET_ITEM_INFO_RECEIVED", "PLAYER_LEVEL_UP", "BAG_UPDATE_DELAYED", "PLAYER_REGEN_ENABLED" }) do FP:RegisterEvent(event, stale) end
+	FP:On("QUESTLOG_SCANNED", function() self.memo, self.nextMemo = nil, nil end)
 end

@@ -25,6 +25,25 @@ For Shaman, Priest, Druid and Paladin. `/hh` → **Healing**, or `/hh heal`.
 - **Between-pull check.** Out of combat, in a five-player party, with your gear role set to Healing: who is dead, offline, out of heal range or still fighting, plus your drinks, your Ankh (Shaman), your weapon imbue, and whether you are in the spec you marked as your healing spec. It shows on the HUD and on the Healing page; inside a dungeon it also says when everyone is ready.
 - **What it cannot do.** Forever hides health, mana, debuffs, threat and cooldowns from addons. Nothing here warns about them and nothing runs in combat. The game's own raid-style party frames and click casting cover that part.
 
+## Which dungeon next (v0.28.0)
+
+`/hh` → **Dungeons** (top of the page), or `/hh dungeon next`. The dungeons around your
+level, ranked by what their drops would add to your gear: for your own role and, if
+you have one, a second spec (**Second spec** button; until you choose, it is the role
+you last looked up on the gear page).
+
+- Each role is compared with **the best you carry for it**, worn or in your bags, so a
+  second spec is measured against its own gear. The bank is not seen.
+- One drop per slot counts (two for rings and trinkets); a two-hander is weighed
+  against a main hand and off hand together. The row shows the gain as a share of
+  that role's whole set; the details name the drops, their bosses and what each adds.
+- **Show its itinerary below** opens the run for the selected dungeon.
+- Limits it tells you about: the item reference names a dungeon, not a wing, so
+  Scarlet Monastery, Stratholme, Blackrock Spire and Dire Maul are one row each; the
+  dungeons new on Forever have no drops in the reference and are listed as not
+  ranked. Estimates from your stat weights; a listed drop is not proof it exists on
+  Forever.
+
 ## Dungeon itinerary (v0.25.0)
 
 `/hh` → **Dungeons**, or `/hh dungeon plan [name]`. Choose a dungeon and get the run as a list:
@@ -183,6 +202,14 @@ wishlist. **Edit stat weights** shows every scoring weight and accepts your own
 priorities. Dungeon items link to the checklist; QuestieDB supplies reward quest
 links with chain/pickup guidance where known. Multiple quest sources can be cycled.
 
+**Windfury burst (shamans).** With the page ranked for Strength melee, the Main hand
+slot has a fourth sort, and one button, **Windfury two-handers: biggest burst first**,
+sets the whole list up. It estimates what one Windfury Weapon proc lands at once (the
+swing plus two extra attacks): slow, hard-hitting weapons lead. The details show the
+arithmetic and say which numbers came from your client (attack power, the bonus in
+your spell's tooltip) and which are Classic rules or assumptions. It ranks the size of
+the hit; damage over time follows weapon DPS whatever the speed.
+
 These are **estimated stat rankings within the filtered catalog**, not simulation
 results or a claim of definitive BiS. The reference snapshot runs through November 7, 2026 (some records are older);
 the detail pane separately shows current-client stats when loaded. Procs, sets,
@@ -204,7 +231,7 @@ item tooltips and current equipment API behavior still need a client check.
 - **Map pins**: your waypoints on the world map and a pin on the minimap edge. World-map pins sit below WoW's quest markers. Automatic route pins pass mouse input through so quest-area hover and map clicks work normally; manual pins keep click-to-activate and right-click-to-remove controls.
 - **Display settings**: click **Settings** beside **Dungeons** in the next-steps panel. Toggle world-map/minimap pins and arrow visibility, lock the arrow's position, reverse its rotation if needed, adjust its size (40–300%), or reset its position and size. Changes apply immediately and save for all characters; hiding a display keeps the route active. `/hh settings` is an optional shortcut.
 - **Auto-next**: automatically rechecks the route every three seconds, including with the panel hidden. Arriving waits while you work nearby; completing the step or moving more than about 100 yards away resumes navigation. Nearby alternatives need a meaningful improvement before the arrow switches. Clicking a quest row keeps that selection until completion/arrival; manual waypoints remain yours. `/hh next` skips the arrived step, `/hh auto off` disables automatic selection, and `/hh auto on` resumes after clearing the route. Quest navigation pauses in battlegrounds.
-- **Recorder**: while you play it writes a Forever dataset into SavedVariables — quest givers/enders with positions, offer/turn-in XP per level, objective progress with candidate mob/loot associations, approximate observer sightings, source-attributed observed loot including quest items, vendors, trainers (with skill requirements), flight nodes and edge costs, inn binds, deaths, zone level ranges, XP samples, profession recipes with reagents and difficulty per skill level.
+- **Recorder** (`/hh record on|off`, off for new profiles): keeps what the addon reads back, in SavedVariables: quest givers and turn-ins with positions, objective areas, trainers (with skill requirements), flight nodes and edge costs, and the last hours of XP samples. `/hh record dataset on` adds the research dataset nothing in the addon reads: approximate observer sightings, objective progress with candidate mob/loot associations, source-attributed observed loot including quest items, vendors, inn binds, deaths, zone level ranges, profession recipes with reagents and difficulty per skill level. It grows the save file by megabytes, which the game parses at every login. v0.28.0 removes those rows once from an existing profile and says so in chat.
 - **Professions**: open your profession window and the next-steps panel shows three skill-up suggestions, bag-material craft counts and missing materials. `/hh prof` gives the longer list. Handles Forever base professions, delayed recipe loading, bag changes and skill-cap reminders. These are material/skill suggestions, not market-price or guaranteed skill-point estimates. Reopen the profession after changing skill to refresh old suggestions.
 - **Class supplies:** every class gets food, carried bandages and bag-space checks in **Town tools**, with drinks for mana classes. Add personal stocking targets from carried items or item links/IDs. Mage gems/reagents remain learned-spell gated; shaman reminders make no spec or party assumptions. Optional overlay display uses the existing HUD, and all supply reads pause in combat. `/hh prep` remains a shortcut.
 - **Dungeon quest checklist:** click **Dungeons** on the next-steps panel, then choose a dungeon or wing. Shows missing pickups, quests in your log, ready turn-ins, completed quests, listed level requirements and prerequisites. Click a quest for its giver/location and chain details. Updates automatically as you quest; filters to your faction/class by default, with a Show all button. `/hh dungeon [name]` is an optional shortcut.

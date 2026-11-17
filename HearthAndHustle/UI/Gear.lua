@@ -41,10 +41,25 @@ function P:Summary()
  if U.Trim(f.query or "")~="" then parts[#parts+1]="matching \""..U.Trim(f.query).."\"" end
  local _,profile=G:Browse()
  parts[#parts+1]="ranked for "..FP.GOLD..profile.name.."|r"
- local sort=f.sort or "score"
- parts[#parts+1]=sort=="score" and "best score first" or (sort=="dps" and "highest weapon DPS first" or "biggest hits first")
+ local sort=self:Sort()
+ parts[#parts+1]=sort=="score" and "best score first" or (sort=="dps" and "highest weapon DPS first" or (sort=="wf" and "biggest Windfury burst first" or "biggest hits first"))
  if self.hidden>0 then parts[#parts+1]=self.hidden.." of the other faction's left out" end
  return table.concat(parts," · ")
+end
+-- The sort in force: one chosen for another slot or role falls back to the score.
+function P:Sort()
+ local sort=self.filter.sort or "score"
+ for _,known in ipairs(G:Sorts(self.filter.slot,(G:Browse()))) do if known==sort then return sort end end
+ return "score"
+end
+-- One click to the list a Windfury shaman is looking for; it changes what this
+-- page shows, never the character's own role.
+function P:WindfuryPreset()
+ FP.cdb.gear.browse="melee"
+ local f=self.filter
+ f.slot,f.hands,f.sort,f.subtype,f.source="MAIN","two","wf",nil,"All"
+ self.wishlist=nil
+ self:Reset()
 end
 function P:Build(H,p)
  self.filter={slot="HEAD",source="All"}
@@ -55,7 +70,7 @@ function P:Build(H,p)
    local key,_,keys=G:Browse();FP.cdb.gear.browse=after(keys,key);self:Reset()
   end,enabled=function() local _,_,keys=G:Browse();return #keys>1 end},
   {"gearSource","Source",function() self.filter.source=after(G:Sources(),self.filter.source);self:Reset() end},
-  {"gearSort","Sort",function() self.filter.sort=after(G.sorts,self.filter.sort or "score");self:Reset() end,
+  {"gearSort","Sort",function() self.filter.sort=after(G:Sorts(self.filter.slot,(G:Browse())),self:Sort());self:Reset() end,
    enabled=function() return G:IsWeaponSlot(self.filter.slot) end},
  })
  H:Actions(p,{
@@ -68,6 +83,10 @@ function P:Build(H,p)
   end,enabled=function() return #self.types>1 or self.filter.subtype~=nil end},
   {"gearWeights","Edit stat weights",function() self:Weights(H) end},
  })
+ if API.GetCharInfo().class=="SHAMAN" then
+  H:Actions(p,{{"gearWindfury","Windfury two-handers: biggest burst first",function() self:WindfuryPreset() end,
+   enabled=function() return not API.InCombat() end}})
+ end
  -- search and level share one line
  local function field(id,label,x,labelWidth,width,value)
   text(p.body,x,-p.y-7,labelWidth):SetText(label)
@@ -163,7 +182,7 @@ function P:Build(H,p)
   local f=self.filter
   H.controls.gearProfile:SetText("Ranked for: "..profile.name)
   H.controls.gearSource:SetText("Source: "..(f.source=="All" and "Any" or G:SourceLabel(f.source)))
-  H.controls.gearSort:SetText("Sort: "..G.sortLabels[f.sort or "score"])
+  H.controls.gearSort:SetText("Sort: "..G.sortLabels[self:Sort()])
   H.controls.gearHands:SetText("Hands: "..G.handLabels[f.slot=="MAIN" and f.hands or "any"])
   H.controls.gearType:SetText("Type: "..(f.subtype or "Any"))
   H.controls.gearMyRole:SetText(key==own and ("My role: "..profile.name) or ("Make "..profile.name.." my role"))

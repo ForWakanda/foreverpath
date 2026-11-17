@@ -1,6 +1,13 @@
 -- HearthAndHustle / Data / Recorder.lua
 -- Telemetry: records what the Forever client tells the addon while you play.
 -- Read-only observation of permitted API data; nothing here performs actions.
+--
+-- Two levels (v0.28.0). "record" keeps what a feature reads back: quest
+-- givers, turn-ins and objective areas (route fallback), the NPCs spoken to,
+-- trainers, flight points and the last hours of XP samples. "recordDataset"
+-- adds the research dataset no feature reads (creature sightings, kills, loot,
+-- vendors, zones, the progress and death logs, recipes); it is off by default
+-- because it grows the SavedVariables file by megabytes.
 local ADDON, FP = ...
 local U, API = FP.Util, FP.API
 local safe = FP.safe
@@ -11,7 +18,8 @@ local MAX_POS_PER_CREATURE = 40
 local MAX_POS_PER_OBJECT = 60
 local MAX_PROGRESS = 4000
 local MAX_DEATHS = 200
-local MAX_XP_SAMPLES = 2000
+local MAX_XP_SAMPLES = 2000        -- with the dataset on
+local MAX_XP_RECENT = 180          -- otherwise: the status line reads the last hour
 local DEDUP_YARDS = 25
 
 local data           -- FP.data
@@ -32,6 +40,11 @@ end
 local function recording()
 	return FP.settings.record and data ~= nil
 end
+
+local function dataset()
+	return recording() and FP.settings.recordDataset == true
+end
+R.Dataset = dataset
 
 local function pos(source)
 	local p = FP.Pos:Snapshot()
@@ -195,28 +208,31 @@ end
 
 local function recordProgress(questID, i, from, to, o)
 	local p = pos()
-	local ev = { q = questID, o = i, from = from, to = to, t = U.Now(), c = char, type = o and o.type or nil }
-	if p then ev.m, ev.x, ev.y = p.m, p.x, p.y end
-	local now = API.Time()
-	-- Time proximity is a candidate observation, never proof of objective identity.
-	if o and o.type == "monster" then
-		ev.killCandidates = {}
-		local seen = {}
-		for _, k in ipairs(lastKills) do
-			if now - k.t < 4 and not seen[k.id] then
-				ev.killCandidates[#ev.killCandidates + 1] = k.id
-				seen[k.id] = true
+	-- The event log is research data; the objective area below is what the route reads.
+	if dataset() then
+		local ev = { q = questID, o = i, from = from, to = to, t = U.Now(), c = char, type = o and o.type or nil }
+		if p then ev.m, ev.x, ev.y = p.m, p.x, p.y end
+		local now = API.Time()
+		-- Time proximity is a candidate observation, never proof of objective identity.
+		if o and o.type == "monster" then
+			ev.killCandidates = {}
+			local seen = {}
+			for _, k in ipairs(lastKills) do
+				if now - k.t < 4 and not seen[k.id] then
+					ev.killCandidates[#ev.killCandidates + 1] = k.id
+					seen[k.id] = true
+				end
 			end
 		end
+		if o and o.type == "item" and lastLoot and now - lastLoot.t < 4 then
+			ev.lootCandidates = lastLoot.sources
+			ev.lootItems = lastLoot.items
+		end
+		ev.attribution = "unconfirmed"
+		ev.observer = true
+		U.Push(data.progress, ev, MAX_PROGRESS)
+		bump("progress")
 	end
-	if o and o.type == "item" and lastLoot and now - lastLoot.t < 4 then
-		ev.lootCandidates = lastLoot.sources
-		ev.lootItems = lastLoot.items
-	end
-	ev.attribution = "unconfirmed"
-	ev.observer = true
-	U.Push(data.progress, ev, MAX_PROGRESS)
-	bump("progress")
 	-- Fold the observed progress area into the quest record; identity stays uncertain.
 	local q = data.quests[questID]
 	if q then
@@ -275,7 +291,7 @@ function R:TrimData()
   U.TrimRecords(FP.data[name],limit)
  end
  U.TrimRecords(FP.data.pvp.players,500)
- U.TrimRecords(FP.db.apicheck,20);U.TrimRecords(FP.db.meta.builds,20)
+ U.TrimRecords(FP.db.apicheck,FP.APICHECK_KEPT);U.TrimRecords(FP.db.meta.builds,20)
 end
 
 function R:OnEnable()
@@ -389,7 +405,7 @@ function R:OnGossip()
 			end
 		end
 	end
-	if n then
+	if n and dataset() then
 		local opts = API.GetGossipOptions()
 		if #opts > 0 then
 			local rec = data.npcs[n.id]
@@ -421,13 +437,13 @@ function R:OnQuestDetail(startItemID)
 	if type(d.group) == "number" and d.group > 0 then q.sg = d.group end
 	if #d.rewards > 0 then
 		q.rew = {}
-		for _, r in ipairs(d.rewards) do if r.itemID then q.rew[#q.rew + 1] = r.itemID; item(r.itemID, r.name, r.quality) end end
+		for _, r in ipairs(d.rewards) do if r.itemID then q.rew[#q.rew + 1] = r.itemID; if dataset() then item(r.itemID, r.name, r.quality) end end end
 	end
 	if #d.choices > 0 then
 		q.choice = {}
-		for _, r in ipairs(d.choices) do if r.itemID then q.choice[#q.choice + 1] = r.itemID; item(r.itemID, r.name, r.quality) end end
+		for _, r in ipairs(d.choices) do if r.itemID then q.choice[#q.choice + 1] = r.itemID; if dataset() then item(r.itemID, r.name, r.quality) end end end
 	end
-	if startItemID and startItemID ~= 0 then q.startItem = startItemID; item(startItemID) end
+	if startItemID and startItemID ~= 0 then q.startItem = startItemID; if dataset() then item(startItemID) end end
 	if n then
 		q.givers[n.id] = true
 		if n.pos then q.gpos = { m = n.pos.m, x = n.pos.x, y = n.pos.y } end
@@ -449,8 +465,10 @@ function R:OnQuestAccepted(questID)
 	local q = info and snapshotQuest(info) or quest(questID, API.GetQuestTitle(questID))
 	objectiveSnapshot[questID] = objectiveSnapshotFor(questID)
 	local p = pos()
-	q.log = q.log or {}
-	U.Push(q.log, { c = char, acc = U.Now(), lvl = API.PlayerLevel(), m = p and p.m, x = p and p.x, y = p and p.y }, 10)
+	if dataset() then
+		q.log = q.log or {}
+		U.Push(q.log, { c = char, acc = U.Now(), lvl = API.PlayerLevel(), m = p and p.m, x = p and p.x, y = p and p.y }, 10)
+	end
 	if not q.gpos and p then q.gpos = { m = p.m, x = p.x, y = p.y } end
 	bump("accepted")
 end
@@ -475,13 +493,15 @@ function R:OnQuestTurnedIn(questID, xp, money)
 	if type(money) == "number" and money > 0 then q.money = money end
 	local p = pos()
 	if not q.epos and p then q.epos = { m = p.m, x = p.x, y = p.y } end
-	q.log = q.log or {}
-	local entry = q.log[#q.log]
-	if entry and entry.c == char and not entry.done then
-		entry.done = U.Now()
-		entry.dlvl = lvl
-	else
-		U.Push(q.log, { c = char, done = U.Now(), dlvl = lvl }, 10)
+	if dataset() then
+		q.log = q.log or {}
+		local entry = q.log[#q.log]
+		if entry and entry.c == char and not entry.done then
+			entry.done = U.Now()
+			entry.dlvl = lvl
+		else
+			U.Push(q.log, { c = char, done = U.Now(), dlvl = lvl }, 10)
+		end
 	end
 	local npcID = q._pendingEnder or (lastNPC and (API.Time() - lastNPC.t) < 30 and lastNPC.id) or nil
 	q._pendingEnder = nil
@@ -720,7 +740,7 @@ end
 function R:OnBound()
 	local p = pos()
 	FP.cdb.bind = { area = API.GetBindLocation(), m = p and p.m, x = p and p.x, y = p and p.y, t = U.Now() }
-	if recording() and lastNPC then data.binds[lastNPC.id] = { area = FP.cdb.bind.area, pos = p and { m = p.m, x = p.x, y = p.y }, t = U.Now() } end
+	if dataset() and lastNPC then data.binds[lastNPC.id] = { area = FP.cdb.bind.area, pos = p and { m = p.m, x = p.x, y = p.y }, t = U.Now() } end
 	FP:Fire("BIND_CHANGED")
 end
 
@@ -732,7 +752,7 @@ function R:OnXP()
 	if not xp then return end
 	local p = pos()
 	data.xp[char] = data.xp[char] or {}
-	U.Push(data.xp[char], { t = now, xp = xp, max = max, l = level, z = p and p.z or nil }, MAX_XP_SAMPLES)
+	U.Push(data.xp[char], { t = now, xp = xp, max = max, l = level, z = p and p.z or nil }, dataset() and MAX_XP_SAMPLES or MAX_XP_RECENT)
 end
 
 function R:OnXPMessage(text)
@@ -788,6 +808,14 @@ for _, method in ipairs({ "OnGossip", "OnQuestDetail", "OnQuestAccepted", "OnQue
 	local fn = R[method]
 	R[method] = function(self, ...)
 		if recording() then return fn(self, ...) end
+	end
+end
+-- The research dataset: observations no feature of the addon reads back.
+for _, method in ipairs({ "OnUnit", "OnTargetDied", "OnUnitDied", "OnLoot", "OnMerchant", "OnBinder",
+	"OnXPMessage", "OnDeath", "OnZone" }) do
+	local fn = R[method]
+	R[method] = function(self, ...)
+		if dataset() then return fn(self, ...) end
 	end
 end
 

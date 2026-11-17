@@ -3,7 +3,7 @@
 local ADDON, FP = ...
 local U = FP.Util
 
-FP.DB_VERSION = 2
+FP.DB_VERSION = 3
 
 local function deepDefaults(target, defaults)
 	for k, v in pairs(defaults) do
@@ -22,6 +22,7 @@ FP.defaults = {
 	settings = {
 		debug = false,
 		record = false,
+		recordDataset = false,       -- with record on: also keep the research dataset no feature reads (creatures, loot, vendors, progress log)
 		recordQuestText = false,     -- long quest descriptions are opt-in
 		autoNext = true,             -- when a waypoint is done, arrow moves to the next planned step
 		nearestFirst = true,
@@ -116,6 +117,75 @@ local function adoptLegacy()
 	if adopted then FP.migratedFrom = oldLoaded and "ForeverPath (still installed)" or "ForeverPath" end
 end
 
+-- Save diet (schema 3, v0.28.0). Until now "record" kept a research dataset
+-- next to the few records a feature reads back; one played character reached
+-- 6.6 MB, parsed at every login and /reload. This drops, once, everything no
+-- feature reads. What stays: quest givers, turn-ins and objective areas (route
+-- fallback), the NPCs they name, trainers, flight points, the last hours of XP
+-- samples, the old PvP roster and battleground notes. Returns what it removed.
+local SLIM_XP_SAMPLES = 180
+local function count(t) local n = 0; for _ in pairs(type(t) == "table" and t or {}) do n = n + 1 end; return n end
+function FP.SlimSave(db)
+	local data, removed = db.data, {}
+	local function note(key, n) if n and n > 0 then removed[key] = (removed[key] or 0) + n end end
+	for _, key in ipairs({ "creatures", "objects", "items", "vendors", "zones", "binds", "recipes", "progress", "deaths", "lootObservations" }) do
+		note(key, count(data[key]))
+		data[key] = {}
+	end
+	-- quests: keep what the route and the dungeon pages read; drop logs and loot tallies
+	local named = {}
+	for _, q in pairs(data.quests) do
+		if type(q) == "table" then
+			for _, field in ipairs({ "legacyItemsV1", "items", "log" }) do
+				if q[field] ~= nil then q[field] = nil; note("questFields", 1) end
+			end
+			for _, o in pairs(type(q.obj) == "table" and q.obj or {}) do
+				if type(o) == "table" then
+					for _, field in ipairs({ "legacyMobCandidatesV1", "legacySourceCandidatesV1", "mobs", "src" }) do
+						if o[field] ~= nil then o[field] = nil; note("questFields", 1) end
+					end
+				end
+			end
+			for id in pairs(type(q.givers) == "table" and q.givers or {}) do named[id] = true end
+			for id in pairs(type(q.enders) == "table" and q.enders or {}) do named[id] = true end
+		end
+	end
+	-- NPCs: the ones spoken to (they carry a flag) or named by a quest; the rest were only looked at
+	for id, n in pairs(data.npcs) do
+		if type(n) ~= "table" or not (named[id] or (type(n.flags) == "table" and next(n.flags) ~= nil)) then
+			data.npcs[id] = nil; note("npcs", 1)
+		else
+			n.gossip = nil
+		end
+	end
+	-- XP: the status line reads the last hour
+	for _, list in pairs(data.xp) do
+		if type(list) == "table" then
+			local extra = #list - SLIM_XP_SAMPLES
+			if extra > 0 then
+				local kept = {}
+				for i = extra + 1, #list do kept[#kept + 1] = list[i] end
+				for i = #list, 1, -1 do list[i] = nil end
+				for i, sample in ipairs(kept) do list[i] = sample end
+				note("xpSamples", extra)
+			end
+		end
+	end
+	-- diagnostics: one API report per build is kept (the newest few); the ten-report history and the beta probe samples go
+	note("apicheckHistory", count(db.apicheckHistory)); db.apicheckHistory = nil
+	if type(db.apicheck) == "table" then
+		local before = count(db.apicheck)
+		U.TrimRecords(db.apicheck, FP.APICHECK_KEPT)
+		note("apicheck", before - count(db.apicheck))
+	end
+	if type(db.probe) == "table" then
+		note("probeSamples", count(db.probe.samples))
+		db.probe.samples, db.probe.lastSig = {}, nil
+	end
+	return removed
+end
+FP.APICHECK_KEPT = 3
+
 local function onAddonLoaded(event, name)
 	if name ~= ADDON then return end
 	adoptLegacy()
@@ -131,7 +201,8 @@ local function onAddonLoaded(event, name)
 	if FP.clientBuild then
 		FP.db.meta.builds[tostring(FP.clientBuild)] = U.Now()
 	end
-	if (FP.db.version or 0) < FP.DB_VERSION then
+	local schema = FP.db.version or 0
+	if schema < 2 then
 		if FP.cdb.party.from == "paste" then FP.cdb.party.mode = "paste" end
 		-- Preserve v0.1 observations, but never mix known-biased totals/guesses
 		-- into the corrected dataset. No history is deleted.
@@ -150,8 +221,20 @@ local function onAddonLoaded(event, name)
 				if o.src then o.legacySourceCandidatesV1, o.src = o.src, nil end
 			end
 		end
-		FP.db.version = FP.DB_VERSION
 	end
+	if schema < 3 then
+		local removed = FP.SlimSave(FP.db)
+		if next(removed) then
+			-- The beta probe was part of the same diagnostic load; it stays one command away.
+			local probeWasOn = FP.settings.probe.enabled == true
+			FP.settings.probe.enabled = false
+			FP.db.meta.diet = { t = U.Now(), version = FP.version, from = schema, removed = removed, probeWasOn = probeWasOn }
+			FP.dietReport = removed
+		end
+	end
+	FP.db.version = FP.DB_VERSION
+	-- The loot dedup cache only serves the dataset recorder.
+	if not FP.settings.recordDataset then FP.cdb.lootSeen = {} end
 	FP.dbReady = true
 	FP:InitModules()
 	FP:Fire("DB_READY")
@@ -194,5 +277,10 @@ FP:RegisterEvent("PLAYER_LOGIN", function()
 		FP:Print("Formerly ForeverPath: your settings and recorded data were carried over. Commands are now /hh and /hustle.")
 	elseif FP.migratedFrom then
 		FP:Print(FP.RED .. "The old ForeverPath folder is still installed.|r Your data was copied. Log out, delete Interface\\AddOns\\ForeverPath, then log back in.")
+	end
+	if FP.dietReport then
+		FP:Print("Save file slimmed: the recorder now keeps only what Hearth & Hustle reads back (quest givers and turn-ins, trainers, flight points). "
+			.. "The research dataset and the beta probe are off; nothing you see on screen changes. " .. FP.GREY .. "/hh record dataset on and /hh probe on bring them back.|r")
+		FP.dietReport = nil
 	end
 end)
