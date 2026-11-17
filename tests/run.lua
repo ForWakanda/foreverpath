@@ -4,7 +4,7 @@ local M = require("wowmock")
 M.verbose = os.getenv("VERBOSE") ~= nil
 local ADDON = "HearthAndHustle"
 local FP = {}
-HearthAndHustleDB={settings={record=true,probe={enabled=true}}}
+HearthAndHustleDB={settings={record=true,recordDataset=true,probe={enabled=true}}}
 
 local files = {}
 for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do

@@ -641,7 +641,8 @@ function H:BuildPage(key)
 		self:Check(p,"barFPS","Show FPS and latency",function() return FP.settings.bar.fps end,function(v) command("bar fps "..onoff(v)) end)
 	elseif key=="tools" then
 		self:Text(p,"",function() return "Recorded: "..FP.Recorder:Summary().."\nStored errors: "..#(FP.db.errors or {}) end)
-		self:Check(p,"recording","Record observations",function() return FP.settings.record end,function(v) command("record "..onoff(v)) end)
+		self:Check(p,"recording","Record what the addon reads back (quest givers, turn-ins, trainers, flight points)",function() return FP.settings.record end,function(v) command("record "..onoff(v)) end)
+		self:Check(p,"recordingDataset","Also keep the research dataset (creatures, loot, vendors, progress log): megabytes of save file",function() return FP.settings.record and FP.settings.recordDataset end,function(v) command("record dataset "..onoff(v)) end)
 		self:Check(p,"debugging","Debug messages",function() return FP.settings.debug end,function(v) if FP.settings.debug~=v then command("debug") end end)
 		self:Check(p,"probing","Enable API probes",function() return FP.settings.probe.enabled end,function(v) command("probe "..onoff(v)) end)
 		self:Actions(p,{

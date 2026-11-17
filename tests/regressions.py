@@ -11,7 +11,7 @@ BOOT = r'''
 package.path = "./tests/?.lua;" .. package.path
 local M = require("wowmock")
 local FP = {}
-if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,probe={enabled=true}}} end
+if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,recordDataset=true,probe={enabled=true}}} end
 for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     line = line:gsub("\r", "")
     if line:match("%.lua$") then
@@ -1149,7 +1149,7 @@ assert(#sent>n and sent[#sent]:find("9001c",1,true))
 M.RemoveQuest(9001); M.FireEvent("QUEST_REMOVED",9001); M.RunTimers(6)
 assert(not sent[#sent]:find("9001",1,true))
 ''',
-    "manual_probe_history_and_exception_are_preserved": r'''
+    "manual_probe_report_survives_an_exception_and_replaces_the_last_one": r'''
 local best=FP.API.GetBestMap
 FP.API.GetBestMap=function() error("test map probe failure") end
 cmd("apicheck")
@@ -1159,7 +1159,8 @@ assert(r.rows["probe:facing"].ok and r.rows["probe:facing"].note)
 FP.API.GetBestMap=best
 cmd("apicheck")
 assert(FP.db.apicheck["70124-manual"].rows["probe:bestMap"].ok)
-assert(#FP.db.apicheckHistory>=2)
+-- v0.28.0: one report per build; the ten-report history went with the save diet
+assert(FP.db.apicheckHistory==nil)
 ''',
     "hearth_cooldown_reads_70170_c_spell_table_shape": r'''
 local cont, item = C_Container.GetItemCooldown, C_Item and C_Item.GetItemCooldown
@@ -1351,7 +1352,7 @@ local before=snapshot(FP.data)
 M.RunTimers(2)
 assert(snapshot(FP.data)==before)
 ''',
-    "v1_migration_preserves_but_separates_biased_evidence": r'''
+    "v1_migration_never_leaves_biased_evidence_where_the_route_reads_it": r'''
 M.frames,M.timers,M.tickers={},{},{}
 HearthAndHustleDB={version=1,data={creatures={[7001]={loot={[4306]=4},looted=1,pos={{m=1413,x=.5,y=.5}}}},
     quests={[9001]={obj={{mobs={[7001]=2}}},items={[4306]={[7001]=1}}}}}}
@@ -1361,10 +1362,12 @@ for line in io.lines("HearthAndHustle/HearthAndHustle.toc") do
     if line:match("%.lua$") then assert(loadfile("HearthAndHustle/"..line:gsub("\\","/")))("HearthAndHustle",nextFP) end
 end
 M.FireEvent("ADDON_LOADED","HearthAndHustle")
-local c=nextFP.data.creatures[7001]
-assert(c.legacyLootV1[4306]==4 and next(c.loot)==nil and c.looted==0 and c.pos[1].observer)
+-- v0.28.0: a v1 profile goes through both steps. The biased totals were set
+-- aside by schema 2 and are dropped by the save diet (schema 3); the quest stays.
+assert(HearthAndHustleDB.version==3 and nextFP.data.creatures[7001]==nil)
 local q=nextFP.data.quests[9001]
-assert(q.obj[1].legacyMobCandidatesV1[7001]==2 and not q.obj[1].mobs and q.legacyItemsV1)
+assert(q and not q.obj[1].mobs and not q.obj[1].legacyMobCandidatesV1 and not q.items and not q.legacyItemsV1)
+assert(HearthAndHustleDB.meta.diet.from==1 and HearthAndHustleDB.meta.diet.removed.creatures==1)
 ''',
 })
 
@@ -3402,12 +3405,15 @@ from dungeon_plan import cases as dungeon_plan_cases
 CASES.update(dungeon_plan_cases(HUB))
 from gear_finder import cases as gear_finder_cases
 CASES.update(gear_finder_cases(HUB))
+from save_diet import cases as save_diet_cases
+CASES.update(save_diet_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():
     boot = BOOT
     if name == "review_fresh_defaults_opt_out_and_observations_are_bounded":
-        boot = boot.replace('if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,probe={enabled=true}}} end', '')
+        boot = boot.replace('if not HearthAndHustleDB and not ForeverPathDB then HearthAndHustleDB={settings={record=true,recordDataset=true,probe={enabled=true}}} end', '')
+        assert boot != BOOT, "the fresh-defaults case must boot without a seeded profile"
     result = subprocess.run([LUA, "-"], input=boot + body + '\nassert(#FP.db.errors == 0, "unexpected stored addon errors")\n', text=True, capture_output=True)
     print(("FAIL " if result.returncode else "PASS ") + name)
     if result.returncode:

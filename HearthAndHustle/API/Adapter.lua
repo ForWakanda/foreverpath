@@ -2057,9 +2057,8 @@ function API.StoreCheck(rows, manual)
 		result.rows[r.name] = { ok = r.ok, note = r.note, status = r.status or (r.ok and "ok" or "unavailable") }
 		if r.ok then result.ok = result.ok + 1 else result.fail = result.fail + 1 end
 	end
+	-- one report per build (and one manual); no history: each carried a full navigation snapshot
 	FP.db.apicheck[tostring(FP.clientBuild) .. (manual and "-manual" or "")] = result
-	FP.db.apicheckHistory = FP.db.apicheckHistory or {}
-	U.Push(FP.db.apicheckHistory, result, 10)
 	return result
 end
 

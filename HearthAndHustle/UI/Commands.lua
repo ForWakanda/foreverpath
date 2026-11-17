@@ -30,6 +30,7 @@ local function help()
 	p("  /hh prof plan <recipeID> <crafts> | plan clear   batch materials checklist")
 	p("  /hh prof          professions + best skill-up crafts (open the profession window first)")
 	p("  /hh record on|off | /hh status | /hh apicheck | /hh selftest | /hh export")
+	p("  /hh record dataset on|off   also keep the research dataset (creatures, loot, vendors, progress log); large save file")
 	p("  /hh pvp [status|track|spells|lock|reset|scale n|on|off]   PvP HUD: your CC/lockout timers with DR estimates, battleground objectives, enemies seen")
 	p("  /hh rare [status|scan|notup|runs|list|add|rm|instance|show|hide|auto|on|off]   dungeon rare watch (Scarlet Monastery: Azshir, Ironspine, Fallen Champion)")
 	p("  /hh vendor [on|off|tooltip on|off|rewards on|off|junk]   merchant strip (sell grays / repair on click), tooltip + quest reward vendor value")
@@ -120,7 +121,7 @@ end
 
 local function cmdStatus()
 	p("v" .. FP.version .. " · client " .. tostring(FP.clientVersion) .. " build " .. tostring(FP.clientBuild) .. " · toc " .. tostring(FP.clientToc))
-	p("recording: " .. (FP.settings.record and FP.GREEN .. "on|r" or FP.RED .. "off|r") .. " · auto-next: " .. tostring(FP.settings.autoNext) .. " · debug: " .. tostring(FP.settings.debug))
+	p("recording: " .. (FP.settings.record and FP.GREEN .. "on|r" or FP.RED .. "off|r") .. ((FP.settings.record and FP.settings.recordDataset) and " + research dataset" or "") .. " · auto-next: " .. tostring(FP.settings.autoNext) .. " · debug: " .. tostring(FP.settings.debug))
 	p("dataset: " .. FP.Recorder:Summary())
 	local counters = FP.db.meta.counters
 	local parts = {}
@@ -264,10 +265,23 @@ function C:Handle(msg)
 	elseif cmd == "selftest" then FP.SelfTest:Run()
 	elseif cmd == "record" then
 		local v = rest:lower()
-		if v == "on" then FP.settings.record = true elseif v == "off" then FP.settings.record = false else FP.settings.record = not FP.settings.record end
-		FP.recordEpoch = (FP.recordEpoch or 0) + 1
-		FP:Fire("RECORDING_CHANGED")
-		p("recording " .. (FP.settings.record and "on" or "off"))
+		local full = v:match("^dataset%s*(%a*)$")
+		local known = true
+		if full == "on" then FP.settings.recordDataset = true; FP.settings.record = true
+		elseif full == "off" then FP.settings.recordDataset = false
+		elseif full then known = full == ""
+		elseif v == "on" then FP.settings.record = true elseif v == "off" then FP.settings.record = false
+		elseif v == "" then FP.settings.record = not FP.settings.record
+		else known = false end
+		if not known then p("Usage: /hh record on|off · /hh record dataset on|off")
+		else
+			if full ~= "" then
+				FP.recordEpoch = (FP.recordEpoch or 0) + 1
+				FP:Fire("RECORDING_CHANGED")
+			end
+			p("recording " .. (FP.settings.record and "on" or "off") .. " · research dataset "
+				.. ((FP.settings.record and FP.settings.recordDataset) and "on (the save file grows by megabytes)" or "off"))
+		end
 	elseif cmd == "audio" then p("Custom Hunter sounds have been removed.")
 	elseif cmd == "pvp" then FP.PvP:Command(rest)
 	elseif cmd == "rare" then FP.RareWatch:Command(rest)

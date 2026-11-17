@@ -63,7 +63,8 @@ function T:Summary()
 end
 
 local function saveRecipe(job)
-	if not FP.settings.record or job.epoch ~= FP.recordEpoch then return end
+	-- the recipe table is research data: nothing in the addon reads it back
+	if not FP.settings.record or not FP.settings.recordDataset or job.epoch ~= FP.recordEpoch then return end
 	local info, r = job.info, job.rec
 	local saved = FP.data.recipes[info.professionID] or { r = {} }
 	FP.data.recipes[info.professionID] = saved
