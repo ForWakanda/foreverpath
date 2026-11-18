@@ -49,7 +49,7 @@ function P:OnInit()
     self.filter = button(f, 14, -539, 210, "", function()
         self.settings.all = not self.settings.all; self.questPage=1; self:Refresh()
     end)
-    label(f, 16, -572, 210):SetText("Includes item starts and follow-ups.\nClick a quest for pickup and chain details.")
+    label(f, 16, -572, 210):SetText("What to pick up first is listed first.\nClick a quest for its details and chain.")
     self.entranceButton = button(f, 240, -88, 140, "Guide entrance", function()
         local _,message=D:GuideEntrance(self.settings.selected,self.entranceIndex); FP:Print(message)
     end)
@@ -72,8 +72,10 @@ function P:OnInit()
             if not btn.row then return end
             GameTooltip:SetOwner(btn,"ANCHOR_LEFT")
             GameTooltip:AddLine(btn.row.quest.name, 1,.82,0)
-            GameTooltip:AddLine(D:Pickup(btn.row.quest),1,1,1,true)
-            GameTooltip:AddLine("Click for prerequisites and full details.",.5,.8,1,true)
+            GameTooltip:AddLine(btn.row.label,1,1,1,true)
+            local where=D:Where(btn.row,self.context)
+            if where~="" then GameTooltip:AddLine(where,1,1,1,true) end
+            GameTooltip:AddLine("Click for what it asks, where to turn it in and its chain.",.5,.8,1,true)
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -93,7 +95,7 @@ function P:OnInit()
     scroll:SetPoint("TOPLEFT", 240, -458); scroll:SetSize(536, 112)
     local child = CreateFrame("Frame", nil, scroll); child:SetSize(530,112); scroll:SetScrollChild(child)
     self.detailChild, self.details = child, label(child, 0, 0, 525)
-    label(f, 240, -584, 560):SetText("Reference list, not a guarantee of all current Forever quests or eligibility.")
+    label(f, 240, -584, 560):SetText("Where each quest starts comes from the quest database; it is not a live offer list.")
     f:Hide()
 end
 
@@ -145,8 +147,9 @@ function P:RefreshDetails(reset)
     local text=selected and D:Details(selected,self.context) or empty
     self.details:SetText(text.."\n\n"..D:RouteNote(self.settings.selected))
     local code=selected and selected.code
-    self.guideQuest:SetText(code=="ready" and "Guide turn-in" or code=="active" and "Guide objective" or "Guide pickup")
-    enabled(self.guideQuest,code=="ready" or code=="active" or code=="offer" or code=="pickup")
+    self.guideQuest:SetText(code=="ready" and "Guide turn-in" or code=="active" and "Guide objective"
+        or code=="prereq" and "Guide next step" or code=="inside" and "Guide entrance" or "Guide pickup")
+    enabled(self.guideQuest,code=="ready" or code=="active" or code=="offer" or code=="pickup" or code=="inside" or code=="prereq")
     enabled(self.viewChain,selected~=nil)
     self.detailChild:SetHeight(math.max(112,self.details:GetStringHeight()+16))
     if reset then self.scroll:SetVerticalScroll(0) end
@@ -172,12 +175,12 @@ function P:Refresh()
     self.heading:SetText(dungeon.name .. "  (" .. (dungeon.recommendedLevel or "level range unknown") .. ")")
     local c=self.counts
     self.summary:SetText(#dungeon.quests == 0 and "Coverage missing - quest list not yet catalogued"
-        or (c.active .. " in log | " .. c.done .. " completed | " .. c.check .. " to check | " .. c.hidden .. " filtered"))
+        or D:CountsText(c))
     for i,b in ipairs(self.questButtons) do
         local row=self.rows[(self.questPage-1)*QUEST_ROWS+i]; b.row=row
         if row then
             b.title:SetText(row.color .. row.label .. "|r - " .. row.quest.name)
-            b.pickup:SetText(FP.GREY .. D:Pickup(row.quest) .. "|r"); b:Show()
+            b.pickup:SetText(FP.GREY .. D:Where(row,self.context) .. "|r"); b:Show()
         else b:Hide() end
     end
     self.questPageLabel:SetText(#self.rows .. " quests | Page " .. self.questPage .. "/" .. math.max(1,math.ceil(#self.rows/QUEST_ROWS)) .. " | Details below (scroll)")

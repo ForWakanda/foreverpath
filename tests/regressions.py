@@ -526,7 +526,12 @@ for _,item in ipairs(D:List()) do
     for page=1,math.max(1,math.ceil(#P.rows/6)) do
         P.questPage=page; P:Refresh()
         for _,b in ipairs(P.questButtons) do
-            if b.row then b:GetScript("OnClick")(b); assert(P.details:GetText():find("Pickup:",1,true)) end
+            if b.row then
+                b:GetScript("OnClick")(b)
+                local text=P.details:GetText().."\n"..b.pickup:GetText().."\n"..b.title:GetText()
+                assert(text:find("How to get it:",1,true))
+                assert(not text:lower():find("awaiting verification",1,true) and not text:find("check pickup",1,true), "a placeholder reached the page: "..text)
+            end
         end
     end
 end
@@ -3411,6 +3416,8 @@ from windfury import cases as windfury_cases
 CASES.update(windfury_cases(HUB))
 from dungeon_next import cases as dungeon_next_cases
 CASES.update(dungeon_next_cases(HUB))
+from dungeon_sources import cases as dungeon_sources_cases
+CASES.update(dungeon_sources_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

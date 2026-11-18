@@ -677,6 +677,69 @@ function API.GetQuestChainRecord(id)
 end
 
 -- Reference contacts are informational, not live offers/turn-in confirmation.
+-- Each contact says whether the reference places it inside a dungeon (`dungeon`,
+-- `dungeonArea`) and whether it has a place outdoors (`outdoor`). A starting
+-- item lists what the reference says it comes from (`sources`), so "starts
+-- from an item" can name the creature and the dungeon instead of nothing.
+local function spawnDungeon(db,spawns)
+	if type(spawns)~="table" then return nil end
+	local name,area,count=nil,nil,0
+	for zone in pairs(spawns) do
+		count=count+1; if count>512 then break end
+		local entry,id=referenceDungeon(db,zone)
+		if entry and type(entry[1])=="string" and (not name or entry[1]<name) then name,area=entry[1],id end
+	end
+	return name,area
+end
+local RANKS={[1]="elite",[2]="rare elite",[3]="boss",[4]="rare"}
+local function contact(db,maps,kind,entityID,role)
+	local name=db[kind].Get(entityID,"name")
+	if type(name)~="string" then return nil end
+	local entry={name=name,kind=kind,id=entityID,points={}}
+	if kind=="Item" then return entry end
+	local spawns=db[kind].Get(entityID,"spawns")
+	entry.points=referencePoints(db,maps,spawns,name,entityID,role)
+	entry.dungeon,entry.dungeonArea=spawnDungeon(db,spawns)
+	for _,p in ipairs(entry.points) do if not p.entrance then entry.outdoor=true;break end end
+	if kind=="Npc" then
+		local level=db.Npc.Get(entityID,"maxLevel")
+		if U.Finite(level) and level>0 then entry.level=level end
+		entry.rank=RANKS[db.Npc.Get(entityID,"rank")]
+	end
+	return entry
+end
+-- The first SOURCE_CAP sources are kept for display; every source up to
+-- SOURCE_SCAN is still checked, so "only inside a dungeon" is never claimed
+-- from a shortened list (`outside`: one is not; `unchecked`: too many to read).
+local SOURCE_CAP,SOURCE_SCAN=12,64
+local function itemSources(db,maps,itemID)
+	local out,more={},0
+	local function add(entry,how)
+		if not entry then return end
+		if not (entry.dungeon and not entry.outdoor) then out.outside=true end
+		if #out<SOURCE_CAP then entry.how=how;out[#out+1]=entry else more=more+1 end
+	end
+	for _,spec in ipairs({{"npcDrops","Npc","drop"},{"objectDrops","Object","object"},{"vendors","Npc","vendor"}}) do
+		local ids=db.Item.Get(itemID,spec[1])
+		if type(ids)=="table" then for i,entityID in ipairs(ids) do
+			if i>SOURCE_SCAN then out.unchecked=true;break end
+			if U.Finite(entityID) and entityID>0 then add(contact(db,maps,spec[2],entityID,spec[3]),spec[3]) end
+		end end
+	end
+	local containers=db.Item.Get(itemID,"itemDrops")
+	if type(containers)=="table" then for i,container in ipairs(containers) do
+		if i>16 then break end
+		if U.Finite(container) and container>0 then add(contact(db,maps,"Item",container,"container"),"container") end
+	end end
+	local rewards=db.Item.Get(itemID,"questRewards")
+	if type(rewards)=="table" then for i,questID in ipairs(rewards) do
+		if i>16 then break end
+		local name=U.Finite(questID) and questID>0 and db.Quest.Get(questID,"name")
+		if type(name)=="string" then add({name=name,kind="Quest",id=questID,points={}},"reward") end
+	end end
+	out.more=more
+	return out
+end
 local function questContacts(id,field)
 	if not U.Finite(id) or id<=0 or not API.QuestDatabaseStatus() then return {} end
 	local ok, result = pcall(function()
@@ -686,10 +749,9 @@ local function questContacts(id,field)
 		for i,kind in ipairs({"Npc","Object","Item"}) do
 			for n, entityID in ipairs(contacts[i] or {}) do
 				if n>256 then break end
-				local name = db[kind].Get(entityID,"name")
-				if type(name) == "string" then
-					local entry = {name=name,kind=kind,id=entityID,points={}}
-					if kind ~= "Item" then entry.points=referencePoints(db,maps,db[kind].Get(entityID,"spawns"),name,entityID,field) end
+				local entry = contact(db,maps,kind,entityID,field)
+				if entry then
+					if kind=="Item" and field=="startedBy" then entry.sources=itemSources(db,maps,entityID) end
 					out[#out+1] = entry
 				end
 			end
@@ -700,6 +762,28 @@ local function questContacts(id,field)
 end
 function API.GetQuestChainStarters(id) return questContacts(id,"startedBy") end
 function API.GetQuestEnders(id) return questContacts(id,"finishedBy") end
+
+-- The provider's own dungeon id for an area or one of its aliases (wings and
+-- floors share one): lets "inside a dungeon" be compared with the one viewed.
+function API.GetDungeonAreaID(area)
+	if not U.Finite(area) or area<=0 or not API.QuestDatabaseStatus() then return nil end
+	local ok,_,id=pcall(referenceDungeon,LibQuestieDB,area)
+	return ok and id or nil
+end
+
+-- What the quest asks for, as the reference words it. One read, on demand.
+function API.GetQuestAskText(id)
+	if not U.Finite(id) or id<=0 or not API.QuestDatabaseStatus() then return nil end
+	local ok,lines=pcall(LibQuestieDB.Quest.Get,id,"objectivesText")
+	if not ok or type(lines)~="table" then return nil end
+	local out={}
+	for i,line in ipairs(lines) do
+		if i>8 then break end
+		if type(line)=="string" and line~="" then out[#out+1]=U.Trim(line) end
+	end
+	if #out==0 then return nil end
+	return table.concat(out," ")
+end
 
 function API.GetQuestTitle(questID)
 	if has(C_QuestLog, "GetTitleForQuestID") then

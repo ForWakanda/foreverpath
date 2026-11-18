@@ -346,17 +346,31 @@ local function pickupPlace(id, ctx, pos)
 	local offer = ctx.offers[id]
 	if offer and U.ValidMapPoint(offer.mapID, offer.x, offer.y) then return offer, nil, offer.name end
 	local best, bestD, inside, giver
-	for _, starter in ipairs(FP.QuestChains:Starters(id)) do
-		for _, point in ipairs(starter.points) do
-			if point.entrance then inside, giver = true, giver or starter.name
+	local function consider(points, name)
+		for _, point in ipairs(points or {}) do
+			if point.entrance then inside, giver = true, giver or name
 			elseif U.ValidMapPoint(point.mapID, point.x, point.y) then
 				local c, wx, wy = FP.Pos:WorldOf(point)
 				local d = (pos.valid and wx and c == pos.continent) and U.Distance(pos.wx, pos.wy, wx, wy) or math.huge
-				if not best or d < bestD then best, bestD, giver = point, d, starter.name end
+				if not best or d < bestD then best, bestD, giver = point, d, name end
 			end
 		end
 	end
+	for _, starter in ipairs(FP.QuestChains:Starters(id)) do
+		consider(starter.points, starter.name)
+		-- a starting item is picked up where it drops
+		for _, source in ipairs(starter.sources or {}) do consider(source.points, starter.name .. ", from " .. source.name) end
+	end
 	return best, (not best) and inside or false, giver
+end
+
+-- who gives it inside: "Shade of Eranikus" / "Malfurion Stormrage" (the list cuts a row at 82 characters)
+local function insideFrom(o)
+	local list, out = o.kind == "item" and o.sources or o.givers, {}
+	for i = 1, math.min(2, #list) do out[i] = list[i].name end
+	local rest = #list - #out + (o.more or 0)
+	local text = table.concat(out, ", ") .. (rest > 0 and (" and " .. rest .. " more") or "")
+	return text
 end
 
 function DP:Build(key)
@@ -368,32 +382,48 @@ function DP:Build(key)
 	local pos = FP.Pos.cache
 	local questRows, counts, ctx = FP.Dungeons:Rows(key, false)
 	local plan = { key = key, dungeon = dungeon, ctx = ctx, rows = {}, done = counts.done, hidden = counts.hidden,
-		pickups = 0, zones = 0, unplaced = 0, inside = 0, turnins = 0, later = 0, crossings = 0 }
-	local turnins, placed, unplaced, inside, later = {}, {}, {}, {}, {}
+		pickups = 0, zones = 0, unplaced = 0, inside = 0, turnins = 0, chain = 0, later = 0, crossings = 0 }
+	local turnins, placed, unplaced, inside, chain, later = {}, {}, {}, {}, {}, {}
+	local D = FP.Dungeons
 	for _, r in ipairs(questRows) do
 		local q = r.quest
 		if r.code == "ready" then
 			turnins[#turnins + 1] = { type = "turnin", key = "turnin:" .. r.id, quest = r, text = "Turn in: " .. q.name }
 		elseif r.code == "active" then
 			inside[#inside + 1] = { type = "active", key = "active:" .. r.id, quest = r, text = "In your log: " .. q.name }
-		elseif r.code == "offer" or r.code == "pickup" then
-			if q.pickupType == "drop" then
-				inside[#inside + 1] = { type = "drop", key = "drop:" .. r.id, quest = r, text = "Starts from an item inside: " .. q.name }
+		elseif r.code == "inside" then
+			-- every known way to start it is inside a dungeon: nothing to fetch beforehand
+			local o = D:Origin(r.id)
+			local other = o.dungeonArea ~= D:Area(key) and (" (" .. tostring(o.dungeon) .. ")") or ""
+			if o.kind == "item" then
+				inside[#inside + 1] = { type = "drop", key = "drop:" .. r.id, quest = r, text = "Drops inside: " .. q.name .. " — from " .. insideFrom(o) .. other }
 			else
-				local point, within, giver = pickupPlace(r.id, ctx, pos)
-				giver = giver or (q.pickup and q.pickup.name)
-				if point then
-					placed[#placed + 1] = { type = "pickup", key = "pickup:" .. r.id, quest = r, point = point, giver = giver }
-				elseif within then
-					inside[#inside + 1] = { type = "pickup-inside", key = "pickup:" .. r.id, quest = r, text = "Pick up inside: " .. q.name .. (giver and (" (" .. giver .. ")") or "") }
-				else
-					local known = giver and not giver:lower():find("awaiting verification", 1, true)
-					unplaced[#unplaced + 1] = { type = "pickup-unplaced", key = "pickup:" .. r.id, quest = r,
-						text = "Pick up (place not in the reference): " .. q.name
-							.. (known and (" — " .. giver .. ((q.pickup and q.pickup.zone) and (", " .. q.pickup.zone) or "")) or " — giver not recorded") }
-				end
+				inside[#inside + 1] = { type = "pickup-inside", key = "pickup:" .. r.id, quest = r, text = "Pick up inside: " .. q.name .. " (" .. insideFrom(o) .. ")" .. other }
 			end
-		elseif r.code ~= "done" and r.code ~= "restricted" then
+		elseif r.code == "offer" or r.code == "pickup" then
+			local o = D:Origin(r.id)
+			local point, within, giver = pickupPlace(r.id, ctx, pos)
+			giver = giver or o.name or (o.givers[1] and o.givers[1].name) or (o.items[1] and o.items[1].name)
+			if point then
+				placed[#placed + 1] = { type = "pickup", key = "pickup:" .. r.id, quest = r, point = point, giver = giver, item = o.kind == "item" }
+			elseif within then
+				inside[#inside + 1] = { type = "pickup-inside", key = "pickup:" .. r.id, quest = r, text = "Pick up inside: " .. q.name .. (giver and (" (" .. giver .. ")") or "") }
+			elseif o.kind == "item" then
+				unplaced[#unplaced + 1] = { type = "pickup-unplaced", key = "pickup:" .. r.id, quest = r,
+					text = "Starts from an item (where it drops is not in the reference): " .. q.name .. (giver and (" — " .. giver) or "") }
+			else
+				unplaced[#unplaced + 1] = { type = "pickup-unplaced", key = "pickup:" .. r.id, quest = r,
+					text = "Pick up (place not in the reference): " .. q.name
+						.. (giver and (" — " .. giver .. (o.zone and (", " .. o.zone) or "")) or " — giver not recorded") }
+			end
+		elseif r.code == "prereq" then
+			-- kept short for the list; the place of the next step is in the details
+			local path = D:Path(r.id, ctx)
+			local first = path.steps[1]
+			chain[#chain + 1] = { type = "chain", key = "chain:" .. r.id, quest = r, steps = #path.steps, first = first,
+				text = q.name .. " — first: " .. (first and (D:QuestName(first) .. (ctx:State(first).onQuest == true and " (in your log)" or "")
+					.. (#path.steps > 1 and (" + " .. (#path.steps - 1) .. " more") or "")) or "a step you cannot take") }
+		elseif r.code ~= "done" and r.code ~= "restricted" and r.code ~= "closed" then
 			later[#later + 1] = { type = "later", key = "later:" .. r.id, quest = r, text = r.label .. ": " .. q.name }
 		end
 	end
@@ -449,7 +479,7 @@ function DP:Build(key)
 			for i, item in ipairs(best.items) do
 				plan.pickups = plan.pickups + 1
 				item.stop, item.dist = plan.zones, (i == 1 and bestD ~= math.huge) and bestD or nil
-				item.text = plan.zones .. ". " .. best.zone .. " — pick up: " .. item.quest.quest.name .. (item.giver and (" (" .. item.giver .. ")") or "")
+				item.text = plan.zones .. ". " .. best.zone .. (item.item and " — get the starting item: " or " — pick up: ") .. item.quest.quest.name .. (item.giver and (" (" .. item.giver .. ")") or "")
 					.. (item.dist and (" · " .. (plan.zones == 1 and "" or "+") .. U.FormatDistance(item.dist)) or "")
 				before[#before + 1] = item
 			end
@@ -501,6 +531,7 @@ function DP:Build(key)
 	section("Turn in first", turnins)
 	section("Before you enter", before)
 	section("Inside", inside)
+	section("Behind a quest chain", chain)
 	section("Not available yet", later)
 	local gear, gearNote = self:Gear(key)
 	plan.gear, plan.gearNote = gear, gearNote
@@ -510,7 +541,7 @@ function DP:Build(key)
 			.. (row.delta and string.format(" · %+.1f", row.delta) or "") .. (row.later and (" · at level " .. row.later) or "")
 	end
 	section("Drops for your role" .. (gear.role and (" (" .. gear.role .. ")") or ""), gear)
-	plan.turnins, plan.inside, plan.later = #turnins, #inside, #later
+	plan.turnins, plan.inside, plan.chain, plan.later = #turnins, #inside, #chain, #later
 	self.memo = { key = key, t = now, plan = plan }
 	return plan
 end
@@ -529,6 +560,7 @@ function DP:Summary(plan)
 		bits[#bits + 1] = plural(plan.pickups + plan.unplaced, "pickup") .. " before you enter"
 			.. (plan.pickups > 0 and (" in " .. plural(plan.zones, "zone")) or "")
 		if plan.inside > 0 then bits[#bits + 1] = plan.inside .. " inside" end
+		if plan.chain > 0 then bits[#bits + 1] = plan.chain .. " behind a quest chain" end
 		if plan.later > 0 then bits[#bits + 1] = plan.later .. " not available yet" end
 		if plan.done > 0 then bits[#bits + 1] = plan.done .. " completed" end
 		lines[#lines + 1] = table.concat(bits, " · ") .. "."
@@ -580,7 +612,7 @@ end
 function DP:CanGuide(row)
 	if not row then return false end
 	local t = row.type
-	return t == "pickup" or t == "pickup-inside" or t == "turnin" or t == "active" or (t == "entrance" and not API.InInstance())
+	return t == "pickup" or t == "pickup-inside" or t == "drop" or t == "chain" or t == "turnin" or t == "active" or (t == "entrance" and not API.InInstance())
 end
 
 -- The player's click on one step. Same guarded paths as the quest checklist.
