@@ -15,15 +15,17 @@ local NPC={
  [7771]={name="Marvon Rivetseeker",spawns={[1176]={{-1,-1}}}},
  [7572]={name="Master Gadrin",spawns={[14]={{56,74}}}},
 }
+NPC[5648]={name="Sandfury Blood Drinker",spawns={[1176]={{-1,-1}}}}
 local START={[2768]=7406,[2770]=7407,[2846]=6546,[2865]=7804,[3042]=7771,[2936]=7572,[2937]=7572}
+local ITEMSTART,ITEM={},{[9240]={name="Mallet of Zul'Farrak",npcDrops={5648}}}
 local support={private={areaIdToUiMapId="return {[440]=1446,[357]=1444,[33]=1434,[14]=1411,[15]=1445}",dungeons={
  [1176]={"Zul'Farrak",nil,440,{{440,38.7,20.1}}},
 }}}
 LibQuestieDB={flavor={expansion="Forever"},readMode="baked",RequireContract=function()return true end,
  Support={Get=function()return support end},
- Quest={Get=function(qid,key) if key=="startedBy" and START[qid] then return {{START[qid]}} end end,GetAllIds=function()return {} end},
+ Quest={Get=function(qid,key) if key=="startedBy" then if START[qid] then return {{START[qid]}} elseif ITEMSTART[qid] then return {nil,nil,{ITEMSTART[qid]}} end end end,GetAllIds=function()return {} end},
  Npc={Get=function(id,key) return NPC[id] and NPC[id][key] end},
- Item={Get=function()end},Object={Get=function()end}}
+ Item={Get=function(id,key) return ITEM[id] and ITEM[id][key] end},Object={Get=function()end}}
 local done={}
 C_QuestLog.IsQuestFlaggedCompleted=function(id) return done[id] or false end
 local function fresh() DP.memo,DP.gearMemo=nil,nil;FP.QuestChains.starters={} end
@@ -39,7 +41,7 @@ def cases(hub):
     return {
         'dungeon_plan_orders_pickups_by_zone_with_the_crossing_and_ends_at_the_entrance': PLAN + r'''
 local plan=build()
-assert(plan.pickups==4 and plan.zones==3 and plan.inside==1 and plan.later==4 and plan.turnins==0 and plan.hidden==4, kinds(plan))
+assert(plan.pickups==4 and plan.zones==3 and plan.inside==1 and plan.chain==4 and plan.later==0 and plan.turnins==0 and plan.hidden==4, kinds(plan))
 -- before you enter: Tanaris (two givers, by name), Feralas, the crossing, Stranglethorn, the crossing back, the entrance
 local i=select(2,row(plan,"header"))
 local order={}
@@ -54,9 +56,10 @@ assert(order[6].type=="crossing" and order[6].leg.from.mapID==1434, "and back fo
 assert(order[7].type=="entrance" and order[7].text:find("Entrance: Tanaris 38.7, 20.1",1,true) and order[7].index==1, order[7].text)
 assert(order[8].type=="header" and order[8].text=="— Inside —")
 assert(row(plan,"pickup-inside").text=="Pick up inside: Troll Temper (Marvon Rivetseeker)")
--- blocked steps are listed as not available, never as pickups
-local later=0;for _,r in ipairs(plan.rows) do if r.type=="later" then later=later+1;assert(r.text:find("Check prerequisite",1,true)) end end;assert(later==4)
-assert(DP:Summary(plan):find("4 pickups before you enter in 3 zones · 1 inside · 4 not available yet.",1,true), DP:Summary(plan))
+-- quests behind a chain are listed apart with the step that opens them, never as pickups
+local behind=0;for _,r in ipairs(plan.rows) do if r.type=="chain" then behind=behind+1;assert(r.text:find(" — first: ",1,true) and r.first and not r.text:find("Check prerequisite",1,true), r.text) end end;assert(behind==4)
+assert(not row(plan,"later"))
+assert(DP:Summary(plan):find("4 pickups before you enter in 3 zones · 1 inside · 4 behind a quest chain.",1,true), DP:Summary(plan))
 -- the nearest zone leads: standing in Feralas reverses the first two stops
 stand(1444,.5,.5);plan=build()
 assert(row(plan,"pickup").text:find("1. Feralas",1,true) and row(plan,"pickup",2).text:find("2. Tanaris",1,true))
@@ -80,18 +83,18 @@ assert(#FP.db.errors==0)
         'dungeon_plan_follows_the_quest_log_and_the_checklist_states': PLAN + r'''
 log(2768,"Divino-matic Rod",true);log(2865,"Scarab Shells");done[2846]=true
 local plan=build()
-assert(kinds(plan):find("^header turnin header pickup entrance header active pickup%-inside header later later later later"), kinds(plan))
+assert(kinds(plan):find("^header turnin header pickup entrance header active pickup%-inside header chain chain chain chain"), kinds(plan))
 assert(plan.rows[1].text=="— Turn in first —" and row(plan,"turnin").text=="Turn in: Divino-matic Rod")
 assert(row(plan,"active").text=="In your log: Scarab Shells" and plan.done==1 and plan.pickups==1)
-assert(DP:Summary(plan):find("1 ready to turn in · 1 pickup before you enter in 1 zone · 2 inside · 4 not available yet · 1 completed.",1,true), DP:Summary(plan))
+assert(DP:Summary(plan):find("1 ready to turn in · 1 pickup before you enter in 1 zone · 2 inside · 4 behind a quest chain · 1 completed.",1,true), DP:Summary(plan))
 -- a finished prerequisite opens the next step as a pickup
 done[2935]=true;plan=build()
 local opened;for _,r in ipairs(plan.rows) do if r.type=="pickup" and r.quest.id==2936 then opened=r end end
-assert(opened and opened.text:find("Durotar — pick up: The Spider God (Master Gadrin)",1,true) and plan.later==3)
--- an item-started quest belongs inside
-FP.DungeonCatalog.quests[3042].pickupType="drop";plan=build()
-assert(row(plan,"drop").text=="Starts from an item inside: Troll Temper" and not row(plan,"pickup-inside"))
-FP.DungeonCatalog.quests[3042].pickupType="npc"
+assert(opened and opened.text:find("Durotar — pick up: The Spider God (Master Gadrin)",1,true) and plan.chain==3)
+-- a quest the database starts from an item that drops inside belongs inside, with what drops it
+START[3042]=nil;ITEMSTART[3042]=9240;plan=build()
+assert(row(plan,"drop").text=="Drops inside: Troll Temper — from Sandfury Blood Drinker" and not row(plan,"pickup-inside"), row(plan,"drop") and row(plan,"drop").text)
+ITEMSTART[3042]=nil;START[3042]=7771
 -- quest state the client will not give is "not available yet", not a pickup
 C_QuestLog.IsQuestFlaggedCompleted=function() error("unavailable") end;plan=build()
 assert(plan.pickups==0 and plan.later>=5 and row(plan,"later").text:find("Quest state unavailable",1,true))
@@ -170,7 +173,8 @@ local function pick(kind,n)
 end
 pick("header");assert(not H.controls.dungeonGuide:IsEnabled())
 pick("crossing");assert(not H.controls.dungeonGuide:IsEnabled() and H.controls.dungeonPlanDetails:GetText():find("lands at",1,true))
-pick("later");assert(not H.controls.dungeonGuide:IsEnabled() and not active())
+-- a quest behind a chain: the button leads to the step that opens it; with no place known for that step nothing is set
+pick("chain");assert(H.controls.dungeonGuide:IsEnabled() and not active());click("dungeonGuide");assert(not active())
 -- a pickup: the click, and only the click, sets the destination
 local r=pick("pickup");assert(H.controls.dungeonPlanDetails:GetText():find("Known pickup place: Tanaris 67.0, 22.0",1,true), H.controls.dungeonPlanDetails:GetText())
 assert(not active());click("dungeonGuide")

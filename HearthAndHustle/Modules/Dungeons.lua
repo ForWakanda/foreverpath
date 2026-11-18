@@ -50,31 +50,305 @@ function D:Gate(prereq, ctx)
     return false
 end
 
+-------------------------------------------------------------------------------
+-- Where a quest comes from. The installed quest database answers first (the
+-- giver and its place, or the starting item and what drops it, and whether
+-- that is inside a dungeon); the bundled catalogue is the fallback. Reference
+-- data: it says where a quest starts, never that it is offered right now.
+-------------------------------------------------------------------------------
+local CLASS_BIT = { WARRIOR=1, PALADIN=2, HUNTER=4, ROGUE=8, PRIEST=16, SHAMAN=64, MAGE=128, WARLOCK=256, DRUID=1024 }
+local function bit(mask, value) return math.floor(mask / value) % 2 == 1 end
+local function recorded(text) return type(text) == "string" and text ~= "" and not text:lower():find("awaiting verification", 1, true) end
+local function plural(n, word) return n .. " " .. word .. (n == 1 and "" or "s") end
+
+-- "Horde" / "Alliance" when the reference limits a quest to one side.
+function D:ReferenceFaction(mask)
+    if not U.Finite(mask) or mask <= 0 then return nil end
+    local alliance = bit(mask, 1) or bit(mask, 4) or bit(mask, 8) or bit(mask, 64) or bit(mask, 4294967296)
+    local horde = bit(mask, 2) or bit(mask, 16) or bit(mask, 32) or bit(mask, 128) or bit(mask, 8589934592)
+    if alliance and not horde then return "Alliance" end
+    if horde and not alliance then return "Horde" end
+end
+
+-- Why this character cannot take a quest, from the catalogue or the database.
+function D:Barred(id, char)
+    local q = catalog.quests[id]
+    local restriction = q and self:Restriction(q, char)
+    if restriction then return restriction end
+    local record = FP.QuestChains:Get(id)
+    if not record then return nil end
+    local faction = self:ReferenceFaction(record.requiredRaces)
+    if faction and char.faction and faction ~= char.faction then return faction .. " only" end
+    local classes, own = record.requiredClasses, char.class and CLASS_BIT[char.class]
+    if U.Finite(classes) and classes > 0 and own and not bit(classes, own) then return "other classes only" end
+end
+
+function D:Area(key)
+    local area = self.entranceAreas[key or ""]
+    return area and (API.GetDungeonAreaID(area) or area) or nil
+end
+
+local function byName(a, b) if a.name ~= b.name then return a.name < b.name end return a.id < b.id end
+local function within(entry) return entry.dungeon ~= nil and not entry.outdoor end
+
+function D:Origin(id)
+    local chains = FP.QuestChains
+    if self.originFor ~= chains.starters then self.origins, self.originFor = {}, chains.starters end
+    if self.origins[id] then return self.origins[id] end
+    local q = catalog.quests[id] or {}
+    local o = { kind = "none", givers = {}, items = {}, sources = {}, more = 0 }
+    -- the catalogue's zone stays as a hint for a giver the database cannot place
+    o.zone = recorded(q.pickup and q.pickup.zone) and q.pickup.zone or nil
+    for _, starter in ipairs(chains:Starters(id)) do
+        if starter.kind == "Item" then
+            o.items[#o.items + 1] = starter
+            for _, source in ipairs(starter.sources or {}) do o.sources[#o.sources + 1] = source end
+            o.more = o.more + (starter.sources and starter.sources.more or 0)
+            -- sources beyond the ones kept for display were checked too
+            if starter.sources and (starter.sources.outside or starter.sources.unchecked) then o.elsewhere = true end
+        else o.givers[#o.givers + 1] = starter end
+    end
+    table.sort(o.givers, byName); table.sort(o.items, byName); table.sort(o.sources, byName)
+    local list
+    if #o.givers > 0 then o.kind, o.known, list = "giver", true, o.givers
+    elseif #o.items > 0 then o.kind, o.known, list = "item", true, o.sources
+    else
+        -- no database, or a quest it does not have: what the catalogue recorded
+        local p = q.pickup or {}
+        o.kind = q.pickupType == "drop" and "item" or (recorded(p.name) and "giver" or "none")
+        o.name = recorded(p.name) and p.name or nil
+        o.place = recorded(p.subzone) and p.subzone or nil
+        o.coords = recorded(p.coordinates) and p.coordinates or nil
+    end
+    if list and #list > 0 then
+        o.inside = true
+        for _, entry in ipairs(list) do
+            if not within(entry) then o.inside = false
+            elseif not o.dungeon then o.dungeon, o.dungeonArea = entry.dungeon, entry.dungeonArea end
+        end
+        if o.elsewhere then o.inside = false end -- a source outside, or too many to check: never "only inside"
+    end
+    self.origins[id] = o
+    return o
+end
+
+-- "Shade of Eranikus (level 55 elite)"
+local function creature(entry)
+    local bits = {}
+    if entry.level then bits[#bits + 1] = "level " .. entry.level end
+    if entry.rank then bits[#bits + 1] = entry.rank end
+    return entry.name .. (#bits > 0 and (" (" .. table.concat(bits, " ") .. ")") or "")
+end
+
+-- the first known outdoor place of a contact: "Tanaris 67.0, 22.0"
+local function outdoors(entry)
+    local best
+    for _, p in ipairs(entry.points or {}) do
+        if not p.entrance and (not best or p.mapID < best.mapID or (p.mapID == best.mapID and (p.x < best.x or (p.x == best.x and p.y < best.y)))) then best = p end
+    end
+    if best then return API.GetMapName(best.mapID) .. " " .. U.FormatCoords(best.x, best.y), best end
+end
+
+function D:InsideText(entry, key)
+    local area = self:Area(key)
+    if not entry.dungeon then return "" end
+    if area and entry.dungeonArea == area then return "inside this dungeon" end
+    return "inside " .. entry.dungeon
+end
+
+local function names(list, limit, more, describe)
+    local out = {}
+    for i = 1, math.min(limit, #list) do out[i] = describe and describe(list[i]) or list[i].name end
+    local rest = #list - #out + (more or 0)
+    return table.concat(out, ", ") .. (rest > 0 and (" and " .. rest .. " more") or "")
+end
+
+-- One plain line: where this quest starts.
+function D:OriginText(id, key, long)
+    local o = self:Origin(id)
+    if o.kind == "giver" and o.known then
+        local giver, place = o.givers[1]
+        for _, g in ipairs(o.givers) do
+            local text = outdoors(g)
+            if text then giver, place = g, text; break end
+        end
+        if place then return giver.name .. " — " .. place .. (#o.givers > 1 and (" (or " .. plural(#o.givers - 1, "other giver") .. ")") or "") end
+        if giver.dungeon then return giver.name .. " — " .. self:InsideText(giver, key) end
+        return giver.name .. " — " .. (o.zone and (o.zone .. " (exact place not in the quest database)") or "place not in the quest database")
+    elseif o.kind == "item" and o.known then
+        local item = o.items[1].name
+        if #o.sources == 0 then return "Item: " .. item .. " — what drops it is not in the reference" end
+        local drops, other = {}, {}
+        for _, source in ipairs(o.sources) do
+            if source.how == "drop" or source.how == "object" then drops[#drops + 1] = source else other[#other + 1] = source end
+        end
+        if #drops == 0 then
+            local first = other[1]
+            local how = first.how == "vendor" and ("sold by " .. first.name) or first.how == "reward" and ("reward of the quest " .. first.name) or ("found in " .. first.name)
+            local place = first.how == "vendor" and outdoors(first)
+            return "Item: " .. item .. " — " .. how .. (place and (", " .. place) or "")
+        end
+        local from = (drops[1].kind == "Object" and "found in " or "drops from ") .. names(drops, long and 4 or 2, o.more, long and creature or nil)
+        if o.inside then return "Item: " .. item .. " — " .. from .. ", " .. self:InsideText(drops[1], key) end
+        local place
+        for _, source in ipairs(drops) do place = outdoors(source); if place then break end end
+        return "Item: " .. item .. " — " .. from .. (place and (", " .. place) or (drops[1].dungeon and (", " .. self:InsideText(drops[1], key)) or ""))
+    end
+    -- catalogue only
+    local parts = {}
+    if o.name then parts[#parts + 1] = o.name end
+    if o.zone then parts[#parts + 1] = o.zone end
+    if o.place then parts[#parts + 1] = o.place end
+    if o.coords then parts[#parts + 1] = o.coords end
+    if #parts == 0 then
+        return o.kind == "item" and "Starts from an item; which one is not recorded" or "Where it starts is not recorded (no quest database entry)"
+    end
+    return (o.kind == "item" and "Item from: " or "") .. table.concat(parts, " — ")
+end
+
+-------------------------------------------------------------------------------
+-- What has to be done first. Each need is a set of quests of which one must be
+-- completed; all needs must hold. The database's chain leads; the catalogue
+-- adds what only it knows (quests new in Forever).
+-------------------------------------------------------------------------------
+function D:Needs(id)
+    local needs, listed = {}, {}
+    local record = FP.QuestChains:Get(id)
+    if record then
+        if #record.preQuestSingle > 0 then
+            local ids = {}
+            for _, pid in ipairs(record.preQuestSingle) do ids[#ids + 1] = math.abs(pid); listed[math.abs(pid)] = true end
+            needs[#needs + 1] = { ids = ids }
+        end
+        for _, signed in ipairs(record.preQuestGroup) do
+            local pid = math.abs(signed)
+            local ids = { pid }
+            listed[pid] = true
+            local parent = signed > 0 and FP.QuestChains:Get(pid)
+            -- one of two exclusive branches satisfies a step that names the other
+            for _, alt in ipairs(parent and parent.exclusiveTo or {}) do if U.Finite(alt) and alt > 0 then ids[#ids + 1] = alt end end
+            needs[#needs + 1] = { ids = ids }
+        end
+    end
+    -- The database's chain stands when it has one; the catalogue speaks where the
+    -- database is silent (quests new in Forever) and for "keep X in your log".
+    local q, fromDatabase = catalog.quests[id], #needs
+    for _, pre in ipairs(q and q.prerequisites or {}) do
+        if pre.relationship == "required" then
+            local ids = pre.anyOf or (pre.questID and { pre.questID }) or {}
+            local known = false
+            for _, pid in ipairs(ids) do if listed[pid] then known = true end end
+            if not known and (fromDatabase == 0 or pre.state == "active") then
+                needs[#needs + 1] = { ids = ids, active = pre.state == "active", catalogue = pre }
+            end
+        end
+    end
+    return needs
+end
+
+function D:NeedValue(need, ctx)
+    if need.catalogue then return self:Gate(need.catalogue, ctx) end
+    if #need.ids == 0 then return nil end
+    local unknown = false
+    for _, pid in ipairs(need.ids) do
+        local value = ctx:State(pid).completed
+        if value == true then return true end
+        if value == nil then unknown = true end
+    end
+    if unknown then return nil end
+    return false
+end
+
+function D:QuestName(id)
+    local q = catalog.quests[id]
+    if q and q.name then return q.name end
+    local record = FP.QuestChains:Get(id)
+    return record and record.name or ("Quest #" .. id)
+end
+
+-- The quests still to finish before this one, first to last, for this
+-- character. `unknown`: a step the client would not answer for. `dead`: a step
+-- with no branch this character can take.
+function D:Path(id, ctx)
+    local path = { steps = {} }
+    local trail, listed, budget = { [id] = true }, {}, 40
+    local function walk(qid, depth)
+        for _, need in ipairs(self:Needs(qid)) do
+            local value = self:NeedValue(need, ctx)
+            if value == nil then path.unknown = true
+            elseif value == false then
+                local pick, fallback
+                for _, pid in ipairs(need.ids) do
+                    if not self:Barred(pid, ctx.char) then
+                        fallback = fallback or pid
+                        if ctx:State(pid).onQuest == true then pick = pid; break end
+                    end
+                end
+                pick = pick or fallback
+                if not pick then path.dead = true
+                elseif trail[pick] or budget <= 0 or depth >= 20 then path.unknown = true -- a loop in the reference
+                elseif not listed[pick] then
+                    listed[pick], trail[pick], budget = true, true, budget - 1
+                    walk(pick, depth + 1)
+                    trail[pick] = nil
+                    path.steps[#path.steps + 1] = pick
+                    if need.active then path.keep = pick end
+                end
+            end
+        end
+    end
+    walk(id, 1)
+    path.blocked = #path.steps > 0 or path.dead == true
+    return path
+end
+
+-- A later step already taken, or the other branch finished: no longer offered.
+function D:Closed(id, ctx)
+    local record = FP.QuestChains:Get(id)
+    if not record then return nil end
+    local nextID = record.nextQuestInChain
+    if U.Finite(nextID) and nextID > 0 and nextID ~= id then
+        local s = ctx:State(nextID)
+        if s.completed == true or s.onQuest == true then return "the next step, " .. self:QuestName(nextID) .. ", is already " .. (s.completed == true and "done" or "in your log") end
+    end
+    for _, alt in ipairs(record.exclusiveTo) do
+        if U.Finite(alt) and alt > 0 and ctx:State(alt).completed == true then return "you finished the other branch, " .. self:QuestName(alt) end
+    end
+end
+
+function D:MinLevel(id)
+    local q, record = catalog.quests[id], FP.QuestChains:Get(id)
+    local level = q and U.Finite(q.minLevel) and q.minLevel or nil
+    if record and U.Finite(record.requiredLevel) and record.requiredLevel > (level or 0) then level = record.requiredLevel end
+    return level
+end
+
 function D:Evaluate(id, ctx)
     local q, state = catalog.quests[id], ctx:State(id)
     if state.onQuest == true then
         if state.ready == true then return "ready", "Ready to turn in", FP.GREEN end
-        return "active", "In quest log", FP.GREEN
+        return "active", "In your log", FP.GREEN
     end
     if state.completed == true then return "done", "Completed", FP.GREY end
     -- Live availability outranks provisional catalogue restrictions and chains.
-    if ctx.offers[id] then return "offer", "Available on this map", FP.GOLD end
-    local restriction = self:Restriction(q, ctx.char)
+    if ctx.offers[id] then return "offer", "Offered on this map", FP.GOLD end
+    local restriction = self:Barred(id, ctx.char)
     if restriction then return "restricted", restriction, FP.GREY end
     if state.onQuest == nil or state.completed == nil then return "unknown", "Quest state unavailable", FP.GOLD end
-    if U.Finite(q.minLevel) and U.Finite(ctx.char.level) and ctx.char.level < q.minLevel then
-        return "level", "Listed minimum: level " .. q.minLevel, FP.GOLD
+    if self:Closed(id, ctx) then return "closed", "No longer offered", FP.GREY end
+    local level = self:MinLevel(id)
+    if level and U.Finite(ctx.char.level) and ctx.char.level < level then
+        return "level", "Needs level " .. level, FP.GOLD
     end
-    local missing, unknown = false, false
-    for _, pre in ipairs(q.prerequisites or {}) do
-        local gate = self:Gate(pre, ctx)
-        if gate == false then missing = true elseif gate == nil then unknown = true end
-    end
-    if missing then return "prereq", "Check prerequisite", FP.GOLD end
-    if unknown then return "unknown", "Prerequisite unknown", FP.GOLD end
-    if q.followUpOf then return "pickup", "Follow-up: check pickup", FP.GOLD end
-    if q.pickupType == "drop" then return "pickup", "Starts from an item", FP.GOLD end
-    return "pickup", "Missing: check pickup", FP.GOLD
+    local path = self:Path(id, ctx)
+    if #path.steps > 0 then return "prereq", "Chain: " .. plural(#path.steps, "quest") .. " first", FP.GOLD end
+    if path.dead then return "prereq", "Needs a quest you cannot take", FP.GOLD end
+    if path.unknown then return "unknown", "Prerequisite unknown", FP.GOLD end
+    local o = self:Origin(id)
+    if o.inside then return "inside", o.kind == "item" and "Drops inside" or "Pick up inside", FP.GOLD end
+    if o.kind == "item" then return "pickup", "Starts from an item", FP.GOLD end
+    if o.kind == "none" then return "pickup", "Pickup not recorded", FP.GOLD end
+    return "pickup", "Pick up", FP.GOLD
 end
 
 function D:List()
@@ -91,69 +365,171 @@ end
 
 function D:Rows(key, all, ctx)
     ctx = ctx or self:Context()
-    local rows, counts, seen = {}, { active = 0, done = 0, check = 0, hidden = 0 }, {}
+    ctx.key = key
+    local rows, counts, seen = {}, { active = 0, done = 0, check = 0, hidden = 0, by = {} }, {}
     for _, id in ipairs(catalog.dungeons[key] and catalog.dungeons[key].quests or {}) do
         if not seen[id] and catalog.quests[id] then
             seen[id] = true
             local code, label, color = self:Evaluate(id, ctx)
+            counts.by[code] = (counts.by[code] or 0) + 1
             if code == "restricted" and not all then counts.hidden = counts.hidden + 1
             else
                 rows[#rows + 1] = { id = id, quest = catalog.quests[id], code = code, label = label, color = color }
                 if code == "active" or code == "ready" then counts.active = counts.active + 1
                 elseif code == "done" then counts.done = counts.done + 1
-                elseif code ~= "restricted" then counts.check = counts.check + 1 end
+                elseif code ~= "restricted" and code ~= "closed" then counts.check = counts.check + 1 end
             end
         end
     end
-    local order = { offer=1, pickup=2, prereq=3, unknown=4, active=5, ready=6, level=7, done=8, restricted=9 }
+    -- what to do before the run comes first
+    local order = { offer=1, pickup=2, prereq=3, inside=4, ready=5, active=6, level=7, unknown=8, closed=9, done=10, restricted=11 }
     table.sort(rows, function(a,b)
         if order[a.code] ~= order[b.code] then return order[a.code] < order[b.code] end
         if a.quest.name ~= b.quest.name then return a.quest.name < b.quest.name end
         return a.id < b.id
     end)
+    -- kept for the next data pull: did the quest database answer, and what the list came to
+    if FP.db then
+        FP.db.dungeonSources = { t = U.Now(), version = FP.version, key = key, rows = #rows, hidden = counts.hidden,
+            database = API.QuestDatabaseStatus() == true, by = U.Copy(counts.by) }
+    end
     return rows, counts, ctx
 end
 
+-- "4 to pick up first · 5 behind a chain · 1 starts inside · 3 need a higher level"
+function D:CountsText(counts)
+    local bits, by = {}, counts.by or {}
+    local function add(n, text) if (n or 0) > 0 then bits[#bits + 1] = n .. " " .. text end end
+    add((by.offer or 0) + (by.pickup or 0), "to pick up first")
+    add(by.prereq, "behind a quest chain")
+    add(by.inside, (by.inside == 1 and "starts" or "start") .. " inside")
+    add(counts.active, "in your log")
+    add(by.level, (by.level == 1 and "needs" or "need") .. " a higher level")
+    add(by.unknown, "unknown")
+    add(counts.done, "completed")
+    add(by.closed, "no longer offered")
+    add(counts.hidden, "for other classes/factions")
+    return #bits > 0 and table.concat(bits, " · ") or "Nothing listed for this character."
+end
+
+-- The catalogue's own pickup words (used when there is no quest database).
 function D:Pickup(q)
     local p = q.pickup or {}
-    local parts = { p.name or "Giver not recorded" }
-    if p.zone then parts[#parts + 1] = p.zone end
-    if p.subzone then parts[#parts + 1] = p.subzone end
-    if p.coordinates then parts[#parts + 1] = p.coordinates end
+    local parts = { recorded(p.name) and p.name or "Giver not recorded" }
+    if recorded(p.zone) then parts[#parts + 1] = p.zone end
+    if recorded(p.subzone) then parts[#parts + 1] = p.subzone end
+    if recorded(p.coordinates) then parts[#parts + 1] = p.coordinates end
     return table.concat(parts, " - ")
 end
 
-function D:Details(row, ctx)
-    local q = row.quest
-    local lines = { row.color .. row.label .. "|r  |  " .. q.name .. " (#" .. row.id .. ")",
-        "Pickup: " .. self:Pickup(q),
-        "Listed minimum: " .. tostring(q.minLevel or "unknown") .. " | Faction: " .. (q.faction or "not restricted in reference") ..
-        (q.classes and (" | Class: " .. table.concat(q.classes, ", ")) or "") }
-    if q.breadcrumbOnly then lines[#lines + 1] = "Optional lead-in quest." end
-    if q.followUpOf then lines[#lines + 1] = "Continuation of quest #" .. q.followUpOf .. "; may be obtained during or after the run." end
-    if q.pickupType == "drop" then lines[#lines + 1] = "Item-started quest: obtain the starting item yourself." end
-    local visited = {}
-    local function chain(id, depth)
-        if visited[id] or depth > 12 then return end
-        visited[id] = true
-        for _, pre in ipairs(catalog.quests[id] and catalog.quests[id].prerequisites or {}) do
-            local gate = self:Gate(pre, ctx)
-            local mark = pre.relationship ~= "required" and "Optional" or (gate == true and "Done" or (gate == false and "Needed (reference)" or "Unknown"))
-            if pre.state == "active" and gate == true then mark = "In log" end
-            lines[#lines + 1] = mark .. ": " .. (pre.note or ("Quest #" .. tostring(pre.questID or "?")))
-            for _, pid in ipairs(pre.anyOf or (pre.questID and {pre.questID}) or {}) do
-                local parent = catalog.quests[pid]
-                if parent and gate ~= true then
-                    lines[#lines + 1] = "  " .. parent.name .. " (#" .. pid .. "): " .. self:Pickup(parent)
-                    chain(pid, depth + 1)
-                end
-            end
-        end
+-- "Yeh'kinya — Tanaris 67.0, 22.0" / "Essence Font — inside this dungeon"
+function D:ContactText(entry, key)
+    local place = outdoors(entry)
+    if place then return entry.name .. " — " .. place end
+    if entry.dungeon then return entry.name .. " — " .. self:InsideText(entry, key) end
+    return entry.name
+end
+
+function D:TurnInText(id, key)
+    local enders = API.GetQuestEnders(id)
+    table.sort(enders, byName)
+    for _, ender in ipairs(enders) do if outdoors(ender) then return self:ContactText(ender, key) end end
+    return enders[1] and self:ContactText(enders[1], key) or nil
+end
+
+-- The step that opens a chain quest, in a few words.
+function D:NextText(path, ctx)
+    local nextID = path.steps[1]
+    if not nextID then return path.dead and "A step in its chain is for another class or faction" or "A step in its chain could not be read" end
+    local s = ctx:State(nextID)
+    local text
+    if s.onQuest == true then
+        text = "finish " .. self:QuestName(nextID) .. (s.ready == true and " (ready to turn in)" or " (in your log)")
+    else
+        local level = self:MinLevel(nextID)
+        -- a step neither the database nor the bundled list knows: say so, with its number
+        if not catalog.quests[nextID] and not FP.QuestChains:Get(nextID) then return "quest #" .. nextID .. ", which the quest database does not list" end
+        text = self:QuestName(nextID) .. " · " .. self:OriginText(nextID, ctx.key)
+        if not ctx.offers[nextID] and level and U.Finite(ctx.char.level) and ctx.char.level < level then text = text .. " (needs level " .. level .. ")" end
     end
-    chain(row.id, 1)
+    return text
+end
+
+-- The line under a quest's name: the one thing to know about it right now.
+function D:Where(row, ctx)
+    local id, code = row.id, row.code
+    if code == "done" then return "" end
+    if code == "ready" or code == "active" then
+        local turnin = self:TurnInText(id, ctx.key)
+        return turnin and ("Turn in: " .. turnin) or ""
+    end
+    if code == "closed" then return "Because " .. (self:Closed(id, ctx) or "a later step is done") end
+    if code == "prereq" then
+        local path = self:Path(id, ctx)
+        return "Next: " .. self:NextText(path, ctx) .. (#path.steps > 1 and (" · then " .. (#path.steps - 1) .. " more") or "")
+    end
+    if code == "inside" then
+        -- the label already says "inside": name what gives it, and that nothing is owed beforehand
+        local o = self:Origin(id)
+        local area, text = self:Area(ctx.key)
+        if o.kind == "item" then text = o.items[1].name .. ", from " .. names(o.sources, 2, o.more)
+        else text = names(o.givers, 2) end
+        if o.dungeonArea ~= area then text = text .. " (" .. tostring(o.dungeon) .. ")" end
+        return text .. ". Nothing to pick up first."
+    end
+    return self:OriginText(id, ctx.key)
+end
+
+function D:Details(row, ctx)
+    local q, id = row.quest, row.id
+    local key = ctx.key
+    local record = FP.QuestChains:Get(id)
+    local level = self:MinLevel(id)
+    local lines = { row.color .. row.label .. "|r  |  " .. q.name .. " (#" .. id .. ")"
+        .. (U.Finite(q.questLevel) and ("  ·  level " .. q.questLevel .. " quest") or "") .. (level and ("  ·  needs level " .. level) or "") }
+    local o = self:Origin(id)
+    local how = self:OriginText(id, key, true)
+    if o.inside then
+        how = how .. ". " .. (o.kind == "item" and "It drops during the run: nothing to pick up before you go." or "The giver is inside: nothing to pick up before you go.")
+    elseif o.kind == "item" and o.known then how = how .. ". Looting it starts the quest."
+    end
+    lines[#lines + 1] = "How to get it: " .. how
+    if row.code == "closed" then lines[#lines + 1] = "No longer offered: " .. (self:Closed(id, ctx) or "a later step is done") .. "." end
+    local ask = API.GetQuestAskText(id)
+    if ask then lines[#lines + 1] = "What it asks: " .. ask end
+    local turnin = self:TurnInText(id, key)
+    if turnin then lines[#lines + 1] = "Turn in: " .. turnin end
+    -- the chain before it, in the order to do it
+    local path = self:Path(id, ctx)
+    if #path.steps > 0 then
+        lines[#lines + 1] = "Before it (" .. plural(#path.steps, "quest") .. ", in order):"
+        for i, pid in ipairs(path.steps) do
+            local s = ctx:State(pid)
+            local mark = s.onQuest == true and (s.ready == true and "ready to turn in" or "in your log") or (i == 1 and "next" or "after that")
+            local stepLevel = self:MinLevel(pid)
+            lines[#lines + 1] = "  " .. i .. ". " .. self:QuestName(pid) .. " (#" .. pid .. ") — " .. mark .. ": " .. self:OriginText(pid, key)
+                .. ((stepLevel and U.Finite(ctx.char.level) and ctx.char.level < stepLevel) and (" · needs level " .. stepLevel) or "")
+        end
+        if path.keep then lines[#lines + 1] = "  Keep " .. self:QuestName(path.keep) .. " in your log: this quest is offered while it is active." end
+    end
+    if path.dead then lines[#lines + 1] = "A step in its chain is listed for another class or faction; check the giver." end
+    if path.unknown then lines[#lines + 1] = "A step in its chain could not be read from the client; check the giver." end
+    if #path.steps == 0 and not path.dead and not path.unknown then
+        local needs = self:Needs(id)
+        if #needs > 0 then lines[#lines + 1] = "Its chain is done: " .. plural(#needs, "earlier step") .. " completed." end
+    end
+    local nextID = record and record.nextQuestInChain
+    if U.Finite(nextID) and nextID > 0 and nextID ~= id then lines[#lines + 1] = "Leads to: " .. self:QuestName(nextID) .. " (#" .. nextID .. ")" end
+    local limits = {}
+    if q.faction then limits[#limits + 1] = q.faction .. " only" end
+    if q.classes and #q.classes > 0 then limits[#limits + 1] = table.concat(q.classes, ", ") .. " only" end
+    if q.races and #q.races > 0 then limits[#limits + 1] = table.concat(q.races, ", ") .. " only" end
+    if #limits > 0 then lines[#lines + 1] = "Limited to: " .. table.concat(limits, " · ") end
+    if q.breadcrumbOnly then lines[#lines + 1] = "Optional lead-in quest." end
     if q.conflict then lines[#lines + 1] = FP.GOLD .. "Conflicting reports: " .. q.conflict .. "|r" end
-    lines[#lines + 1] = q.classicSourceOnly and "Classic reference: Forever availability unconfirmed." or "Community reference: pickup, level and chain requirements may have changed in Forever."
-    lines[#lines + 1] = "Reference: wowhead.com/forever/quest=" .. row.id
+    lines[#lines + 1] = FP.GREY .. (o.known and "From the installed quest database: where a quest starts, not proof it is offered to you now."
+        or (API.QuestDatabaseStatus() and "Not in the quest database; this is the bundled list, which may be out of date for Forever."
+            or "QuestieDB (Forever) is not enabled: givers, places and chains come from the bundled list only.")) .. "|r"
     return table.concat(lines, "\n\n")
 end
 
@@ -199,17 +575,27 @@ function D:GuideEntrance(key,index)
 end
 function D:GuideQuest(id)
     if not catalog.quests[id] then return false,"Choose a dungeon quest first." end
-    local code=self:Evaluate(id,self:Context())
-    if code=="active" or code=="ready" then
+    local ctx=self:Context()
+    local code=self:Evaluate(id,ctx)
+    local function logStep(questID)
         FP.Pos:Refresh(true)
         for _,step in ipairs(FP.Planner:Build()) do
-            if step.questID==id and step.mapID then
+            if step.questID==questID and step.mapID then
                 return FP.Planner:Go(step)~=nil,"Guiding the selected quest. Follow the quest instructions inside the dungeon."
             end
         end
         return false,"No usable coordinates for this quest step. Follow the quest instructions; interior paths may be unavailable."
     end
-    if code=="offer" or code=="pickup" then return FP.QuestChains:GuidePickup(id) end
+    if code=="active" or code=="ready" then return logStep(id) end
+    if code=="offer" or code=="pickup" or code=="inside" then return FP.QuestChains:GuidePickup(id) end
+    if code=="prereq" then
+        -- the click leads to the step that opens the chain, not to a giver who will refuse
+        local nextID=self:Path(id,ctx).steps[1]
+        if not nextID then return false,"A step in this quest's chain is not available to this character." end
+        if ctx:State(nextID).onQuest==true then return logStep(nextID) end
+        local ok,message=FP.QuestChains:GuidePickup(nextID)
+        return ok,ok and ("Guiding to the next step of the chain: "..self:QuestName(nextID)..". "..message) or message
+    end
     return false,"Check this quest's requirements first. View its chain for prerequisites and pickup details."
 end
 function D:OnEnable()

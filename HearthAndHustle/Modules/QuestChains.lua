@@ -261,6 +261,10 @@ function C:Details(questID,ctx)
 	end
 	if #restrictions>0 then lines[#lines+1]="Other listed restrictions: "..table.concat(restrictions,", ")..". Check the quest giver." end
 	local starts=self:Starters(questID)
+	local givers=0
+	for _,start in ipairs(starts) do if start.kind~="Item" then givers=givers+1 end end
+	-- a quest that only starts from an item: say what the item comes from
+	if givers==0 and #starts>0 then lines[#lines+1]="Pickup: starts from an item. "..FP.Dungeons:OriginText(questID,nil,true);starts={} end
 	for i,start in ipairs(starts) do
 		if i>6 then lines[#lines+1]="More pickup sources are listed in the database.";break end
 		local text="Pickup: "..start.name..(start.kind=="Item" and " (starting item)" or "")
@@ -268,7 +272,7 @@ function C:Details(questID,ctx)
 		if point then text=text..(point.entrance and " — dungeon entrance (giver inside): " or " — ")..API.GetMapName(point.mapID).." "..U.FormatCoords(point.x,point.y) end
 		lines[#lines+1]=text
 	end
-	if #starts==0 then lines[#lines+1]="Pickup source not recorded." end
+	if #starts==0 and givers>0 or #self:Starters(questID)==0 then lines[#lines+1]="Pickup source not recorded." end
 	lines[#lines+1]="Reference chain; completion alone does not guarantee pickup availability. Optional lead-ins are not mandatory prerequisites."
 	if not self.indexed then lines[#lines+1]="Follow-up search is incomplete while the index loads or the database is unavailable." end
 	return lines
@@ -284,11 +288,16 @@ function C:GuidePickup(questID)
 	local best,distance=offer,nil
 	if not best then
 		FP.Pos:Refresh(true)
-		for _,starter in ipairs(self:Starters(questID)) do
-			for _,point in ipairs(starter.points) do
+		local function consider(points)
+			for _,point in ipairs(points or {}) do
 				local d=FP.Pos:DistanceTo(point) or math.huge
 				if (not point.entrance or not API.InInstance()) and d and (not distance or d<distance) then best,distance=point,d end
 			end
+		end
+		for _,starter in ipairs(self:Starters(questID)) do
+			consider(starter.points)
+			-- a starting item is "picked up" where it drops
+			for _,source in ipairs(starter.sources or {}) do consider(source.points) end
 		end
 	end
 	if not best then return false,"No pickup coordinates could be resolved. Check the pickup details." end
