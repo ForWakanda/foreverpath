@@ -637,7 +637,7 @@ function H:BuildPage(key)
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end
-		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"},{"questEventHints","Show quest hints (separate from objective progress)"},{"questContactPins","Show confirmed pickups and known turn-ins"},{"questMapLegend","Show clickable quest legend on world map"},{"questDensePins","Dense world-map markers (350 instead of 150)"}}) do
+		for _,entry in ipairs({{"questWorldPins","Quest source locations on world map"},{"questMinimapPins","Nearby quest sources on minimap"},{"questSelectedOnly","Only show sources for the selected quest"},{"questEventHints","Show quest hints (separate from objective progress)"},{"questContactPins","Show confirmed pickups and known turn-ins"},{"questMapLegend","Show clickable quest legend on world map"},{"questPaths","Draw the route a quest target walks, or the area it roams"},{"questDensePins","Dense world-map markers (350 instead of 150)"}}) do
 			local key,text=entry[1],entry[2]
 			self:Check(p,"display"..key,text,function() return FP.settings[key] end,function(v) FP.settings[key]=v; FP.Panel:ApplyDisplaySettings() end)
 		end

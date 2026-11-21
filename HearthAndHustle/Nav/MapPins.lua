@@ -164,6 +164,94 @@ end
 
 HearthAndHustleMapDataProviderMixin = {}
 
+-------------------------------------------------------------------------------
+-- Routes and roaming areas of quest targets
+-------------------------------------------------------------------------------
+-- Plain lines on the map canvas, under the markers. They are not pins: no
+-- mouse, no restricted call, and the pin level manager is only read. Offsets
+-- follow Blizzard's own pin placement (canvas size times the map fraction).
+local ROUTE_LINES, ROUTE_STRIDE = 600, 150
+local function lineThickness(canvas, pixels)
+	local scale = canvas.GetScale and canvas:GetScale() or 1
+	if not U.Finite(scale) or scale <= 0 then scale = 1 end
+	return math.max(1, math.min(60, pixels / scale))
+end
+function Pins:DrawRoutes(map, mapID)
+	local report = { routes = 0, areas = 0, lines = 0 }
+	local layer = self.routeLayer
+	local canvas = map.GetCanvas and map:GetCanvas()
+	local shapes = {}
+	if canvas and FP.settings.questWorldPins and FP.settings.worldMapPins and FP.settings.questPaths ~= false then
+		shapes = FP.QuestObjectives:Routes(mapID)
+	end
+	if self.routeUnsupported then report.unsupported = true; return report end
+	if #shapes > 0 and not layer then
+		layer = CreateFrame("Frame", nil, canvas)
+		if not layer.CreateLine then self.routeUnsupported, report.unsupported = true, true; layer:Hide(); return report end
+		layer:SetAllPoints(canvas)
+		layer:EnableMouse(false)
+		local levels = map:GetPinFrameLevelsManager()
+		layer:SetFrameLevel(math.max(1, levels:GetFrameLevelStart(questPinLevel) - 1))
+		layer.lines = {}
+		self.routeLayer = layer
+	end
+	if not layer then return report end
+	local width, height = canvas:GetWidth(), canvas:GetHeight()
+	local used = 0
+	if U.Finite(width) and U.Finite(height) and width > 0 and height > 0 then
+		for _, shape in ipairs(shapes) do
+			local r, g, b = FP.QuestObjectives:Style(shape.questID)
+			local route = shape.kind == "route"
+			local points = shape.points
+			local stride = math.max(1, math.ceil((#points - 1) / ROUTE_STRIDE))
+			local from, drawn = points[1], false
+			local i = 1
+			while i < #points and used < ROUTE_LINES do
+				i = math.min(#points, i + stride)
+				local to = points[i]
+				used = used + 1
+				local line = layer.lines[used]
+				if not line then
+					line = layer:CreateLine(nil, "ARTWORK")
+					layer.lines[used] = line
+				end
+				line.pixels = route and 3 or 2
+				line:SetColorTexture(r, g, b, route and .95 or .8)
+				line:SetThickness(lineThickness(canvas, line.pixels))
+				line:SetStartPoint("TOPLEFT", canvas, from.x * width, -from.y * height)
+				line:SetEndPoint("TOPLEFT", canvas, to.x * width, -to.y * height)
+				line:Show()
+				from, drawn = to, true
+			end
+			if drawn then
+				if route then report.routes = report.routes + 1 else report.areas = report.areas + 1 end
+				report.names = report.names or {}
+				if #report.names < 8 then report.names[#report.names + 1] = shape.name .. (route and " (route)" or " (area, " .. tostring(shape.count) .. " places)") end
+			end
+		end
+	end
+	for i = used + 1, #layer.lines do layer.lines[i]:Hide() end
+	layer.used = used
+	report.lines = used
+	layer:SetShown(used > 0)
+	return report
+end
+
+-- Zooming scales the canvas; keep the lines the same width on screen.
+function Pins:ScaleRoutes(map)
+	local layer = self.routeLayer
+	local canvas = layer and map.GetCanvas and map:GetCanvas()
+	if not canvas then return end
+	for i = 1, layer.used or 0 do
+		local line = layer.lines[i]
+		line:SetThickness(lineThickness(canvas, line.pixels or 2))
+	end
+end
+
+function HearthAndHustleMapDataProviderMixin:OnCanvasScaleChanged()
+	FP.pcall("worldmap-routes", Pins.ScaleRoutes, Pins, self:GetMap())
+end
+
 function HearthAndHustleMapDataProviderMixin:RemoveAllData()
 	self:GetMap():RemoveAllPinsByTemplate(PIN_TEMPLATE)
 	self:GetMap():RemoveAllPinsByTemplate("HearthAndHustleObjectivePinTemplate")
@@ -179,6 +267,8 @@ function HearthAndHustleMapDataProviderMixin:RefreshPins(fromOnShow)
 	local mapID = self:GetMap():GetMapID()
 	FP.pcall("worldmap-legend", Pins.UpdateLegend, Pins, self:GetMap(), mapID)
 	local report={at=API.Now(),mapID=mapID,questPins=0,quests={}}
+	local ok,drawn=pcall(Pins.DrawRoutes,Pins,self:GetMap(),mapID)
+	if ok then report.paths=drawn else report.paths={failed=tostring(drawn)};FP:ReportError("worldmap-routes",drawn) end
 	if FP.settings.questWorldPins and FP.settings.worldMapPins then
 		for _,point in ipairs(FP.QuestObjectives:WorldPins(mapID)) do
 			self:GetMap():AcquirePin("HearthAndHustleObjectivePinTemplate",point)
@@ -487,7 +577,8 @@ function Pins:UpdateLegend(map,mapID)
 				GameTooltip:SetOwner(row,"ANCHOR_RIGHT");GameTooltip:AddLine(Q:QuestLabel(row.questID,row.questTitle))
 				GameTooltip:AddLine("Click: focus/unfocus. Right-click: hide/show.",1,1,1,true)
 				GameTooltip:AddLine("Sword: kill · Bag: loot · Gear: interact · Spyglass: event",.8,.8,.8,true)
-				GameTooltip:AddLine("! Pickup · ? Turn-in · White +: shared location",.8,.8,.8,true);GameTooltip:Show()
+				GameTooltip:AddLine("! Pickup · ? Turn-in · White +: shared location",.8,.8,.8,true)
+				GameTooltip:AddLine("Line: the route a target walks · Outline: the area it roams",.8,.8,.8,true);GameTooltip:Show()
 			end)
 			b:SetScript("OnLeave",function(row) if GameTooltip:IsOwned(row) then GameTooltip:Hide() end end)
 			f.rows[i]=b

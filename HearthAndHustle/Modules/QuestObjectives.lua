@@ -163,7 +163,8 @@ function Q:Refresh(force)
 						self.matched = self.matched + 1; coverage.mapped=coverage.mapped+1
 						if ref.kind=="Event" or ref.kind=="Credit" then self.events=self.events+1 end
 						self.groups[#self.groups+1] = {questID=quest.questID, objIndex=i, title=quest.title,
-							text=o.text, name=ref.name, kind=ref.kind, fallback=ref.fallback, points=ref.points, refKey=ref.key, objectiveKey=objectiveKey(o)}
+							text=o.text, name=ref.name, kind=ref.kind, fallback=ref.fallback, points=ref.points, refKey=ref.key, objectiveKey=objectiveKey(o),
+							paths=ref.paths, required=o.numRequired}
 					else self.missing = self.missing + 1; coverage.missing=coverage.missing+1 end
 				end
 			end
@@ -214,6 +215,114 @@ function Q:Refresh(force)
 	FP:Fire("QUEST_LOCATIONS_CHANGED")
 end
 
+-- Where one quest target moves.
+-- A ROUTE is the path the reference itself stores for a creature.
+-- An AREA is drawn only when the quest needs the thing once and every place
+-- the reference has for it belongs to one creature, several places close
+-- together: the outline of those places. It is never a path between them; the
+-- reference does not say in which order, or whether, the creature visits them.
+local AREA_MIN,AREA_SPAN,AREA_PAD=5,.30,.008
+local MOVER={kill=true,drop=true,credit=true}
+local function cross(o,a,b) return (a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x) end
+local function hull(points)
+	local pts={}
+	for _,p in ipairs(points) do pts[#pts+1]={x=p.x,y=p.y} end
+	table.sort(pts,function(a,b) if a.x~=b.x then return a.x<b.x end return a.y<b.y end)
+	local out={}
+	for _,p in ipairs(pts) do
+		while #out>=2 and cross(out[#out-1],out[#out],p)<=0 do out[#out]=nil end
+		out[#out+1]=p
+	end
+	local lower=#out+1
+	for i=#pts-1,1,-1 do
+		local p=pts[i]
+		while #out>=lower and cross(out[#out-1],out[#out],p)<=0 do out[#out]=nil end
+		out[#out+1]=p
+	end
+	out[#out]=nil -- the first point again
+	return out
+end
+function Q:Movement(group)
+	if group.movement then return group.movement end
+	local move={routes={},areas={},byEntity={}}
+	group.movement=move
+	if group.kind~="Npc" and group.kind~="Item" and group.kind~="Credit" then return move end
+	for _,path in ipairs(group.paths or {}) do
+		move.routes[#move.routes+1]=path
+		move.byEntity[path.entityID]=move.byEntity[path.entityID] or {}
+		move.byEntity[path.entityID][path.mapID]="route"
+	end
+	if group.required~=1 then return move end
+	local entity,byMap=nil,{}
+	for _,p in ipairs(group.points) do
+		if p.entrance or not MOVER[p.role] or (entity and p.entityID~=entity) then return move end
+		entity=p.entityID
+		byMap[p.mapID]=byMap[p.mapID] or {}
+		byMap[p.mapID][#byMap[p.mapID]+1]=p
+	end
+	if not entity then return move end
+	local maps={}
+	for mapID in pairs(byMap) do maps[#maps+1]=mapID end
+	table.sort(maps)
+	for _,mapID in ipairs(maps) do
+		local pts=byMap[mapID]
+		if #pts>=AREA_MIN and not (move.byEntity[entity] and move.byEntity[entity][mapID]) then
+			local minX,maxX,minY,maxY=1,0,1,0
+			for _,p in ipairs(pts) do
+				minX,maxX,minY,maxY=math.min(minX,p.x),math.max(maxX,p.x),math.min(minY,p.y),math.max(maxY,p.y)
+			end
+			local ring=maxX-minX<=AREA_SPAN and maxY-minY<=AREA_SPAN and hull(pts) or {}
+			if #ring>=3 then
+				local cx,cy=0,0
+				for _,p in ipairs(ring) do cx,cy=cx+p.x/#ring,cy+p.y/#ring end
+				for _,p in ipairs(ring) do
+					local dx,dy=p.x-cx,p.y-cy
+					local d=math.sqrt(dx*dx+dy*dy)
+					if d>0 then p.x,p.y=math.min(1,math.max(0,p.x+dx/d*AREA_PAD)),math.min(1,math.max(0,p.y+dy/d*AREA_PAD)) end
+				end
+				ring[#ring+1]={x=ring[1].x,y=ring[1].y}
+				move.areas[#move.areas+1]={mapID=mapID,entityID=entity,name=pts[1].name,points=ring,count=#pts}
+				move.byEntity[entity]=move.byEntity[entity] or {}
+				move.byEntity[entity][mapID]="area"
+			end
+		end
+	end
+	return move
+end
+
+-- "route", "area" or nil for one creature of a group on one map.
+function Q:MovementKind(group,entityID,mapID)
+	if FP.settings.questPaths==false then return nil end
+	local maps=self:Movement(group).byEntity[entityID]
+	return maps and maps[mapID] or nil
+end
+
+-- Everything to draw on one map: one shape per creature and quest.
+function Q:Routes(mapID,all)
+	local out,seen={},{}
+	if FP.settings.questPaths==false then return out end
+	for _,g in ipairs(self:VisibleGroups(all)) do
+		local move=self:Movement(g)
+		for kind,list in pairs({route=move.routes,area=move.areas}) do
+			for i,shape in ipairs(list) do
+				local first=shape.points[1]
+				local key=g.questID..":"..kind..":"..shape.entityID..":"..first.x..":"..first.y..":"..#shape.points
+				if shape.mapID==mapID and not seen[key] then
+					seen[key]=true
+					out[#out+1]={kind=kind,questID=g.questID,name=shape.name,entityID=shape.entityID,points=shape.points,count=shape.count,order=i}
+				end
+			end
+		end
+	end
+	table.sort(out,function(a,b)
+		if a.questID~=b.questID then return a.questID<b.questID end
+		if a.kind~=b.kind then return a.kind>b.kind end
+		if a.entityID~=b.entityID then return a.entityID<b.entityID end
+		return a.order<b.order
+	end)
+	return out
+end
+
 function Q:VisibleGroups(all)
 	local selected = self.focusedQuest or (FP.settings.questSelectedOnly and API.GetSelectedQuest())
 	local out = {}
@@ -235,16 +344,28 @@ function Q:Summary()
 end
 
 function Q:Nearest(questID, index)
-	local best, distance
+	local best, distance, owner
 	for _, group in ipairs(self.groups) do
 		if group.kind~="Hint" and group.kind~="Area" and group.questID == questID and group.objIndex == index then
 			for _, p in ipairs(group.points) do
 				local d = FP.Pos:DistanceTo(p) or math.huge
-				if (not p.entrance or not API.InInstance()) and d and (not distance or d < distance) then best, distance = p, d end
+				if (not p.entrance or not API.InInstance()) and d and (not distance or d < distance) then best, distance, owner = p, d, group end
 			end
+			-- A creature on a route passes every point of it: the nearest stretch
+			-- of the line is as good a place to wait as its spawn point.
+			if FP.settings.questPaths~=false then for _,path in ipairs(group.paths or {}) do
+				if not path.guide then
+					path.guide={}
+					for i,v in ipairs(path.points) do path.guide[i]={mapID=path.mapID,x=v.x,y=v.y,name=path.name,entityID=path.entityID,role="path"} end
+				end
+				for _,p in ipairs(path.guide) do
+					local d = FP.Pos:DistanceTo(p)
+					if d and (not distance or d < distance) then best, distance, owner = p, d, group end
+				end
+			end end
 		end
 	end
-	return best
+	return best, best and owner and (best.role=="path" and "route" or self:MovementKind(owner,best.entityID,best.mapID)) or nil
 end
 
 function Q:AttentionQuest()
@@ -340,6 +461,9 @@ function Q:Guide(pin)
 	elseif g.kind=="Event" then note="Event completion area; follow the quest instructions. Arrival alone does not complete an event or escort."
 	elseif g.kind=="Credit" then note="Possible quest-credit targets; follow the quest instructions for the required action."
 	elseif g.kind=="Hint" then note="Quest-level hint; individual objective progress is not tracked for this marker." end
+	local moving=not p.entrance and self:MovementKind(g,p.entityID,p.mapID)
+	if moving=="route" then note=p.name.." walks the route drawn on the map and can be anywhere along it. This is its starting point."
+	elseif moving=="area" then note=p.name.." moves around inside the area outlined on the map; this is one of the places it was seen." end
 	if p.entrance then note="Outdoor entrance to "..p.dungeonName.."; continue inside following the quest instructions. Interior paths are not mapped." end
 	FP.Waypoints:RemoveBySource("quest-location")
 	local title=g.kind=="Event" and ("Event: "..g.name) or ((g.kind=="Hint" and "Hint: " or "")..p.name.." — "..g.name)
@@ -360,6 +484,9 @@ function Q:Tooltip(pin, owner)
 		if p.entrance then label="Dungeon entrance: "..p.dungeonName end
 		GameTooltip:AddLine((label and (label..": ") or "")..p.name..(p.role=="vendor" and " (vendor)" or ""),1,1,1)
 		if p.entrance then GameTooltip:AddLine("Outdoor approach; the quest target is inside. Interior paths are not mapped.",.7,.8,1,true) end
+		local moving=not p.entrance and self:MovementKind(g,p.entityID,(p.original or p).mapID)
+		if moving=="route" then GameTooltip:AddLine("Walks the route drawn on the map; it can be anywhere along the line.",.6,1,.6,true)
+		elseif moving=="area" then GameTooltip:AddLine("Moves around inside the outlined area; the markers are places it was seen.",.6,1,.6,true) end
 		if g.kind=="Hint" then GameTooltip:AddLine("Not tied to individual progress; remains until the quest is complete.",.7,.8,1,true)
 		elseif g.kind=="Event" then GameTooltip:AddLine("Follow the quest instructions; this is not an escort route or proof of completion.",.7,.8,1,true) end
 		GameTooltip:AddLine(self:QuestLabel(g.questID,g.title) .. " — " .. tostring(g.text), .8,.8,.8,true)
@@ -377,7 +504,7 @@ function Q:WorldPins(mapID,all)
 	local grid,limit=FP.settings.questDensePins and 125 or 60,FP.settings.questDensePins and 350 or 150
 	local selected = API.GetSelectedQuest()
 	local attention=self:AttentionQuest()
-	local cacheKey = tostring(mapID)..":"..tostring(FP.settings.questSelectedOnly)..":"..tostring(selected)..":"..tostring(FP.settings.questEventHints)..":"..tostring(self.focusedQuest)..":"..tostring(FP.settings.questContactPins)..":"..tostring(all)..":"..tostring(FP.settings.questDensePins)..":"..tostring(attention)
+	local cacheKey = tostring(mapID)..":"..tostring(FP.settings.questSelectedOnly)..":"..tostring(selected)..":"..tostring(FP.settings.questEventHints)..":"..tostring(self.focusedQuest)..":"..tostring(FP.settings.questContactPins)..":"..tostring(all)..":"..tostring(FP.settings.questDensePins)..":"..tostring(attention)..":"..tostring(FP.settings.questPaths)
 	self.worldCache = self.worldCache or {}
 	if self.worldCache[cacheKey] then return self.worldCache[cacheKey] end
 	local queues = {}
@@ -418,14 +545,23 @@ function Q:WorldPins(mapID,all)
 		end
 		index = index+1
 	end
-	local labels={}
-	for _,pin in ipairs(out) do for _,e in ipairs(pin.entries) do if e.group.questID==attention then
-		pin.attention=attention
-		local key=tostring(e.group.refKey)
-		local distance=FP.Pos:DistanceTo(e.point) or math.huge
-		if not labels[key] or distance<labels[key].distance then labels[key]={pin=pin,name=e.group.name,distance=distance} end
-	end end end
-	for _,entry in pairs(labels) do entry.pin.label=entry.pin.label and (entry.pin.label.." / "..entry.name) or entry.name end
+	-- One label per source: the quest in focus, and any target that moves (its
+	-- name says which creature the line or outline belongs to).
+	local labels,order={},{}
+	for _,pin in ipairs(out) do for _,e in ipairs(pin.entries) do
+		local moving=self:MovementKind(e.group,e.point.entityID,(e.point.original or e.point).mapID)
+		if e.group.questID==attention then pin.attention=attention end
+		if moving or e.group.questID==attention then
+			local key=e.group.questID..":"..tostring(e.group.refKey)..":"..(moving and e.point.entityID or "")
+			local distance=FP.Pos:DistanceTo(e.point) or math.huge
+			if not labels[key] then order[#order+1]=key end
+			if not labels[key] or distance<labels[key].distance then
+				labels[key]={pin=pin,distance=distance,name=moving=="route" and (e.point.name..": walks the line") or moving=="area" and (e.point.name..": roams this area") or e.group.name}
+			end
+		end
+	end end
+	table.sort(order)
+	for _,key in ipairs(order) do local entry=labels[key]; entry.pin.label=entry.pin.label and (entry.pin.label.." / "..entry.name) or entry.name end
 	self.worldCache[cacheKey] = out
 	return out
 end

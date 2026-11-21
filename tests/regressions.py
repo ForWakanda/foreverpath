@@ -3418,6 +3418,8 @@ from dungeon_next import cases as dungeon_next_cases
 CASES.update(dungeon_next_cases(HUB))
 from dungeon_sources import cases as dungeon_sources_cases
 CASES.update(dungeon_sources_cases(HUB))
+from mob_paths import cases as mob_paths_cases
+CASES.update(mob_paths_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():
@@ -4073,6 +4075,92 @@ assert(FP.cdb.nextId==901 and active() and active().title=="Legacy waypoint" and
         print("  " + problem)
     failed += 1 if problems else 0
 
+# The quest database updater, on a small archive shaped like the real one. The pinned
+# checksum is swapped for the fixture's; everything else is the tool as shipped.
+import hashlib, importlib.util, io, zipfile
+with tempfile.TemporaryDirectory(prefix="foreverpath-questiedb-") as tmp:
+    problems = []
+    spec = importlib.util.spec_from_file_location("install_questiedb", "tools/install-questiedb.py")
+    tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as bundle:
+        bundle.writestr("QuestieDB/QuestieDB_Forever.toc", "## Interface: 16001\n## Version: %s\n## X-Flavor: Forever\nsrc\\api.lua\n" % tool.VERSION)
+        bundle.writestr("QuestieDB/src/api.lua", "-- new\n")
+    archive = Path(tmp) / "fixture.zip"; archive.write_bytes(buffer.getvalue())
+    tool.SHA256 = hashlib.sha256(buffer.getvalue()).hexdigest()
+    def addons(name, old=True):
+        folder = Path(tmp) / name; (folder / "Other").mkdir(parents=True)
+        if old:
+            (folder / "QuestieDB/src").mkdir(parents=True)
+            for toc in ("QuestieDB_Forever.toc", "QuestieDB_Camelot.toc"):
+                (folder / "QuestieDB" / toc).write_text("## Interface: 16001\n## Version: 1.0.13\nsrc\\api.lua\nsrc\\gone.lua\n")
+            (folder / "QuestieDB/src/api.lua").write_text("-- old\n"); (folder / "QuestieDB/src/gone.lua").write_text("-- removed upstream\n")
+        return folder
+    def attempt(*args, **kwargs):
+        try:
+            return tool.install(*args, **kwargs), None
+        except ValueError as problem:
+            return None, str(problem)
+    def tree(folder):
+        return {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()}
+    quiet = io.StringIO()
+    import contextlib
+    with contextlib.redirect_stdout(quiet):
+        # a different installed version is preserved unless an update is asked for, with a backup, game closed
+        folder = addons("kept"); before = tree(folder)
+        for kwargs, why in (({}, "without --update"), ({"update": True}, "without a backup folder")):
+            outcome, problem = attempt(folder, archive, process_check=False, **kwargs)
+            if outcome or tree(folder) != before:
+                problems.append("an existing installation was changed " + why)
+        if "1.0.13" not in (attempt(folder, archive, process_check=False)[1] or ""):
+            problems.append("the refusal does not name the installed version")
+        tool.game_running = lambda: True
+        outcome, problem = attempt(folder, archive, update=True, backup=Path(tmp) / "b-running")
+        if outcome or tree(folder) != before or (Path(tmp) / "b-running").exists():
+            problems.append("updated under a running game")
+        tool.game_running = lambda: None
+        if attempt(folder, archive, update=True, backup=Path(tmp) / "b-unknown")[0] or tree(folder) != before:
+            problems.append("updated without knowing whether the game runs")
+        (Path(tmp) / "b-taken/QuestieDB").mkdir(parents=True)
+        tool.game_running = lambda: False
+        if attempt(folder, archive, update=True, backup=Path(tmp) / "b-taken")[0] or tree(folder) != before:
+            problems.append("wrote into a backup folder that already holds one")
+        # the update itself
+        outcome, problem = attempt(folder, archive, update=True, backup=Path(tmp) / "backup")
+        now = tree(folder)
+        if outcome != "installed":
+            problems.append("update failed: " + str(problem))
+        else:
+            if now.get("QuestieDB/src/api.lua") != b"-- new\n" or "QuestieDB/src/gone.lua" in now:
+                problems.append("old files survived the update")
+            if now.get("QuestieDB/QuestieDB_Camelot.toc") != now.get("QuestieDB/QuestieDB_Forever.toc") or tool.VERSION.encode() not in now["QuestieDB/QuestieDB_Forever.toc"]:
+                problems.append("the second TOC name is not a byte-identical copy")
+            if {k: v for k, v in tree(Path(tmp) / "backup").items()} != {k: v for k, v in before.items() if k.startswith("QuestieDB/")}:
+                problems.append("the backup is not the replaced folder")
+            if [p.name for p in folder.iterdir() if p.name.startswith(".fp-")] or not (folder / "Other").is_dir():
+                problems.append("staging folders were left in AddOns, or a neighbour was touched")
+            if attempt(folder, archive)[0] != "current" or tree(folder) != now:
+                problems.append("a second run is not a clean no-op")
+        # fresh install, wrong checksum, hostile archive
+        fresh = addons("fresh", old=False)
+        if attempt(fresh, archive)[0] != "installed" or "QuestieDB/QuestieDB_Camelot.toc" not in tree(fresh):
+            problems.append("fresh install failed")
+        pinned = tool.SHA256; tool.SHA256 = "0" * 64
+        empty = addons("checksum", old=False)
+        if attempt(empty, archive)[0] or (empty / "QuestieDB").exists():
+            problems.append("installed an archive with the wrong checksum")
+        hostile = io.BytesIO()
+        with zipfile.ZipFile(hostile, "w") as bundle:
+            bundle.writestr("QuestieDB/QuestieDB_Forever.toc", "x"); bundle.writestr("../escape.lua", "x")
+        (Path(tmp) / "hostile.zip").write_bytes(hostile.getvalue()); tool.SHA256 = hashlib.sha256(hostile.getvalue()).hexdigest()
+        if attempt(empty, Path(tmp) / "hostile.zip")[0] or (Path(tmp) / "escape.lua").exists() or (empty / "QuestieDB").exists():
+            problems.append("an archive path outside QuestieDB/ was accepted")
+        tool.SHA256 = pinned
+    print(("FAIL " if problems else "PASS ") + "questiedb_update_tool_keeps_a_backup_and_refuses_under_a_running_game")
+    for problem in problems:
+        print("  " + problem)
+    failed += 1 if problems else 0
+
 # Corrupt an actual XML file in an ephemeral copy; never change the real checkout.
 with tempfile.TemporaryDirectory(prefix="foreverpath-gate-review-") as tmp:
     for name in ("HearthAndHustle", "HearthAndHustle_GearData", "tests", "tools"):
@@ -4115,5 +4203,5 @@ for scenario in ("missing_toc_file", "compiler_failure", "deploy_bypass"):
         if not passed:
             failed += 1
 
-print(f"{failed} failed / {len(CASES) + 13 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + len(REVIEW_FIX_CASES) + len(nearby_retired_cases()) + 1} preflight regressions")
+print(f"{failed} failed / {len(CASES) + 14 + len(RENAME_CASES) + len(BAR_CASES) + len(SPARKLE_CASES) + len(ENEMY_CASES) + len(REVIEW_FIX_CASES) + len(nearby_retired_cases()) + 1} preflight regressions")
 raise SystemExit(1 if failed else 0)

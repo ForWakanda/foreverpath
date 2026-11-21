@@ -133,8 +133,8 @@ function P:ResolveObjective(questID, i)
 		local cm, cx, cy = centroidOnMap(pts)
 		if cm then return cm, cx, cy, "mobs" end
 	end
-	local point = FP.QuestObjectives:Nearest(questID, i)
-	if point then return point.mapID, point.x, point.y, (point.entrance and ("dungeon entrance: "..point.dungeonName) or ((point.role=="event" and "event completion area: " or "known source: ") .. point.name)), point.entrance end
+	local point, moving = FP.QuestObjectives:Nearest(questID, i)
+	if point then return point.mapID, point.x, point.y, (point.entrance and ("dungeon entrance: "..point.dungeonName) or ((point.role=="event" and "event completion area: " or moving=="route" and "patrol route: " or moving=="area" and "roaming area: " or "known source: ") .. point.name)), point.entrance end
 	if #API.GetQuestObjectives(questID)==0 then return self:ResolveTurnIn(questID) end
 	return nil
 end

@@ -36,6 +36,7 @@ FP.defaults = {
 		questContactPins = true,
 		questMapLegend = true,
 		questDensePins = false,
+		questPaths = true,           -- world map: the route a quest target walks, or the outline of the area it roams
 		arrow = { shown = true, locked = false, scale = 1.0, flip = false, x = 0, y = 180, point = "CENTER" },
 		panel = { shown = true, locked = false, scale = 1.0, x = -20, y = -160, point = "TOPRIGHT", maxSteps = 10 },
 		hub = { point = "CENTER", x = 0, y = 0 },

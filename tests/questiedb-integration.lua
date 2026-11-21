@@ -1,6 +1,8 @@
 -- Optional offline integration against the actual packaged provider. Run from
 -- a QuestieDB source checkout (its emulator), passing this repo and an unpacked
--- QuestieDB 1.0.13 Forever addon directory. No game/client files are written.
+-- QuestieDB Forever addon directory (1.0.13 or 1.1.3; check out the matching tag
+-- of the source for its emulator). Record counts are floors from 1.0.13: later
+-- releases add quests. No game/client files are written.
 local repo, root = assert(arg[1], "Hearth & Hustle repo path"), assert(arg[2], "unpacked QuestieDB path")
 local em = dofile("emulator/metadata.lua")
 dofile("emulator/client.lua").install({expansion="Forever",faction="Horde",classFile="SHAMAN",classId=7,raceName="Orc",raceFile="Orc",raceId=2,level=38})
@@ -65,7 +67,7 @@ H:Open("chains")
 assert(C.loading and C.scanned==40)
 local batches=0
 while C.loading do M.RunTimers(.03);batches=batches+1;assert(batches<200,"chain index did not finish")end
-assert(C.indexed and #C.searchRows==5233)
+assert(C.indexed and #C.searchRows>=5233)
 local q=C:Get(1322)
 assert(q.name=="The Black Shield" and q.preQuestSingle[1]==1321)
 assert(C:Get(1321).preQuestSingle[1]==1251)
@@ -199,7 +201,7 @@ for _,o in ipairs(corpus) do
  if ref and #ref.points>0 then matched=matched+1 end
  total=total+1
 end
-assert(total==516 and matched==227,string.format("recorded coverage regressed: %d/%d",matched,total))
+assert(total==516 and matched>=227,string.format("recorded coverage regressed: %d/%d",matched,total))
 print("PASS recorded client objective corpus:",matched,total)
 
 -- New Forever quest ID absent from provider, but its exact unique objective
@@ -211,7 +213,8 @@ M.AddQuest(skin);Q:Refresh(true)
 for i=1,1000 do M.RunTimers(.02); if Q.matched==1 then break end end
 assert(Q.matched==1 and Q.missing==0,Q:Summary())
 local raptor=Q.groups[1]
-assert(raptor.fallback and raptor.name=="Intact Raptor Hide" and #raptor.points==30)
+-- 1.0.13 does not know the quest (matched by the item's name); 1.1.x does.
+assert(raptor.fallback==(db.Quest.Get(98192,"name")==nil or nil) and raptor.name=="Intact Raptor Hide" and #raptor.points==30)
 local creatures={};for _,p in ipairs(raptor.points) do
  assert(p.mapID==1445);creatures[p.entityID]=p.name
 end
@@ -225,3 +228,26 @@ skin.objectives[1].finished=true;Q:Refresh(true)
 assert(#Q:WorldPins(1445)==0,"completed item sources must disappear")
 assert(#FP.db.errors==0,"new quest mapping stored errors")
 print("PASS new Forever quest 98192: exact Item279601 -> Bloodfen Razormaw/Lashtail, 30 Dustwallow points, map/minimap/legend and completion")
+
+-- Routes and roaming areas (v0.30.0), on the provider's own records.
+-- Old Murk-Eye walks a stored route; Zarrat Wormwing (1.1.x) has only the many
+-- places it was seen, and the quest needs its drop once.
+M.quests={};M.complete={};Q.focusedQuest=nil
+M.AddQuest({questID=104,title="The Coastal Menace",objectives={{text="0/1 Scale of Old Murk-Eye",type="item",finished=false,numRequired=1,numFulfilled=0}}})
+M.mapID=1436;M.px=.5;M.py=.5;FP.Pos:Refresh(true);Q:Refresh(true)
+local murk=Q.groups[1];assert(murk and #murk.points==1 and #murk.paths==1 and murk.paths[1].name=="Old Murk-Eye" and #murk.paths[1].points==50)
+WorldMapFrame:Show();WorldMapFrame.mapID=nil;WorldMapFrame:SetMapID(1436);FP.Pins.provider:RefreshAllData()
+local drawn=FP.db.questLocations.world.paths;assert(drawn.routes==1 and drawn.areas==0 and drawn.lines==49,drawn.lines)
+local spot,moving=Q:Nearest(104,1);assert(spot.role=="path" and moving=="route")
+print("PASS packaged route: Old Murk-Eye, 50 points, 49 lines on Westfall; the arrow takes the nearest stretch")
+if db.Quest.Get(91883,"name") then
+ M.quests={}
+ M.AddQuest({questID=91883,title="Spear of the Skylord",objectives={{text="0/1 Omnuron's Spear",type="item",finished=false,numRequired=1,numFulfilled=0}}})
+ M.mapID=2482;M.px=.6;M.py=.6;FP.Pos:Refresh(true);Q:Refresh(true)
+ local spear=Q.groups[1];assert(Q.matched==1 and spear.name=="Omnuron's Spear" and #spear.points>=30 and #spear.paths==0)
+ local area=Q:Movement(spear).areas[1];assert(area and area.name=="Zarrat Wormwing" and area.count==#spear.points)
+ WorldMapFrame.mapID=nil;WorldMapFrame:SetMapID(2482);FP.Pins.provider:RefreshAllData()
+ drawn=FP.db.questLocations.world.paths;assert(drawn.areas==1 and drawn.routes==0 and drawn.lines==#area.points-1)
+ print("PASS packaged roaming area: Spear of the Skylord -> Zarrat Wormwing,",area.count,"places,",drawn.lines,"outline lines on Mount Hyjal")
+else print("SKIP roaming area: this provider does not know quest 91883 (QuestieDB older than 1.1)") end
+assert(#FP.db.errors==0,"route drawing stored errors")
