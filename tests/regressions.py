@@ -3418,6 +3418,8 @@ from dungeon_next import cases as dungeon_next_cases
 CASES.update(dungeon_next_cases(HUB))
 from dungeon_sources import cases as dungeon_sources_cases
 CASES.update(dungeon_sources_cases(HUB))
+from mob_paths import cases as mob_paths_cases
+CASES.update(mob_paths_cases(HUB))
 
 failed = 0
 for name, body in CASES.items():

@@ -80,6 +80,11 @@ function Frame:SetAlpha(a) self._alpha = a end
 function Frame:SetPassThroughButtons(...) self._passthrough = {...} end
 function Frame:CreateTexture() return M.NewFrame("Texture") end
 function Frame:CreateFontString() return M.NewFrame("FontString") end
+function Frame:CreateLine(name,layer) local line=M.NewFrame("Line");line._owner,line._drawLayer=self,layer;self._lines=self._lines or {};table.insert(self._lines,line);return line end
+function Frame:SetColorTexture(r,g,b,a) self._color={r,g,b,a} end
+function Frame:SetThickness(t) self._thickness=t end
+function Frame:SetStartPoint(point,rel,x,y) self._start={point,rel,x or 0,y or 0} end
+function Frame:SetEndPoint(point,rel,x,y) self._finish={point,rel,x or 0,y or 0} end
 function Frame:HighlightText() end
 function Frame:SetBackdrop() end
 function Frame:SetAttribute(k, v) self._attrs = self._attrs or {}; self._attrs[k] = v end
@@ -205,6 +210,10 @@ WorldMapFrame._providers = {}
 WorldMapFrame._pins = {}
 WorldMapFrame.AddDataProvider = function(self, p) p:OnAdded(self); table.insert(self._providers, p) end
 WorldMapFrame.GetMapID = function(self) return self.mapID or M.mapID end
+-- The scrolling canvas pins and overlays are parented to (Blizzard: ScrollContainer.Child).
+WorldMapFrame.ScrollContainer={Child=M.NewFrame("Frame",nil,WorldMapFrame)}
+WorldMapFrame.ScrollContainer.Child:SetSize(4000,2400);WorldMapFrame.ScrollContainer.Child:SetScale(.25)
+WorldMapFrame.GetCanvas=function(self) return self.ScrollContainer.Child end
 -- Relative order from Forever WorldMapMixin:OnLoad (build 70888). Terrain is
 -- drawn by pins too: DEFAULT is not a safe level for visible addon markers.
 local levels={definitions={}}

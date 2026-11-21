@@ -25,6 +25,19 @@ For Shaman, Priest, Druid and Paladin. `/hh` → **Healing**, or `/hh heal`.
 - **Between-pull check.** Out of combat, in a five-player party, with your gear role set to Healing: who is dead, offline, out of heal range or still fighting, plus your drinks, your Ankh (Shaman), your weapon imbue, and whether you are in the spec you marked as your healing spec. It shows on the HUD and on the Healing page; inside a dungeon it also says when everyone is ready.
 - **What it cannot do.** Forever hides health, mana, debuffs, threat and cooldowns from addons. Nothing here warns about them and nothing runs in combat. The game's own raid-style party frames and click casting cover that part.
 
+## Where a quest target walks (v0.30.0)
+
+Some quest targets never stand still: a named creature on patrol, or one that wanders a hillside. The world map now shows where they move, in the quest's own colour.
+
+- **A line** is the route the creature walks, as QuestieDB stores it (Old Murk-Eye along the Westfall coast, Mor'Ladim around Raven Hill, the Defias Messenger on his road). It can be anywhere along the line. The arrow leads to the nearest stretch of the route, not to a spawn point on the far side of it.
+- **An outline** is drawn when the quest needs one thing from one creature and the database has many places for it close together, with no route (Zarrat Wormwing for *Spear of the Skylord* on Mount Hyjal). It marks the area those places cover. It is not a path: the database does not say in which order the creature visits them.
+- The marker nearest to you carries the name: `Old Murk-Eye: walks the line` or `Zarrat Wormwing: roams this area`. The tooltip and the arrow say the same.
+- Ordinary targets are unchanged: "kill 10" of something common gets its markers and no outline.
+
+**Display → Draw the route a quest target walks, or the area it roams** switches it off. This is reference data, not a live scan: nothing here sees the creature, and a stealthed one stays stealthed.
+
+Routes and many newer quests need a current **QuestieDB**: this release is tested with 1.1.3, and 1.0.13 does not know *Spear of the Skylord* at all. `python3 tools/install-questiedb.py --update --backup <folder>` replaces an older copy with the game closed and keeps the old folder.
+
 ## Dungeon quests: where each one starts (v0.29.0)
 
 The dungeon checklist (`/hh dungeon [name]`) and the itinerary now answer "what do I pick up before I go" without a web search. Each quest says where it starts, from the installed QuestieDB (Forever):
@@ -307,7 +320,7 @@ Ordinary quest progress updates the view automatically. Browsing never changes y
 
 Hearth & Hustle can now show **known creature and object locations for unfinished quest objectives** on the world map and nearby sources on the minimap, including item drops, container sources, and vendors. Hover a small orange marker for the quest, progress, and source; click it to guide there. Completed objectives disappear automatically. Display settings let you hide either layer or show only the client-selected quest. Navigation shows coverage and database status.
 
-This feature reads the standalone [QuestieDB Forever addon](https://github.com/Questie/QuestieDB/releases/tag/v1.0.13), version 1.0.13 tested. **Questie's interface is not required.** Install its `QuestieDB` folder beside `HearthAndHustle`, restart WoW, and enable both. On this development machine, `python3 tools/install-questiedb.py` installs the checksum-pinned, unmodified data addon and preserves any different existing installation. Hearth & Hustle's other tools continue working without it; source locations will report that the database is missing.
+This feature reads the standalone [QuestieDB Forever addon](https://github.com/Questie/QuestieDB/releases/tag/v1.1.3), versions 1.0.13 and 1.1.3 tested (1.1.3 knows about 750 more quests). **Questie's interface is not required.** Install its `QuestieDB` folder beside `HearthAndHustle`, restart WoW, and enable both. On this development machine, `python3 tools/install-questiedb.py` installs the checksum-pinned, unmodified data addon and preserves any different existing installation. Hearth & Hustle's other tools continue working without it; source locations will report that the database is missing.
 
 These are possible spawn/source locations, not live tracking of stealthed enemies or guaranteed drops. Objective text is matched to the live quest log rather than assuming database row order. Unmatched text, unsupported event/kill-credit/spell objectives, and dungeon floors without usable entrance data stay unmapped. Outdoor markers are grouped for readability (350 world-map / 40 nearby minimap frames); the nearest-source fallback uses the full matched point list. Live Blizzard directions and recorded areas remain preferred for automatic guidance. QuestieDB's Forever data includes converted coordinates and corrections, but does not cover every new quest.
 

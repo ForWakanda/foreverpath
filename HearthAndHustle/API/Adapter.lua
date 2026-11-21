@@ -474,6 +474,48 @@ local function referencePoints(db,maps,spawns,name,id,role)
 	return out
 end
 
+-- The route a creature walks, as the reference stores it: per zone a list of
+-- paths, each an ordered list of {x,y}. Outdoor zone maps only. A vertex that
+-- is missing or off the map ends the stroke, so no line is drawn across a gap.
+local PATH_VERTICES,PATH_STROKES=400,24
+local function referencePaths(db,maps,waypoints,name,id)
+	local out={}
+	if type(waypoints)~="table" then return out end
+	local zones=0
+	for area,paths in pairs(waypoints) do
+		zones=zones+1; if zones>64 then break end
+		local mapID=not referenceDungeon(db,area) and maps[area]
+		local info=mapID and API.GetMapInfo(mapID)
+		if info and (info.mapType==3 or info.mapType==2) and type(paths)=="table" then
+			for i,path in ipairs(paths) do
+				if i>64 then break end
+				local stroke
+				local function finish()
+					if stroke and #stroke.points>=2 and #out<PATH_STROKES then out[#out+1]=stroke end
+					stroke=nil
+				end
+				if type(path)=="table" then for j,xy in ipairs(path) do
+					if j>PATH_VERTICES then break end
+					local x,y=type(xy)=="table" and xy[1],type(xy)=="table" and xy[2]
+					if U.Finite(x) and U.Finite(y) and U.ValidMapPoint(mapID,x/100,y/100) then
+						stroke=stroke or {mapID=mapID,entityID=id,name=name,points={}}
+						stroke.points[#stroke.points+1]={x=x/100,y=y/100}
+					else finish() end
+				end end
+				finish()
+			end
+		end
+	end
+	table.sort(out,function(a,b)
+		if a.mapID~=b.mapID then return a.mapID<b.mapID end
+		local p,q=a.points[1],b.points[1]
+		if p.x~=q.x then return p.x<q.x end
+		if p.y~=q.y then return p.y<q.y end
+		return #a.points<#b.points
+	end)
+	return out
+end
+
 local function buildQuestReference(questID, entityKind, entityID)
 	if not API.QuestDatabaseStatus() then return nil end
 	local ok, result = pcall(function()
@@ -496,7 +538,17 @@ local function buildQuestReference(questID, entityKind, entityID)
 		local function source(group,kind,id,role)
 			if not validID(id) then return end
 			local name=get(kind,id,"name")
-			if type(name)=="string" then coordinates(group,get(kind,id,"spawns"),name,id,role) end
+			if type(name)~="string" then return end
+			coordinates(group,get(kind,id,"spawns"),name,id,role)
+			-- A creature that walks a route is not at its spawn point for long.
+			group.paths,group.walkers=group.paths or {},group.walkers or {}
+			if kind=="Npc" and not group.walkers[id] then
+				group.walkers[id]=true
+				for _,path in ipairs(referencePaths(db,maps,get("Npc",id,"waypoints"),name,id)) do
+					if #group.paths>=PATH_STROKES then break end
+					group.paths[#group.paths+1]=path
+				end
+			end
 		end
 		local function itemSources(group,id,visited,depth)
 			if not validID(id) or visited[id] or depth>3 then return end

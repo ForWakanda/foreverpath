@@ -138,7 +138,11 @@ function Arrow:OnUpdate(elapsed)
 		self.title:SetText(U.Truncate(wp.title, 40))
 		self.tex:SetRotation(0)
 		self.tex:SetVertexColor(0.2, 1, 0.2)
-		self.dist:SetText(wp.kind == "pickup" and "Talk to the quest giver here" or (wp.kind == "turnin" and "Turn in here" or "Objective area — search nearby"))
+		local how = type(wp.how) == "string" and wp.how or ""
+		local objective = how:find("^patrol route: ") and "On its route — it walks the line on your map"
+			or how:find("^roaming area: ") and "It roams here — see the outline on your map"
+			or "Objective area — search nearby"
+		self.dist:SetText(wp.kind == "pickup" and "Talk to the quest giver here" or (wp.kind == "turnin" and "Turn in here" or objective))
 		return
 	end
 	local pos = FP.Pos.cache
