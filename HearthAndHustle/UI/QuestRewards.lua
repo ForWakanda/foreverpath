@@ -52,7 +52,9 @@ function P:Build(H,p)
 	table.insert(p.refreshers,function()
 		local row=H:Selected(self.list)
 		if not row and self.list.items[1] then self.list.selected=self.list.items[1].key;row=self.list.items[1] end
-		self.details:SetText(R:Details(row))
+		-- the quest-wide answer first, then the reward selected in the list
+		local verdict=R:Verdict(self.snapshot)
+		self.details:SetText((verdict and (verdict.text.."\n\n"..FP.GOLD.."Selected reward|r\n") or "")..R:Details(row))
 		p.body:SetHeight(math.max(432,y+self.details:GetStringHeight()+24))
 	end)
 end

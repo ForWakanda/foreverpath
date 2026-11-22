@@ -1,4 +1,6 @@
--- Informational comparisons; no stat weights, reward selection or gear actions.
+-- Informational comparisons; no reward selection or gear actions. The verdict
+-- block ranks each reward with the gear page's own role scores; the player
+-- still picks the reward in Blizzard's dialog.
 local _,FP=...
 local R=FP:NewModule("QuestRewards")
 local API,U=FP.API,FP.Util
@@ -68,6 +70,82 @@ function R:Comparisons(row)
 			out[#out+1]={title=title,stats=gear.stats}
 		end
 	end
+	return out
+end
+
+-- Which reward is worth taking, per role: the gear page's score for each
+-- equippable reward, where it stands among everything wearable in its slot at
+-- the character's level, and what it adds over the best piece carried (worn or
+-- in the bags). The own role first, then the class's other roles.
+local function rewardRecord(row)
+	local item=row.item
+	local id=type(row.link)=="string" and tonumber(row.link:match("item:(%d+)"))
+	if not (item and id and type(item.stats)=="table" and SLOTS[item.equipLoc]) then return nil end
+	return {id=id,name=item.name or row.name,equipLoc=item.equipLoc,classID=item.classID,subclassID=item.subclassID,
+		level=item.level,minLevel=item.minLevel,stats=item.stats,sourceTypes={"Quest"},sources={"Quest Rewards"},bosses={}}
+end
+function R:Verdict(snapshot)
+	local G=FP.Gear
+	if not G or API.InCombat() or type(snapshot)~="table" or type(snapshot.items)~="table" then return nil end
+	local char=API.GetCharInfo()
+	local gear,choices={},0
+	for _,row in ipairs(snapshot.items) do
+		local record=rewardRecord(row)
+		if record then
+			local usable=row.usable~=false and U.Finite(record.classID) and U.Finite(record.subclassID) and G:ClassMatches(record,char)
+			gear[#gear+1]={row=row,item=record,usable=usable}
+			if row.kind=="choice" then choices=choices+1 end
+		end
+	end
+	if #gear==0 then return nil end
+	if not API.EnsureGearCatalog() then return nil end
+	local own,_,keys=G:Profile()
+	local roles={own}
+	for _,key in ipairs(keys) do if key~=own then roles[#roles+1]=key end end
+	local lines={FP.GOLD.."Which reward, by role|r (stat-weight estimate, the same scores as the Best in slot page)"}
+	local out={roles={}}
+	for _,role in ipairs(roles) do
+		local owned=G:Owned(role)
+		local best,bestGain,compared
+		local entry={role=role,items={}}
+		lines[#lines+1]="\n"..FP.GOLD..G.profiles[role].name.."|r"..(role==own and " (your role)" or "")..":"
+		for _,g in ipairs(gear) do
+			local name=g.item.name..(g.row.kind=="choice" and "" or " (given either way)")
+			if not g.usable then
+				lines[#lines+1]="  "..name..": not usable by your character."
+			else
+				local standing=G:Standing(g.item,role)
+				local _,def=G:SlotOf(g.item)
+				local gain=owned and def and G:Gain(owned,role,{{item=g.item,slot=def}}) or nil
+				local text="  "..name..": "
+				if not standing then text=text.."cannot be scored."
+				else
+					text=text..string.format("score %.1f · #%d of %d %s for level %d",standing.score,standing.rank,standing.of,standing.label:lower(),standing.level)
+					if standing.rank==1 then text=text.." (the best in the list)"
+					elseif standing.top then text=text.." (top: "..standing.top..")" end
+				end
+				local delta
+				if not gain or gain.skipped>0 then text=text.."\n      Against your gear: cannot compare, a worn piece could not be read."
+				elseif gain.gain>0 then
+					delta=gain.gain
+					text=text..string.format("\n      Against the best you carry: +%.1f",gain.gain)..(gain.pct and string.format(" (%.1f%% of your whole set's score)",gain.pct) or "")
+				else delta=0;text=text.."\n      Against the best you carry: no gain." end
+				lines[#lines+1]=text
+				entry.items[#entry.items+1]={id=g.item.id,name=g.item.name,kind=g.row.kind,standing=standing,gain=delta}
+				if g.row.kind=="choice" and delta then
+					compared=(compared or 0)+1
+					if not bestGain or delta>bestGain then best,bestGain=g.item.name,delta end
+				end
+			end
+		end
+		if choices>1 and compared and compared>1 then
+			if bestGain>0 then lines[#lines+1]="  Bigger gain for "..G.profiles[role].name..": "..FP.GOLD..best.."|r.";entry.best=best
+			else lines[#lines+1]="  Neither choice beats what you carry for "..G.profiles[role].name.."." end
+		end
+		out.roles[#out.roles+1]=entry
+	end
+	lines[#lines+1]="\nProcs, set bonuses, hit, crit and \"Equip:\" effects are not in the score: hover each reward. Ranks count every source in the list (dungeons, raids, crafting, reputation), obtainable now or not."
+	out.text=table.concat(lines,"\n")
 	return out
 end
 

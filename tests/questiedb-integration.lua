@@ -251,3 +251,46 @@ if db.Quest.Get(91883,"name") then
  print("PASS packaged roaming area: Spear of the Skylord -> Zarrat Wormwing,",area.count,"places,",drawn.lines,"outline lines on Mount Hyjal")
 else print("SKIP roaming area: this provider does not know quest 91883 (QuestieDB older than 1.1)") end
 assert(#FP.db.errors==0,"route drawing stored errors")
+
+-- Gear the bundled reference lacks (v0.31.0), on the provider's own item records.
+-- The provider names the item and where it comes from; a stand-in client that
+-- knows three items supplies what they are. Every other id "does not exist".
+do
+ local G=FP.Gear
+ M.class="SHAMAN";M.level=60;M.quests={};FP.cdb.gear.profile="healer"
+ local CLIENT={
+  [20134]={"Skyfury Helm",4,62,0,"INVTYPE_HEAD",3,{ITEM_MOD_STRENGTH_SHORT=13,ITEM_MOD_STAMINA_SHORT=14,ITEM_MOD_SPIRIT_SHORT=12}},
+  [20133]={"Skyfury Gauntlets",4,62,0,"INVTYPE_HAND",3,{ITEM_MOD_INTELLECT_SHORT=14}},
+  [13944]={"Tombstone Breastplate",3,62,57,"INVTYPE_CHEST",3,{ITEM_MOD_STRENGTH_SHORT=10}},
+ }
+ local function idOf(link) return type(link)=="number" and link or tonumber(tostring(link):match("item:(%d+)")) end
+ C_Item.GetItemInfo=function(link) local id=idOf(link);local it=CLIENT[id];if it then return it[1],"|Hitem:"..id.."|h",it[2],it[3],it[4],"Armor","Mail",1,it[5],1,1,4,it[6],1 end end
+ C_Item.GetItemStats=function(link) local it=CLIENT[idOf(link)];return it and it[7] end
+ C_Item.DoesItemExistByID=function(id) return CLIENT[id]~=nil end
+ M.AddQuest({questID=8258,title="The Darkreaver Menace",objectives={}})
+ GetNumQuestLogChoices=function(id) return id==8258 and 2 or 0 end
+ GetNumQuestLogRewards=function() return 0 end
+ GetQuestLogChoiceInfo=function(i,id) if id==8258 then local item=i==1 and 20134 or 20133;return CLIENT[item][1],nil,1,4,true,item end end
+ GetQuestLogRewardInfo=function() end
+ assert(FP.API.EnsureGearCatalog())
+ local reference=0;for _ in pairs(G:CatalogIds()) do reference=reference+1 end
+ local started=os.clock()
+ G.live=nil;G:LiveStart()
+ local steps=0
+ repeat M.RunTimers(.5);steps=steps+1 until not G:LiveStatus().busy or steps>2000
+ local L=G:LiveState()
+ assert(not G:LiveStatus().busy and L.scan.done and not L.scan.unavailable,"the provider's item list was not walked to the end")
+ assert(L.scan.scanned==#db.Item.GetAllIds(),"scanned "..tostring(L.scan.scanned).." of "..#db.Item.GetAllIds())
+ -- thousands of weapons and armor pieces the provider knows and the reference does not
+ assert(L.known>3000 and L.counts.asked>1000,"missing "..tostring(L.known)..", asked "..tostring(L.counts.asked))
+ local helm,gloves,chest=L.items[20134],L.items[20133],L.items[13944]
+ assert(helm and helm.sourceTypes[1]=="Quest" and helm.logQuest.questID==8258,"Skyfury Helm: quest reward in the log")
+ assert(gloves and gloves.logQuest and gloves.sourceTypes[1]=="Quest","Skyfury Gauntlets: listed from the quest log")
+ assert(chest and chest.sourceTypes[1]=="Dungeon" and chest.sources[1]=="Scholomance" and chest.bosses[1]=="Darkmaster Gandling",
+  "Tombstone Breastplate: "..tostring(chest and chest.sourceTypes[1]).." / "..tostring(chest and chest.sources[1]))
+ assert(L.counts.listed==3 and L.counts.unknown==L.counts.asked-3)
+ local rows=G:Rows({slot="HEAD",query="skyfury"});assert(#rows==1 and rows[1].key==20134)
+ local sources=FP.API.GetGearQuestSources(20134);assert(#sources>=1 and sources[1].name=="The Darkreaver Menace")
+ assert(#FP.db.errors==0,"live gear stored errors")
+ print("PASS packaged live gear:",L.scan.scanned,"provider items,",L.known,"weapons/armor outside the "..reference.."-item reference,",L.counts.asked,"asked of the client for a shaman,",string.format("%.2fs in %d steps",os.clock()-started,steps))
+end

@@ -2228,15 +2228,18 @@ local function requestRewardItem(link)
 	end
 end
 
-function API.GetRewardItem(link)
+-- quiet: do not ask the client to load a missing item (the gear page's loader
+-- asks for its own, on its own budget: API.RequestItemData).
+local BIND={[1]="pickup",[2]="equip"}
+function API.GetRewardItem(link,quiet)
 	link=rewardString(safe(link))
 	if not link then return nil end
 	local fn=has(C_Item,"GetItemInfo") and C_Item.GetItemInfo or _G.GetItemInfo
 	local v=rewardCall(fn,link)
-	if not v or not rewardString(v[2]) then requestRewardItem(link);return nil end
-	local item={link=link,name=v[2],level=rewardNumber(v[5]),minLevel=rewardNumber(v[6]),
+	if not v or not rewardString(v[2]) then if not quiet then requestRewardItem(link) end;return nil end
+	local item={link=link,name=v[2],quality=rewardNumber(v[4]),level=rewardNumber(v[5]),minLevel=rewardNumber(v[6]),
 		subtype=rewardString(v[8]),equipLoc=rewardString(v[10]),price=rewardNumber(v[12]),
-		classID=rewardNumber(v[13]),subclassID=rewardNumber(v[14])}
+		classID=rewardNumber(v[13]),subclassID=rewardNumber(v[14]),bind=BIND[rewardNumber(v[15]) or 0]}
 	local stats=rewardFirst(has(C_Item,"GetItemStats") and C_Item.GetItemStats or _G.GetItemStats,link)
 	if type(stats)=="table" then
 		-- A partially unreadable table cannot safely supply zero for omitted stats.
@@ -2335,6 +2338,207 @@ function API.GetRewardContext(mode)
 	if identity()~=id then return {items={},mode=out.mode,message="Quest changed; refresh to view its rewards."} end
 	if not out.countsKnown then out.message="Some reward lists are unavailable; vendor ranking is incomplete."
 	elseif #out.items==0 then out.message="No item rewards listed for this quest." end
+	return out
+end
+
+-------------------------------------------------------------------------------
+-- Items the bundled gear reference does not have (Modules/Gear.lua, "live"
+-- items). The reference is a snapshot of what a website had a Forever tooltip
+-- for; the client knows every item. These reads ask the client by item id.
+-- Checked against Blizzard's Forever source 1.60.1.71037: C_Item
+-- DoesItemExistByID / RequestLoadItemDataByID / GetItemInfo / GetItemStats and
+-- C_TooltipInfo.GetItemByID are documented; GetNumQuestLogChoices(questID),
+-- GetQuestLogChoiceInfo(i, questID), GetNumQuestLogRewards(questID) and
+-- GetQuestLogRewardInfo(i, questID) are called that way by QuestUtils.lua.
+-- None of it is confirmed in the client: HearthAndHustleDB.gearLive says.
+-------------------------------------------------------------------------------
+-- true / false as the client answers, nil when it cannot be asked.
+function API.ItemExists(id)
+	if not U.Finite(id) or id<=0 or not has(C_Item,"DoesItemExistByID") then return nil end
+	local ok,value=pcall(C_Item.DoesItemExistByID,id)
+	value=safe(value)
+	if ok and type(value)=="boolean" then return value end
+end
+
+-- Ask the client to load an item it has not shown yet; GET_ITEM_INFO_RECEIVED
+-- follows. Once per item, and no more than a session's worth of a gear list.
+local itemDataRequests,itemDataRequestCount={},0
+API.ITEM_DATA_REQUEST_LIMIT=8000
+function API.RequestItemData(id)
+	if not U.Finite(id) or id<=0 or id~=math.floor(id) or itemDataRequests[id] then return false end
+	if itemDataRequestCount>=API.ITEM_DATA_REQUEST_LIMIT or not has(C_Item,"RequestLoadItemDataByID") then return false end
+	itemDataRequests[id]=true;itemDataRequestCount=itemDataRequestCount+1
+	return (pcall(C_Item.RequestLoadItemDataByID,id))
+end
+
+-- A weapon's damage range and speed, which the stat table does not carry: read
+-- from the lines of the client's own tooltip ("57 - 86 Damage", "Speed 2.80";
+-- English client text). nil for anything it cannot read whole.
+function API.GetWeaponSwing(id)
+	if not U.Finite(id) or id<=0 or not has(C_TooltipInfo,"GetItemByID") then return nil end
+	local out={}
+	local ok=pcall(function()
+		local data=C_TooltipInfo.GetItemByID(id)
+		if type(data)~="table" or type(data.lines)~="table" then return end
+		for i,line in ipairs(data.lines) do
+			if i>40 then break end
+			for _,text in ipairs({safe(line.leftText) or false,safe(line.rightText) or false}) do
+				if type(text)=="string" then
+					local low,high=text:match("^([%d%.,]+) %- ([%d%.,]+) [%a ]*Damage$")
+					if low and not out.dmgMin then out.dmgMin,out.dmgMax=tonumber((low:gsub(",",""))),tonumber((high:gsub(",",""))) end
+					local speed=text:match("^Speed ([%d%.]+)$")
+					if speed and not out.speed then out.speed=tonumber(speed) end
+				end
+			end
+		end
+	end)
+	if not ok or not (U.Finite(out.dmgMin) and U.Finite(out.dmgMax) and U.Finite(out.speed)) then return nil end
+	if out.dmgMin<=0 or out.dmgMax<out.dmgMin or out.speed<=0 or out.speed>10 then return nil end
+	return out
+end
+
+-- Every item a quest in the log hands out or offers as a choice, read by quest
+-- id without touching the quest selected in Blizzard's log.
+--   items = {{id=,questID=,title=,kind="choice"|"reward"}}, quests, withItems
+-- A client that ignored the quest id would answer with the selected quest's
+-- rewards for every quest. Two or more quests, all with one identical list, is
+-- read as that: `ignored`, and only the selected quest keeps its items.
+function API.GetLogRewardItems()
+	if API.InCombat() then return nil end
+	if not (hasg("GetNumQuestLogChoices") and hasg("GetQuestLogChoiceInfo") and hasg("GetNumQuestLogRewards") and hasg("GetQuestLogRewardInfo")) then return nil end
+	local out={items={},quests=0,withItems=0,ignored=false}
+	local lists,first,same={},nil,true
+	for _,q in ipairs(API.GetQuestLog()) do
+		local questID=rewardNumber(safe(q.questID))
+		if questID and questID>0 and #lists<64 then
+			local list,sig={},{}
+			for _,kind in ipairs({"choice","reward"}) do
+				local count
+				if kind=="choice" then count=rewardNumber(rewardFirst(_G.GetNumQuestLogChoices,questID,true))
+				else count=rewardNumber(rewardFirst(_G.GetNumQuestLogRewards,questID)) end
+				if count and count<=64 and count==math.floor(count) then
+					for i=1,count do
+						local info=rewardCall(kind=="choice" and _G.GetQuestLogChoiceInfo or _G.GetQuestLogRewardInfo,i,questID)
+						local id=info and rewardNumber(info[7])
+						if id and id>0 and id==math.floor(id) then
+							list[#list+1]={id=id,questID=questID,title=rewardString(safe(q.title)) or ("Quest #"..questID),kind=kind}
+							sig[#sig+1]=kind..id
+						end
+					end
+				end
+			end
+			local signature=table.concat(sig,",")
+			lists[#lists+1]={questID=questID,list=list,signature=signature}
+			if first==nil then first=signature elseif signature~=first then same=false end
+		end
+	end
+	out.quests=#lists
+	if #lists>=2 and same and first~="" then
+		out.ignored=true
+		local selected=rewardNumber(rewardFirst(has(C_QuestLog,"GetSelectedQuest") and C_QuestLog.GetSelectedQuest))
+		for _,entry in ipairs(lists) do
+			if entry.questID==selected then
+				out.withItems=1
+				for _,item in ipairs(entry.list) do out.items[#out.items+1]=item end
+			end
+		end
+		return out
+	end
+	for _,entry in ipairs(lists) do
+		if #entry.list>0 then out.withItems=out.withItems+1 end
+		for _,item in ipairs(entry.list) do out.items[#out.items+1]=item end
+	end
+	return out
+end
+
+-- Weapons and armor the quest database lists, a slice of its item ids per
+-- call so a first look at the gear page does not stall a frame. Pass the state
+-- back until state.done. Each row: id, name, classID, subclassID, level,
+-- minLevel, sourced (it names a quest, creature, object, container or vendor).
+-- The database has no slot, quality or stats: the client supplies those.
+local function referenceField(db,id,key)
+	local ok,value=pcall(db.Get,id,key)
+	if ok then return value end
+end
+local function referenceCount(db,id,key)
+	local value=referenceField(db,id,key)
+	return type(value)=="table" and #value or 0
+end
+function API.ScanReferenceGear(state,budget)
+	state=state or {i=0,rows={},scanned=0}
+	if state.done then return state end
+	if API.InCombat() then return state end
+	if not API.QuestDatabaseStatus() then state.done,state.unavailable=true,true;return state end
+	local db=LibQuestieDB.Item
+	if not state.ids then
+		local ok,ids
+		if type(db.GetAllIds)=="function" then ok,ids=pcall(db.GetAllIds) end
+		if not ok or type(ids)~="table" then state.done,state.unavailable=true,true;return state end
+		state.ids=ids
+	end
+	local stop=math.min(#state.ids,state.i+math.max(1,budget or 2000))
+	for i=state.i+1,stop do
+		local id=state.ids[i]
+		if U.Finite(id) and id>0 and id==math.floor(id) then
+			local class=referenceField(db,id,"class")
+			if class==2 or class==4 then
+				local name,sub=referenceField(db,id,"name"),referenceField(db,id,"subClass")
+				local level,minLevel=referenceField(db,id,"itemLevel"),referenceField(db,id,"requiredLevel")
+				if type(name)=="string" and name~="" and U.Finite(sub) then
+					state.rows[#state.rows+1]={id=id,name=name,classID=class,subclassID=sub,
+						level=U.Finite(level) and level>0 and level or nil,minLevel=U.Finite(minLevel) and minLevel>0 and minLevel or nil,
+						sourced=referenceCount(db,id,"questRewards")>0 or referenceCount(db,id,"npcDrops")>0 or referenceCount(db,id,"objectDrops")>0
+							or referenceCount(db,id,"itemDrops")>0 or referenceCount(db,id,"vendors")>0}
+				end
+			end
+		end
+	end
+	state.scanned=stop;state.i=stop
+	if stop>=#state.ids then state.done=true;state.ids=nil end
+	return state
+end
+
+-- Where the quest database says an item comes from, in the gear reference's
+-- words: sourceTypes / sources side by side, bosses, droppedBy. A creature
+-- inside a dungeon makes it that dungeon's drop. Classic data with Forever
+-- corrections: a listed source does not prove the item still comes from there.
+function API.DescribeReferenceGear(id)
+	local out={sourceTypes={},sources={},bosses={}}
+	if API.InCombat() or not U.Finite(id) or id<=0 or not API.QuestDatabaseStatus() then return out end
+	local db=LibQuestieDB
+	local function add(kind,source)
+		for i,k in ipairs(out.sourceTypes) do if k==kind and out.sources[i]==source then return end end
+		out.sourceTypes[#out.sourceTypes+1]=kind;out.sources[#out.sources+1]=source
+	end
+	pcall(function()
+		if referenceCount(db.Item,id,"questRewards")>0 then add("Quest","Quest Rewards") end
+		local npcs=referenceField(db.Item,id,"npcDrops")
+		if type(npcs)=="table" and #npcs>0 then
+			local outdoors,others,inside=nil,0,false
+			for i,npc in ipairs(npcs) do
+				if i>12 then break end
+				local name,zone=referenceField(db.Npc,npc,"name"),referenceField(db.Npc,npc,"zoneID")
+				local dungeon=U.Finite(zone) and referenceDungeon(db,zone)
+				if dungeon and type(dungeon[1])=="string" then
+					inside=true
+					add("Dungeon",dungeon[1])
+					if type(name)=="string" and #out.bosses<4 then out.bosses[#out.bosses+1]=name end
+				elseif type(name)=="string" and not outdoors then outdoors=name
+				else others=others+1 end
+			end
+			others=others+math.max(0,#npcs-12)
+			-- a creature outside any dungeon, or none the database could place
+			if outdoors or not inside then
+				add("Drop","Drops")
+				if outdoors then out.droppedBy=outdoors..(others>0 and (" and "..others.." more") or "") end
+			end
+		end
+		if referenceCount(db.Item,id,"objectDrops")>0 or referenceCount(db.Item,id,"itemDrops")>0 then
+			add("Drop","Drops")
+			out.droppedBy=out.droppedBy or "a chest, object or container"
+		end
+		if referenceCount(db.Item,id,"vendors")>0 then add("Vendor","Vendors") end
+	end)
 	return out
 end
 

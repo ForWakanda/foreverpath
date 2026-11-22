@@ -4,6 +4,19 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Gear the item reference does not have, and which quest reward to take (v0.31.0)
+
+`/hh` → **Best in slot** used to list only what its bundled item reference had. That reference is a snapshot of the items one website had a Forever tooltip for: about a fifth of all quest rewards are not in it, and neither are most of the dungeon drops the quest database lists. If your reward was one of those, the page did not show it, and nothing said why.
+
+- **Your quest rewards are listed.** Every reward and reward choice of a quest in your log is on the page, in its slot, ranked with everything else. The row says `Your quest: <name>`.
+- **So is what the quest database knows.** Weapons and armor the installed QuestieDB names a source for (a quest, a creature, a chest, a vendor) are added, with that source. A boss inside a dungeon makes it that dungeon's drop.
+- **The numbers are your client's.** The addon ships no stats for these items. It asks your game client what each one is, a few at a time, out of combat, the first time you open the page. An item your client does not know is not listed. The line above the list says how many rows were read this way and whether it is still reading.
+- **Search looks in every slot.** Type a name and the list shows the matches in the slot you are on; the line above it says where the rest are (`same search in other slots: Hands 1`). A search also reaches items the database knows by name only, with no source.
+- **At level 60 nothing is hidden for "no required level".** Quest rewards rarely list one, and the page used their item level as a stand-in: at 60 that hid 247 items above item level 60, 172 of them quest rewards. Nothing can ask for more than the level cap, so at 60 they are all listed.
+- **Rewards page: which one to take.** Select the quest in your quest log, open `/hh` → Rewards (or press **Compare rewards** on the quest dialog). For each of your class's roles, your own first: every equippable reward with its score, its place among everything you could wear in that slot (`#4 of 212 head for level 60`), and what it adds over the best piece you carry, worn or in your bags. With two or more choices it names the bigger gain for that role. You still pick the reward yourself.
+
+What it is not: a simulation. Scores are the page's stat weights; procs, set bonuses, hit, crit and "Equip:" lines are not in them. Where an added item comes from is the quest database's word, which is Classic data with Forever corrections. The dungeon pages still rank drops from the bundled reference only.
+
 ## Gear finder (v0.26.0)
 
 `/hh` → **Best in slot**. The page now says what it is showing, and you can ask it for exactly the thing you are after: "the best two-hander for my second spec".
