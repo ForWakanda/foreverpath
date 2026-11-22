@@ -208,21 +208,22 @@ page("dungeons")
 local list=H.controls.dungeonNext
 assert(#list.items==4 and H.controls.dungeonSecond:GetText()=="Second spec: Strength melee")
 assert(H.controls.dungeonNextSummary:GetText():find("Strength melee",1,true))
-assert(H.controls.dungeonNextDetails:GetText():find("Select a dungeon",1,true) and not H.controls.dungeonNextOpen:IsEnabled())
+local it=H.controls.hubDungeons
+-- one dungeon is chosen on the page (v0.32.0): the ranking opens on the itinerary's dungeon
+assert(list.selected==it.selected and it.selected~=nil)
 selectRow("dungeonNext",2)
 assert(H.controls.dungeonNextDetails:GetText():find("Drop 102",1,true), H.controls.dungeonNextDetails:GetText())
--- "Show its itinerary below" picks that dungeon in the itinerary list, on the page that shows it
-click("dungeonNextOpen")
-local it=H.controls.hubDungeons
+-- the click itself picks that dungeon in the itinerary list, on the page that shows it
 assert(it.selected=="zul-farrak" and H:Selected(it) and H:Selected(it).key=="zul-farrak")
 local shown;for _,b in ipairs(it.rows) do if b.item and b.item.key=="zul-farrak" then shown=true end end
 assert(shown and H.controls.dungeonSummary:GetText():find("Zul'Farrak",1,true))
 -- ...also when that dungeon sits on another page of the itinerary list
-selectRow("dungeonNext",4);click("dungeonNextOpen")
+selectRow("dungeonNext",4)
 local wing=list.items[4].key
 shown=false;for _,b in ipairs(it.rows) do if b.item and b.item.key==wing then shown=true end end
 assert(it.selected==wing and shown and H.controls.dungeonSummary:GetText():find("Scarlet Monastery",1,true), "the chosen dungeon is not on the page shown")
-click("dungeonSecond");assert(H.controls.dungeonSecond:GetText()=="Second spec: Spell damage" and FP.cdb.gear.second=="caster" and list.selected==nil)
+-- changing the second spec re-ranks; the dungeon chosen stays chosen in both lists
+click("dungeonSecond");assert(H.controls.dungeonSecond:GetText()=="Second spec: Spell damage" and FP.cdb.gear.second=="caster" and list.selected==wing and it.selected==wing)
 click("dungeonSecond");assert(H.controls.dungeonSecond:GetText()=="Second spec: none" and #list.items==4 and not list.items[1].roles[2])
 assert(not H.controls.dungeonNextSummary:GetText():find("second spec",1,true))
 assert(FP.cdb.gear.profile=="healer", "the ranking never changes the character's own role")

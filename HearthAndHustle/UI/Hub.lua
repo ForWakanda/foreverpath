@@ -270,16 +270,23 @@ function H:BuildPage(key)
 		local ranked,rankInfo={},{}
 		self:Section(p,"Which dungeon next")
 		self.controls.dungeonNextSummary=self:Text(p,"",function() ranked,rankInfo=DP:Next(); return DP:NextSummary(ranked,rankInfo) end,48)
-		local nextList=self:List(p,"dungeonNext",function() return ranked end,function(row) return DP:NextLabel(row) end,{count=4})
+		-- One dungeon is chosen on this page: a click in either list moves both, so the
+		-- itinerary and the checklist button below always mean the dungeon just clicked.
+		local function choose(key)
+			list.selected=key
+			for i,item in ipairs(DP:List()) do if item.key==key then list.page=math.ceil(i/5) end end
+		end
+		local nextList
+		nextList=self:List(p,"dungeonNext",function() return ranked end,function(row) return DP:NextLabel(row) end,{count=4,
+			onSelect=function(row) choose(row.key) end})
 		self.controls.dungeonNextDetails=self:Text(p,"",function() return DP:NextDetails(self:Selected(nextList),rankInfo) end,170)
 		self:Actions(p,{
-			{"dungeonSecond","Second spec",function() FP.Gear:CycleSecond(); nextList.page,nextList.selected=1,nil end,
+			{"dungeonSecond","Second spec",function() FP.Gear:CycleSecond(); nextList.page=1 end,
 				enabled=function() local _,_,keys=FP.Gear:Profile(); return #keys>1 and not API.InCombat() end},
-			{"dungeonNextOpen","Show its itinerary below",function()
+			{"dungeonNextOpen","Open its quest checklist",function()
 				local row=self:Selected(nextList)
 				if not row then return end
-				list.selected=row.key
-				for i,item in ipairs(DP:List()) do if item.key==row.key then list.page=math.ceil(i/5) end end
+				self.frame:Hide();FP.DungeonPanel:Open(row.key)
 			end,enabled=function() return self:Selected(nextList)~=nil end},
 		})
 		table.insert(p.refreshers,function()
@@ -287,11 +294,13 @@ function H:BuildPage(key)
 			self.controls.dungeonSecond:SetText("Second spec: "..(profile and profile.name or "none"))
 		end)
 		self:Section(p,"Itinerary")
-		self:Text(p,"Choose a dungeon for its itinerary: what to turn in, which quests to pick up on the way and in what order, the entrance, what waits inside, and the drops worth having for your role. Browsing changes nothing.")
-		list=self:List(p,"hubDungeons",function() return DP:List() end,function(row) return DP:ListLabel(row) end,{count=5})
-		-- Open on the dungeon you are most likely here for, on the page that shows it.
-		list.selected=DP:Default()
-		for i,row in ipairs(DP:List()) do if row.key==list.selected then list.page=math.ceil(i/5) end end
+		self:Text(p,"The dungeon chosen above or here: what to turn in, which quests to pick up on the way and in what order, the entrance, what waits inside, and the drops worth having for your role. Browsing changes nothing.")
+		list=self:List(p,"hubDungeons",function() return DP:List() end,function(row) return DP:ListLabel(row) end,{count=5,
+			onSelect=function(row) nextList.selected=row.key end})
+		-- Open on the dungeon you are most likely here for, on the page that shows it,
+		-- and mark the same one in the ranking when it is listed there.
+		choose(DP:Default())
+		nextList.selected=list.selected
 		local plan,steps,shown
 		self.controls.dungeonSummary=self:Text(p,"",function()
 			local row=self:Selected(list)
@@ -305,7 +314,8 @@ function H:BuildPage(key)
 			{"dungeonGuide","Guide to selected step",function() DP:Guide(plan,self:Selected(steps)) end,enabled=function() return DP:CanGuide(self:Selected(steps)) end},
 			{"dungeonWish","Save drop to wishlist",function() DP:ToggleWish(self:Selected(steps)) end,
 				enabled=function() local row=self:Selected(steps); return row~=nil and row.type=="gear" and not API.InCombat() end},
-			{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end},
+			{"openDungeonChecklist","Open quest checklist",function() local row=self:Selected(list);self.frame:Hide();FP.DungeonPanel:Open(row and row.key) end,
+				enabled=function() return self:Selected(list)~=nil end},
 		})
 		table.insert(p.refreshers,function()
 			local row=self:Selected(steps)
@@ -754,7 +764,13 @@ function H:List(p,id,get,describe,options)
 	for i=1,count do
 		local row=button(p.body,"",0,-p.y,width,function() end)
 		row:SetSize(width,26)
-		row:SetScript("OnClick",function(btn) if btn.item then list.selected=btn.item.key; self:Refresh() end end)
+		row:SetScript("OnClick",function(btn)
+			if not btn.item then return end
+			list.selected=btn.item.key
+			-- options.onSelect: another list on the page follows this choice
+			if options.onSelect then options.onSelect(btn.item) end
+			self:Refresh()
+		end)
 		row:SetScript("OnEnter",function(btn)
 			if not btn.item then return end
 			GameTooltip:SetOwner(btn,"ANCHOR_RIGHT"); GameTooltip:AddLine(describe(btn.item),1,1,1,true); GameTooltip:Show()
