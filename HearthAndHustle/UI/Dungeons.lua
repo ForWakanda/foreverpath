@@ -1,7 +1,10 @@
 local _, FP = ...
 local D, API = FP.Dungeons, FP.API
 local P = FP:NewModule("DungeonPanel")
-local DUNGEON_ROWS, QUEST_ROWS = 17, 5
+local DUNGEON_ROWS, QUEST_ROWS = 17, 7
+-- the quest side, top to bottom: rows, pager, buttons, details
+local ROW_TOP, ROW_H = -162, 36
+local BELOW = ROW_TOP - QUEST_ROWS * ROW_H
 
 local function label(parent, x, y, width, font)
     local text = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlightSmall")
@@ -23,7 +26,7 @@ function P:OnInit()
     local f = CreateFrame("Frame", "HearthAndHustleDungeons", UIParent, "BackdropTemplate")
     self.frame = f
     if UISpecialFrames then table.insert(UISpecialFrames,"HearthAndHustleDungeons") end
-    f:SetSize(820, 620); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG");f:SetToplevel(true)
+    f:SetSize(820, 654); f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG");f:SetToplevel(true)
     f:SetClampedToScreen(true); f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", function(frame) frame:StartMoving() end)
     f:SetScript("OnDragStop", function(frame) frame:StopMovingOrSizing() end)
@@ -35,7 +38,7 @@ function P:OnInit()
     self.toolsButton = button(f, 674, -10, 108, "All tools", function() f:Hide(); FP.Hub:Open() end)
     label(f, 16, -45, 210):SetText("Choose a dungeon (reference levels)")
     self.heading = label(f, 240, -43, 560, "GameFontNormal")
-    self.summary = label(f, 240, -65, 560)
+    self.summary = label(f, 240, -62, 560)
     self.dungeonButtons = {}
     for i=1,DUNGEON_ROWS do
         local b = button(f, 14, -74-(i-1)*25, 210, "", function(btn)
@@ -49,19 +52,19 @@ function P:OnInit()
     self.filter = button(f, 14, -539, 210, "", function()
         self.settings.all = not self.settings.all; self.questPage=1; self:Refresh()
     end)
-    label(f, 16, -572, 210):SetText("What to pick up first is listed first.\nClick a quest for its details and chain.")
-    self.entranceButton = button(f, 240, -88, 140, "Guide entrance", function()
+    label(f, 16, -572, 210):SetText("Gold: pick it up now, nearest first.\nGreen: in your log. Grey: later.\nClick a quest for details and its chain.")
+    self.entranceButton = button(f, 240, -100, 140, "Guide entrance", function()
         local _,message=D:GuideEntrance(self.settings.selected,self.entranceIndex); FP:Print(message)
     end)
-    self.entranceNext = button(f, 390, -88, 145, "Other entrance", function()
+    self.entranceNext = button(f, 390, -100, 145, "Other entrance", function()
         local points=D:Entrances(self.settings.selected)
         self.entranceIndex=(self.entranceIndex or 1)%math.max(1,#points)+1; self:RefreshEntrance()
     end)
-    self.entranceText = label(f,240,-117,560)
+    self.entranceText = label(f,240,-129,560)
     self.questButtons = {}
     for i=1,QUEST_ROWS do
         local b = CreateFrame("Button", nil, f)
-        b:SetSize(560, 45); b:SetPoint("TOPLEFT", 240, -150-(i-1)*46)
+        b:SetSize(560, ROW_H - 2); b:SetPoint("TOPLEFT", 240, ROW_TOP-(i-1)*ROW_H)
         local hl = b:CreateTexture(nil,"HIGHLIGHT"); hl:SetAllPoints(); hl:SetColorTexture(1,1,1,.08)
         b.title = label(b, 0, 0, 560, "GameFontHighlightSmall"); b.title:SetWordWrap(false)
         b.pickup = label(b, 0, -17, 560); b.pickup:SetWordWrap(false)
@@ -73,6 +76,7 @@ function P:OnInit()
             GameTooltip:SetOwner(btn,"ANCHOR_LEFT")
             GameTooltip:AddLine(btn.row.quest.name, 1,.82,0)
             GameTooltip:AddLine(btn.row.label,1,1,1,true)
+            if btn.row.opens then GameTooltip:AddLine((btn.row.step and "Chain step toward " or "First step toward ")..#btn.row.opens..(#btn.row.opens==1 and " quest" or " quests").." of this dungeon.",1,1,1,true) end
             local where=D:Where(btn.row,self.context)
             if where~="" then GameTooltip:AddLine(where,1,1,1,true) end
             GameTooltip:AddLine("Click for what it asks, where to turn it in and its chain.",.5,.8,1,true)
@@ -81,21 +85,24 @@ function P:OnInit()
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
         self.questButtons[i] = b
     end
-    self.questPageLabel = label(f, 305, -395, 420)
-    self.questPrev = button(f, 240, -390, 50, "<", function() self.questPage=math.max(1,self.questPage-1); self.selectedQuest=nil; self:Refresh() end)
-    self.questNext = button(f, 750, -390, 50, ">", function() self.questPage=math.min(math.max(1,math.ceil(#self.rows/QUEST_ROWS)),self.questPage+1); self.selectedQuest=nil; self:Refresh() end)
-    self.guideQuest = button(f,240,-422,160,"Guide quest",function()
-        local _,message=D:GuideQuest(self.selectedQuest); FP:Print(message)
+    self.questPageLabel = label(f, 305, BELOW-15, 420)
+    self.questPrev = button(f, 240, BELOW-10, 50, "<", function() self.questPage=math.max(1,self.questPage-1); self.selectedQuest=nil; self:Refresh() end)
+    self.questNext = button(f, 750, BELOW-10, 50, ">", function() self.questPage=math.min(math.max(1,math.ceil(#self.rows/QUEST_ROWS)),self.questPage+1); self.selectedQuest=nil; self:Refresh() end)
+    self.guideQuest = button(f,240,BELOW-42,160,"Guide quest",function()
+        local row=self:SelectedRow()
+        local _,message
+        if row and row.step then _,message=D:GuideStep(row.id) else _,message=D:GuideQuest(self.selectedQuest) end
+        FP:Print(message)
     end)
-    self.viewChain = button(f,410,-422,150,"View quest chain",function()
+    self.viewChain = button(f,410,BELOW-42,150,"View quest chain",function()
         if self.selectedQuest then f:Hide(); FP.Hub:OpenQuestChain(self.selectedQuest) end
     end)
     local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
     self.scroll = scroll
-    scroll:SetPoint("TOPLEFT", 240, -458); scroll:SetSize(536, 112)
+    scroll:SetPoint("TOPLEFT", 240, BELOW-78); scroll:SetSize(536, 112)
     local child = CreateFrame("Frame", nil, scroll); child:SetSize(530,112); scroll:SetScrollChild(child)
     self.detailChild, self.details = child, label(child, 0, 0, 525)
-    label(f, 240, -584, 560):SetText("Where each quest starts comes from the quest database; it is not a live offer list.")
+    label(f, 240, BELOW-204, 560):SetText("Where each quest starts comes from the quest database; it is not a live offer list. Distances are straight lines.")
     f:Hide()
 end
 
@@ -136,9 +143,12 @@ function P:Open(query)
     self.frame:Show(); self:Select(key)
 end
 
+function P:SelectedRow()
+    for _, row in ipairs(self.rows or {}) do if row.id == self.selectedQuest then return row end end
+end
+
 function P:RefreshDetails(reset)
-    local selected
-    for _, row in ipairs(self.rows or {}) do if row.id == self.selectedQuest then selected=row; break end end
+    local selected = self:SelectedRow()
     if not selected then selected=self.rows[(self.questPage-1)*QUEST_ROWS+1]; reset=true end
     self.selectedQuest = selected and selected.id
     local dungeon = FP.DungeonCatalog.dungeons[self.settings.selected]
@@ -147,9 +157,9 @@ function P:RefreshDetails(reset)
     local text=selected and D:Details(selected,self.context) or empty
     self.details:SetText(text.."\n\n"..D:RouteNote(self.settings.selected))
     local code=selected and selected.code
-    self.guideQuest:SetText(code=="ready" and "Guide turn-in" or code=="active" and "Guide objective"
+    self.guideQuest:SetText(code=="ready" and "Guide turn-in" or (code=="active" or code=="stepactive") and "Guide objective"
         or code=="prereq" and "Guide next step" or code=="inside" and "Guide entrance" or "Guide pickup")
-    enabled(self.guideQuest,code=="ready" or code=="active" or code=="offer" or code=="pickup" or code=="inside" or code=="prereq")
+    enabled(self.guideQuest,code=="ready" or code=="active" or code=="offer" or code=="pickup" or code=="inside" or code=="prereq" or code=="step" or code=="stepactive")
     enabled(self.viewChain,selected~=nil)
     self.detailChild:SetHeight(math.max(112,self.details:GetStringHeight()+16))
     if reset then self.scroll:SetVerticalScroll(0) end
@@ -160,7 +170,7 @@ function P:Refresh()
     local key = self.settings.selected
     local dungeon = FP.DungeonCatalog.dungeons[key or ""]
     if not dungeon then return end
-    self.rows, self.counts, self.context = D:Rows(key,self.settings.all)
+    self.rows, self.counts, self.context = D:Todo(key,self.settings.all)
     self.questPage=math.max(1,math.min(self.questPage,math.ceil(#self.rows/QUEST_ROWS)))
     for i,b in ipairs(self.dungeonButtons) do
         local item=self.list[(self.dungeonPage-1)*DUNGEON_ROWS+i]
@@ -175,15 +185,15 @@ function P:Refresh()
     self.heading:SetText(dungeon.name .. "  (" .. (dungeon.recommendedLevel or "level range unknown") .. ")")
     local c=self.counts
     self.summary:SetText(#dungeon.quests == 0 and "Coverage missing - quest list not yet catalogued"
-        or D:CountsText(c))
+        or D:TodoText(c))
     for i,b in ipairs(self.questButtons) do
         local row=self.rows[(self.questPage-1)*QUEST_ROWS+i]; b.row=row
         if row then
-            b.title:SetText(row.color .. row.label .. "|r - " .. row.quest.name)
+            b.title:SetText(D:Title(row))
             b.pickup:SetText(FP.GREY .. D:Where(row,self.context) .. "|r"); b:Show()
         else b:Hide() end
     end
-    self.questPageLabel:SetText(#self.rows .. " quests | Page " .. self.questPage .. "/" .. math.max(1,math.ceil(#self.rows/QUEST_ROWS)) .. " | Details below (scroll)")
+    self.questPageLabel:SetText(#self.rows .. " lines | Page " .. self.questPage .. "/" .. math.max(1,math.ceil(#self.rows/QUEST_ROWS)) .. " | Details below (scroll)")
     self:RefreshEntrance()
     self:RefreshDetails()
 end

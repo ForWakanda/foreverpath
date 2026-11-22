@@ -62,6 +62,7 @@ C_QuestLog.IsQuestFlaggedCompleted=function(id) return done[id] or false end
 local function fresh() DP.memo,DP.gearMemo=nil,nil;C.starters={};C.records={} end
 local function index(r) local by={};for _,row in ipairs(r) do by[row.id]=row end;return by end
 local function rows(key) fresh();local r,counts,ctx=D:Rows(key or "scholomance",false);return index(r),counts,ctx,r end
+local function todo(key) fresh();local r,counts,ctx=D:Todo(key or "scholomance",false);return index(r),counts,ctx,r end
 local function plain(text) return (text:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r","")) end
 local function log(id,title,complete) M.AddQuest({questID=id,title=title,objectives={{text="0/1 Thing",type="item",numFulfilled=0,numRequired=1,finished=false}}});M.complete[id]=complete;FP.Recorder.RescanLog("clarity") end
 local function drop(id) M.RemoveQuest(id);M.complete[id]=nil;FP.Recorder.RescanLog("clarity") end
@@ -142,6 +143,107 @@ assert(by[8992].code=="prereq" and D:Where(by[8992],ctx)=="Next: finish The Left
 drop(8967);done[8967]=true;by,counts,ctx=rows()
 assert(by[8969].code=="closed" and D:Where(by[8969],ctx)=="Because you finished the Dire Maul: North version of this quest", D:Where(by[8969],ctx))
 assert(by[8992].code=="pickup", "the step was finished under its other number: "..by[8992].code)
+assert(#FP.db.errors==0)
+''',
+
+        # report 3: "it just needs to be clearer what quests to pick up next and where"
+        'dungeon_checklist_leads_with_what_to_pick_up_now_and_where': CLARITY + r'''
+log(5341,"Barov Family Fortune");log(8258,"The Darkreaver Menace")
+stand(1422,.5,.5)
+local by,counts,ctx,list=todo()
+local function line(row) return plain(D:Title(row)).." | "..plain(D:Where(row,ctx)) end
+-- today's pickups first, nearest first, each with giver, place and distance; a quest that opens others says so
+-- (the quest it leads to directly is the one named: Bag of Horrors is 1 quest on, Kirtonos 2, Ras Frostwhisper 3)
+assert(line(list[1])=="Pick up now - Doctor Theolen Krastinov, the Butcher  ·  leads to Krastinov's Bag of Horrors +2 | Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · 3.11k yd", line(list[1]))
+assert(line(list[2])=="Pick up now - Plagued Hatchlings  ·  leads to Healthy Dragon Scale | Betina Bigglezink — Eastern Plaguelands 81.5, 59.8 · 13.2k yd", line(list[2]))
+assert(list[3].id==8969 and plain(D:Where(list[3],ctx))=="Bodley — Burning Steppes 30.0, 30.0 · 28.1k yd", line(list[3]))
+-- then the first quest of a chain, once, however many dungeon quests wait behind it
+-- (it is nearer than the pickup above it: today's dungeon quests come before chain starts)
+assert(list[4].step and list[4].code=="step" and list[4].id==4726 and #list[4].opens==2 and list[4].steps==2)
+assert(line(list[4])=="Start a chain - Broodling Essence  ·  2 quests to Betina Bigglezink +1 | Tinkee Steamboil — Burning Steppes 65.2, 24.0 · 27.4k yd", line(list[4]))
+local n=0;for _,row in ipairs(list) do if row.id==4726 then n=n+1 end end;assert(n==1, "one line per chain start")
+-- then what is in the log (a held version included), then what stays shut, in grey
+assert(list[5].code=="active" and list[6].code=="active")
+assert(line(by[5341])=="In your log - Barov Family Fortune  ·  leads to The Last Barov | Turn in: Alexi Barov — Tirisfal Glades 83.1, 71.6", line(by[5341]))
+assert(line(by[7668])=="In your log - The Darkreaver Menace | Turn in: Sagorne Creststrider — Orgrimmar 38.7, 35.9", line(by[7668]))
+assert(by[4771].code=="prereq" and by[4771].label=="Later: 2 quests first" and by[4771].color==FP.GREY and not by[4771].now)
+assert(plain(D:Where(by[4771],ctx))=="Next: Broodling Essence · Tinkee Steamboil — Burning Steppes 65.2, 24.0 · then 1 more")
+local seenLater
+for _,row in ipairs(list) do
+ if row.now then assert(not seenLater, "a do-now line after a later one: "..row.quest.name) else seenLater=true end
+end
+-- the summary says the same in one line
+local summary=plain(D:TodoText(counts))
+assert(summary:find("Now: 3 to pick up · 1 chain to start · 2 in your log.  Later: 8 behind a quest chain.",1,true) and summary:find("behind a quest chain",1,true), summary)
+-- the details of a chain start say what it is for
+local text=plain(D:Details(list[4],ctx))
+assert(text:find("A chain step, not a dungeon quest: the first of 2 quests before Betina Bigglezink, Dawn's Gambit.",1,true), text)
+assert(plain(D:Details(by[5382],ctx)):find("The first step toward: Krastinov's Bag of Horrors, Kirtonos the Herald, The Lich, Ras Frostwhisper.",1,true), plain(D:Details(by[5382],ctx)))
+-- across the sea it says so instead of a distance, and those lines come after the ones on this continent
+stand(1454,.38,.37);by,counts,ctx,list=todo()
+assert(plain(D:Where(by[5382],ctx))=="Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · other continent", plain(D:Where(by[5382],ctx)))
+-- a chain step already in the log: finish it, with its turn-in
+log(4726,"Broodling Essence");by,counts,ctx,list=todo()
+assert(by[4726].code=="stepactive" and line(by[4726])=="Finish first - Broodling Essence  ·  2 quests to Betina Bigglezink +1 | In your log · turn in: Tinkee Steamboil — Burning Steppes 65.2, 24.0", line(by[4726]))
+assert(plain(D:TodoText(counts)):find("1 chain step to finish",1,true))
+drop(4726)
+-- a chain is as long as the shortest way to a dungeon quest behind it
+QUEST[5531].preQuestSingle={4726};by,counts,ctx,list=todo()
+assert(by[4726].steps==1 and plain(D:Title(by[4726]))=="Start a chain - Broodling Essence  ·  leads to Betina Bigglezink +1", plain(D:Title(by[4726])))
+QUEST[5531].preQuestSingle={4808}
+-- two known givers: the nearer one is named, with its place
+stand(1422,.5,.5)
+NPC[11217]={name="Lucien Sarkhoff",spawns={[139]={{10,10}}}};QUEST[5382].startedBy={{11216,11217}};by,counts,ctx,list=todo()
+assert(plain(D:Where(by[5382],ctx))=="Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · 3.11k yd", plain(D:Where(by[5382],ctx)))
+stand(1423,.12,.12);by,counts,ctx,list=todo()
+assert(plain(D:Where(by[5382],ctx))=="Lucien Sarkhoff — Eastern Plaguelands 10.0, 10.0 · 283 yd", plain(D:Where(by[5382],ctx)))
+QUEST[5382].startedBy={{11216}};stand(1454,.38,.37)
+-- a step the character is too low for says so
+QUEST[4726].requiredLevel=61;by,counts,ctx,list=todo()
+assert(plain(D:Where(by[4726],ctx)):find(" · needs level 61",1,true), plain(D:Where(by[4726],ctx)))
+QUEST[4726].requiredLevel=nil
+-- a step nothing describes gets no line of its own
+QUEST[4808].preQuestSingle={4999};by,counts,ctx,list=todo()
+assert(not by[4999] and by[4771].code=="prereq" and plain(D:Where(by[4771],ctx)):find("quest #4999, which the quest database does not list",1,true))
+QUEST[4808].preQuestSingle={4726}
+-- the plain list (itinerary, receipts) is unchanged by the do-now list
+local plainRows=select(4,rows());for _,row in ipairs(plainRows) do assert(not row.step and FP.DungeonCatalog.quests[row.id]) end
+assert(#FP.db.errors==0)
+''',
+
+        'dungeon_checklist_window_shows_the_do_now_list_and_guides_a_chain_start': hub + CLARITY + r'''
+log(8258,"The Darkreaver Menace")
+stand(1422,.5,.5)
+local P=FP.DungeonPanel
+fresh();P:Open("scholomance")
+assert(#P.questButtons==7, "seven lines a page")
+local b1,b3=P.questButtons[1],P.questButtons[5]
+assert(plain(b1.title:GetText())=="Pick up now - Doctor Theolen Krastinov, the Butcher  ·  leads to Krastinov's Bag of Horrors +2", plain(b1.title:GetText()))
+assert(plain(b1.pickup:GetText())=="Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · 3.11k yd", plain(b1.pickup:GetText()))
+assert(plain(P.summary:GetText()):find("Now: 4 to pick up · 1 chain to start · 1 in your log.",1,true), plain(P.summary:GetText()))
+-- no line tells him to pick up the quest he holds
+for _,row in ipairs(P.rows) do assert(not (row.id==7668 and row.code~="active"), row.code) end
+-- the receipt for the next data pull: one quest recognised under its other number, one chain start listed
+local receipt=FP.db.dungeonSources
+assert(receipt.key=="scholomance" and receipt.held==1 and receipt.steps==1 and receipt.finish==0 and receipt.lines==#P.rows and receipt.rows==#P.rows-1)
+-- a chain start: its own button text, and the click leads to its giver
+assert(b3.row.step and b3.row.id==4726)
+b3:GetScript("OnClick")(b3)
+assert(P.selectedQuest==4726 and P.guideQuest:GetText()=="Guide pickup" and P.guideQuest:IsEnabled() and P.viewChain:IsEnabled())
+assert(plain(P.details:GetText()):find("A chain step, not a dungeon quest",1,true))
+assert(not active(), "browsing set a destination")
+P.guideQuest:GetScript("OnClick")(P.guideQuest)
+assert(active() and active().source.type=="chain-pickup" and active().source.questID==4726 and active().mapID==1428)
+-- in the log it guides the quest instead of the giver
+FP.Waypoints:Clear();log(4726,"Broodling Essence");P:Refresh()
+local held;for _,b in ipairs(P.questButtons) do if b.row and b.row.id==4726 then held=b end end
+held:GetScript("OnClick")(held);assert(held.row.code=="stepactive" and P.guideQuest:GetText()=="Guide objective")
+P.guideQuest:GetScript("OnClick")(P.guideQuest)
+assert(not active() or active().source.type~="chain-pickup")
+-- (with a place for its objective the arrow goes there, the same as any quest in the log)
+drop(4726);quest(4726,"Broodling Essence",1428,.5,.5);FP.Recorder.RescanLog("clarity")
+local ok,message=D:GuideStep(4726)
+assert(ok and message:find("Guiding the selected quest",1,true) and active() and active().mapID==1428 and active().source.type~="chain-pickup", tostring(message))
 assert(#FP.db.errors==0)
 ''',
 
