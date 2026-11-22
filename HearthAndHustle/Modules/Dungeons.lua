@@ -332,9 +332,13 @@ end
 -- The quests still to finish before this one, first to last, for this
 -- character. `unknown`: a step the client would not answer for. `dead`: a step
 -- with no branch this character can take.
+-- `cut`: the chain is longer than the walk follows, so the steps listed do NOT
+-- reach its first quest (the amulet chain of 20+ quests was cut at 19 until
+-- v0.33.0 and its cut end shown as the start). Never name a first step then.
+D.PATH_DEPTH, D.PATH_BUDGET = 60, 120
 function D:Path(id, ctx)
     local path = { steps = {} }
-    local trail, listed, budget = { [id] = true }, {}, 40
+    local trail, listed, budget = { [id] = true }, {}, self.PATH_BUDGET
     local function walk(qid, depth)
         for _, need in ipairs(self:Needs(qid)) do
             local value = self:NeedValue(need, ctx)
@@ -349,7 +353,8 @@ function D:Path(id, ctx)
                 end
                 pick = pick or fallback
                 if not pick then path.dead = true
-                elseif trail[pick] or budget <= 0 or depth >= 20 then path.unknown = true -- a loop in the reference
+                elseif trail[pick] then path.unknown = true -- a loop in the reference
+                elseif budget <= 0 or depth >= self.PATH_DEPTH then path.unknown, path.cut = true, true
                 elseif not listed[pick] then
                     listed[pick], trail[pick], budget = true, true, budget - 1
                     walk(pick, depth + 1)
@@ -429,9 +434,12 @@ function D:Evaluate(id, ctx)
         return "level", "Needs level " .. level, FP.GOLD
     end
     local path = self:Path(id, ctx)
-    if #path.steps > 0 then return "prereq", "Chain: " .. plural(#path.steps, "quest") .. " first", FP.GOLD end
+    if #path.steps > 0 then return "prereq", "Chain: " .. (path.cut and "more than " or "") .. plural(#path.steps, "quest") .. " first", FP.GOLD end
     if path.dead then return "prereq", "Needs a quest you cannot take", FP.GOLD end
     if path.unknown then return "unknown", "Prerequisite unknown", FP.GOLD end
+    -- the giver was asked and did not offer it: the reference is wrong for this character
+    local asked = self:Asked(id)
+    if asked and asked.refused then return "refused", "Not offered", FP.GREY end
     local o = self:Origin(id)
     if o.inside then return "inside", o.kind == "item" and "Drops inside" or "Pick up inside", FP.GOLD end
     if o.kind == "item" then return "pickup", "Starts from an item", FP.GOLD end
@@ -470,7 +478,7 @@ function D:Rows(key, all, ctx)
         end
     end
     -- what to do before the run comes first
-    local order = { offer=1, pickup=2, prereq=3, inside=4, ready=5, active=6, level=7, unknown=8, closed=9, done=10, restricted=11 }
+    local order = { offer=1, pickup=2, prereq=3, inside=4, ready=5, active=6, level=7, unknown=8, refused=9, closed=10, done=11, restricted=12 }
     table.sort(rows, function(a,b)
         if order[a.code] ~= order[b.code] then return order[a.code] < order[b.code] end
         if a.quest.name ~= b.quest.name then return a.quest.name < b.quest.name end
@@ -485,13 +493,133 @@ function D:Rows(key, all, ctx)
 end
 
 -------------------------------------------------------------------------------
+-- The giver's own word. The quest database says where a quest starts. Whether
+-- the giver offers it to this character is known only from the giver's dialog:
+-- the database records no worn-item, reputation or content-phase requirement,
+-- and its own design notes call availability "consumer policy".
+--
+-- So each conversation with a giver is remembered, per character: when, at
+-- what level, and which quests were on offer. A quest on that list is
+-- confirmed. A quest the database starts at that giver and that was NOT on a
+-- full list is "not offered", as long as nothing it waits on was handed in
+-- since and the character was old enough when asking. The player can say the
+-- same with a button, for a giver who opens no dialog at all.
+-------------------------------------------------------------------------------
+local GIVERS_KEPT, TURNINS_KEPT = 300, 600
+
+-- Reading never creates anything in the saved character: only a conversation,
+-- a hand-in or the player's button (`write`) does.
+function D:Memory(write)
+    local cdb = FP.cdb
+    if write then cdb.givers, cdb.notOffered, cdb.turnins = cdb.givers or {}, cdb.notOffered or {}, cdb.turnins or {} end
+    return cdb.givers or {}, cdb.notOffered or {}, cdb.turnins or {}
+end
+
+local function trim(list, keep, stamp)
+    local n = 0
+    for _ in pairs(list) do n = n + 1 end
+    while n > keep do
+        local oldest, at
+        for key, value in pairs(list) do
+            local t = stamp(value)
+            if not at or t < at or (t == at and key < oldest) then oldest, at = key, t end
+        end
+        list[oldest] = nil; n = n - 1
+    end
+end
+
+-- `full`: a greeting, which lists everything on offer and replaces what was known.
+-- A quest dialog opened directly names one quest and proves nothing about others.
+function D:Remember(npc, list, full)
+    if type(npc) ~= "table" or npc.kind ~= "Creature" or not U.Finite(npc.id) then return end
+    local givers, marked = self:Memory(true)
+    local now = U.Now()
+    local rec = givers[npc.id] or { offered = {} }
+    if full then rec.offered, rec.full, rec.level = {}, now, API.PlayerLevel() end
+    for _, q in ipairs(list or {}) do
+        local id = type(q) == "table" and q.questID
+        if U.Finite(id) and id > 0 then rec.offered[id] = now; marked[id] = nil end
+    end
+    rec.t = now
+    if type(npc.name) == "string" and npc.name ~= "" then rec.name = npc.name end
+    givers[npc.id] = rec
+    trim(givers, GIVERS_KEPT, function(value) return value.t or 0 end)
+    FP:Fire("DUNGEON_GIVERS_CHANGED")
+end
+
+-- When the last quest this one waits on was handed in (0: before this was kept).
+function D:OpenedAt(id)
+    local _, _, turnins = self:Memory()
+    local latest = 0
+    for _, need in ipairs(self:Needs(id)) do
+        for _, pid in ipairs(need.ids) do
+            local t = turnins[pid]
+            if t and t > latest then latest = t end
+        end
+    end
+    return latest
+end
+
+-- nil, or { offered = true | refused = true, t, name, manual }
+function D:Asked(id)
+    local givers, marked = self:Memory()
+    local best
+    for _, starter in ipairs(FP.QuestChains:Starters(id)) do
+        local rec = starter.kind == "Npc" and givers[starter.id]
+        if rec then
+            local seen, name = rec.offered[id], rec.name or starter.name
+            if seen then
+                if not best or not best.offered or seen > best.t then best = { offered = true, t = seen, name = name } end
+            elseif rec.full and not (best and best.offered) and (not best or rec.full > best.t) then
+                best = { refused = true, t = rec.full, name = name, level = rec.level }
+            end
+        end
+    end
+    if best and best.offered then return best end
+    local opened, level = self:OpenedAt(id), self:MinLevel(id)
+    -- a refusal counts only if the quest was open to the character when the giver was asked
+    if best and (best.t < opened or (level and U.Finite(best.level) and best.level < level)) then best = nil end
+    local mark = marked[id]
+    if mark and mark >= opened and (not best or mark > best.t) then best = { refused = true, manual = true, t = mark } end
+    return best
+end
+
+-- The player's own word, for a giver who opens no dialog. Player click only.
+function D:MarkNotOffered(id, on)
+    if not U.Finite(id) then return false end
+    local _, marked = self:Memory(true)
+    marked[id] = on and U.Now() or nil
+    FP:Fire("DUNGEON_GIVERS_CHANGED")
+    return true
+end
+
+local function ago(t)
+    local s = math.max(0, U.Now() - t)
+    if s < 90 then return "just now" end
+    if s < 3600 then return math.floor(s / 60) .. " min ago" end
+    if s < 86400 then return math.floor(s / 3600) .. " h ago" end
+    local days = math.floor(s / 86400)
+    return days .. (days == 1 and " day ago" or " days ago")
+end
+
+function D:AskedText(asked)
+    if asked.offered then return "Offered when you spoke to " .. asked.name .. " " .. ago(asked.t) .. "." end
+    if asked.manual then return "You marked it not offered " .. ago(asked.t) .. ". Talk to the giver, or undo the mark, to list it again." end
+    return "Not offered when you spoke to " .. asked.name .. " " .. ago(asked.t) .. ". The quest database does not record why; talk to them again to refresh."
+end
+
+-------------------------------------------------------------------------------
 -- What to do now, then what comes later. The checklist is this list.
 --
--- "Now" is everything a giver will hand over today: the dungeon quests open to
--- the character, and the first quest of each chain a dungeon quest sits behind
--- (once per chain start, however many quests it leads to). Each names its giver
--- and the nearest known place, nearest first. "Later" is what stays shut until
--- one of those is done. Reference places, straight-line distances.
+-- "Now" is the dungeon's own quests that the reference says are open to the
+-- character, each with its giver and the nearest known place, nearest first,
+-- plus what is in the log. The first quest of each chain a dungeon quest sits
+-- behind is listed once, below those, as a chain the player could start: the
+-- reference's word, not an instruction, until its giver has been seen to
+-- offer it (then it is a pickup like any other). A chain that could not be
+-- followed to its first quest names none. What a giver was asked for and did
+-- not offer is "Not offered". "Later" is what stays shut until something
+-- above is done. Reference places, straight-line distances.
 -------------------------------------------------------------------------------
 -- The nearest known place outside a dungeon to start a quest:
 -- point, who or what gives it there, yards (nil across the sea), other continent.
@@ -510,7 +638,10 @@ function D:Near(id, ctx)
             end
         end
     end
-    if offer and U.ValidMapPoint(offer.mapID, offer.x, offer.y) then consider({ offer }, offer.name)
+    if offer and U.ValidMapPoint(offer.mapID, offer.x, offer.y) then
+        -- seen on offer on this map: the place is where the player stood with the giver
+        local asked, starters = self:Asked(id), FP.QuestChains:Starters(id)
+        consider({ offer }, (asked and asked.name) or (starters[1] and starters[1].name) or nil)
     else
         for _, starter in ipairs(FP.QuestChains:Starters(id)) do
             consider(starter.points, starter.name)
@@ -540,8 +671,11 @@ local function listNames(D, ids, limit)
     return table.concat(out, ", ") .. (#ids > limit and (" +" .. (#ids - limit)) or "")
 end
 
-local GROUP = { ready = 1, offer = 2, pickup = 2, step = 3, stepactive = 4, active = 5, inside = 6, prereq = 7, level = 8, unknown = 9, closed = 10, done = 11, restricted = 12 }
-local NOW = { ready = true, offer = true, pickup = true, step = true, stepactive = true, active = true }
+local GROUP = { ready = 1, offer = 2, pickup = 2, stepactive = 3, active = 4, step = 5, inside = 6, prereq = 7, level = 8, unknown = 9, refused = 10, closed = 11, done = 12, restricted = 13 }
+local NOW = { ready = true, offer = true, pickup = true, stepactive = true, active = true }
+local WHITE = "|cffffffff"
+-- a chain start its giver was seen to offer is a pickup like any other
+local function group(row) return (row.code == "step" and row.confirmed) and GROUP.pickup or GROUP[row.code] end
 
 function D:Todo(key, all, ctx)
     FP.Pos:Refresh(true)
@@ -553,7 +687,8 @@ function D:Todo(key, all, ctx)
         row.now = NOW[row.code] == true
         if row.code == "prereq" then
             row.path = self:Path(row.id, ctx)
-            local first = row.path.steps[1]
+            -- only a chain read to its start, every step known, names a first quest
+            local first = not row.path.unknown and not row.path.dead and row.path.steps[1]
             if first then
                 if not starts[first] then starts[first] = { id = first, toward = {}, steps = #row.path.steps }; order[#order + 1] = starts[first] end
                 local start = starts[first]
@@ -562,7 +697,7 @@ function D:Todo(key, all, ctx)
             end
         end
     end
-    counts.steps, counts.finish = 0, 0
+    counts.steps, counts.finish, counts.refused, counts.confirmed = 0, 0, counts.by.refused or 0, 0
     for _, start in ipairs(order) do
         -- the quest it opens directly is named first
         table.sort(start.toward, function(a, b)
@@ -577,24 +712,34 @@ function D:Todo(key, all, ctx)
             local s = ctx:State(start.id)
             local held = s.onQuest == true
             local level = self:MinLevel(start.id)
+            local asked = not held and self:Asked(start.id) or nil
             local row = { id = start.id, step = true, quest = { name = self:QuestName(start.id) }, opens = start.toward, steps = start.steps,
-                code = held and "stepactive" or "step", label = held and "Finish first" or "Start a chain", color = held and FP.GREEN or FP.GOLD, now = true,
+                code = held and "stepactive" or "step", label = held and "Finish first" or "Chain start", color = held and FP.GREEN or WHITE, now = held,
                 needsLevel = (not held and level and U.Finite(ctx.char.level) and ctx.char.level < level) and level or nil }
+            if asked and asked.refused then row.code, row.label, row.color = "refused", "Not offered", FP.GREY end
             rows[#rows + 1] = row
-            if held then counts.finish = counts.finish + 1 else counts.steps = counts.steps + 1 end
+            if held then counts.finish = counts.finish + 1
+            elseif row.code == "refused" then counts.refused = counts.refused + 1
+            else counts.steps = counts.steps + 1 end
         end
     end
     for _, row in ipairs(rows) do
         if row.code == "pickup" or row.code == "offer" or row.code == "step" then
             local point, _, dist, far = self:Near(row.id, ctx)
             row.dist, row.far, row.placed = dist, far, point ~= nil
-        end
+            local asked = self:Asked(row.id)
+            if asked and asked.offered then row.confirmed, row.asked = true, asked; counts.confirmed = counts.confirmed + 1 end
+        elseif row.code == "refused" then row.asked = self:Asked(row.id) end
         if row.code == "pickup" or row.code == "offer" then row.label, row.color = "Pick up now", FP.GOLD end
-        if row.code == "prereq" then row.label, row.color = "Later: " .. plural(#row.path.steps, "quest") .. " first", FP.GREY end
+        if row.code == "step" and row.confirmed then
+            row.label, row.color, row.now = "Pick up now", FP.GOLD, true
+            counts.steps, counts.pick = counts.steps - 1, (counts.pick or 0) + 1
+        end
+        if row.code == "prereq" then row.label, row.color = "Later: " .. (row.path.cut and "more than " or "") .. plural(#row.path.steps, "quest") .. " first", FP.GREY end
     end
     table.sort(rows, function(a, b)
-        if GROUP[a.code] ~= GROUP[b.code] then return GROUP[a.code] < GROUP[b.code] end
-        if a.code == "step" and a.steps ~= b.steps then return a.steps < b.steps end -- the short chains first
+        if group(a) ~= group(b) then return group(a) < group(b) end
+        if a.code == "step" and b.code == "step" and not a.confirmed and a.steps ~= b.steps then return a.steps < b.steps end -- the short chains first
         if a.code == "pickup" or a.code == "offer" or a.code == "step" then
             local ad, bd = a.dist or (a.far and 1e9 or (a.placed and 1e8 or 1e10)), b.dist or (b.far and 1e9 or (b.placed and 1e8 or 1e10))
             if ad ~= bd then return ad < bd end
@@ -609,6 +754,8 @@ function D:Todo(key, all, ctx)
         for _, row in ipairs(rows) do if row.as then held = held + 1 end end
         local receipt = FP.db.dungeonSources
         receipt.lines, receipt.steps, receipt.finish, receipt.held = #rows, counts.steps, counts.finish, held
+        -- ...and what the givers' own answers changed: quests seen on offer, quests asked for and not offered
+        receipt.confirmed, receipt.refused = counts.confirmed, counts.refused
     end
     return rows, counts, ctx
 end
@@ -624,25 +771,26 @@ function D:Title(row)
     return text
 end
 
--- "Now: 2 to pick up · 1 chain to start · 2 in your log.  Later: 9 behind a quest chain."
+-- "Now: 2 to pick up · 2 in your log.  3 chains you could start (unconfirmed).  Later: 9 behind a quest chain."
 function D:TodoText(counts)
     local by = counts.by or {}
     local now, later, rest = {}, {}, {}
     local function add(list, n, text) if (n or 0) > 0 then list[#list + 1] = n .. " " .. text end end
     add(now, by.ready, "to turn in")
-    add(now, (by.offer or 0) + (by.pickup or 0), "to pick up")
-    add(now, counts.steps, (counts.steps == 1 and "chain" or "chains") .. " to start")
+    add(now, (by.offer or 0) + (by.pickup or 0) + (counts.pick or 0), "to pick up")
     add(now, counts.finish, (counts.finish == 1 and "chain step" or "chain steps") .. " to finish")
     add(now, by.active, "in your log")
     add(later, by.inside, (by.inside == 1 and "starts" or "start") .. " inside")
     add(later, by.prereq, "behind a quest chain")
     add(later, by.level, (by.level == 1 and "needs" or "need") .. " a higher level")
     add(later, by.unknown, "unknown")
+    add(rest, counts.refused, "not offered when asked")
     add(rest, counts.done, "completed")
     add(rest, by.closed, "no longer offered")
     add(rest, counts.hidden, "for other classes/factions")
     local lines = {}
     if #now > 0 then lines[#lines + 1] = FP.GOLD .. "Now:|r " .. table.concat(now, " · ") end
+    if (counts.steps or 0) > 0 then lines[#lines + 1] = (counts.steps == 1 and "1 chain" or (counts.steps .. " chains")) .. " you could start (unconfirmed)" end
     if #later > 0 then lines[#lines + 1] = "Later: " .. table.concat(later, " · ") end
     if #lines == 0 and #rest == 0 then return "Nothing listed for this character." end
     if #lines == 0 then lines[1] = "Nothing left to pick up here." end
@@ -688,6 +836,11 @@ function D:NextText(path, ctx)
         if not catalog.quests[nextID] and not FP.QuestChains:Get(nextID) then return "quest #" .. nextID .. ", which the quest database does not list" end
         text = self:QuestName(nextID) .. " · " .. self:OriginText(nextID, ctx.key)
         if not ctx.offers[nextID] and level and U.Finite(ctx.char.level) and ctx.char.level < level then text = text .. " (needs level " .. level .. ")" end
+        -- the giver was asked for that step and did not offer it: say so instead of sending the player back
+        local asked = self:Asked(nextID)
+        if asked and asked.refused then
+            text = self:QuestName(nextID) .. " · not offered when you " .. (asked.manual and "last checked" or ("spoke to " .. asked.name))
+        end
     end
     return text
 end
@@ -708,17 +861,25 @@ function D:Where(row, ctx)
         return turnin and ("Turn in: " .. turnin) or ""
     end
     if code == "closed" then return "Because " .. self:ClosedWhy(id, ctx) end
+    if code == "refused" then
+        local asked = self:Asked(id)
+        return asked and self:AskedText(asked) or "Not offered."
+    end
     if code == "step" then
         return self:NearText(id, ctx) .. (row.needsLevel and (" · needs level " .. row.needsLevel) or "")
+            .. (row.confirmed and (" · offered " .. ago(row.asked.t)) or " · unconfirmed: ask the giver")
     end
     if code == "stepactive" then
         local turnin = self:TurnInText(id, ctx.key)
         return "In your log" .. (turnin and (" · turn in: " .. turnin) or "")
     end
     -- in the do-now list a giver is named with the nearest place and how far it is
-    if row.now and (code == "pickup" or code == "offer") and self:Origin(id).kind == "giver" then return self:NearText(id, ctx) end
+    if row.now and (code == "pickup" or code == "offer") and self:Origin(id).kind == "giver" then
+        return self:NearText(id, ctx) .. (row.confirmed and (" · offered " .. ago(row.asked.t)) or "")
+    end
     if code == "prereq" then
         local path = self:Path(id, ctx)
+        if path.cut then return "A very long chain: the list could not follow it back to its first quest. View quest chain." end
         return "Next: " .. self:NextText(path, ctx) .. (#path.steps > 1 and (" · then " .. (#path.steps - 1) .. " more") or "")
     end
     if code == "inside" then
@@ -743,6 +904,9 @@ function D:Details(row, ctx)
     if row.step then
         lines[#lines + 1] = "A chain step, not a dungeon quest: " .. (row.steps > 1 and ("the first of " .. row.steps .. " quests before ") or "it opens ")
             .. listNames(self, row.opens, 6) .. "."
+        if row.code == "step" and not row.confirmed then
+            lines[#lines + 1] = FP.GOLD .. "Unconfirmed.|r The quest database names this as the chain's first quest; it does not know whether the giver offers it to you (a quest can need an item, a reputation or content that is not out). Talking to the giver settles it and this list remembers the answer. If the giver has nothing, press \"Giver didn't offer it\"."
+        end
     elseif row.opens then
         lines[#lines + 1] = "The first step toward: " .. listNames(self, row.opens, 6) .. "."
     end
@@ -756,6 +920,8 @@ function D:Details(row, ctx)
     local have = row.code == "active" or row.code == "ready" or row.code == "stepactive" or row.code == "done"
     lines[#lines + 1] = (have and "Given by: " or "How to get it: ") .. how
     if row.code == "closed" then lines[#lines + 1] = "No longer offered: " .. self:ClosedWhy(id, ctx) .. "." end
+    local asked = (row.code == "refused" or row.confirmed) and self:Asked(id) or nil
+    if asked then lines[#lines + 1] = self:AskedText(asked) end
     if row.as then
         lines[#lines + 1] = (row.code == "done" and "Completed as #" or "In your log as #") .. row.as
             .. ": the quest database lists this quest under two numbers. Nothing to pick up."
@@ -862,7 +1028,9 @@ function D:GuideQuest(id)
     if code=="offer" or code=="pickup" or code=="inside" then return FP.QuestChains:GuidePickup(id) end
     if code=="prereq" then
         -- the click leads to the step that opens the chain, not to a giver who will refuse
-        local nextID=self:Path(id,ctx).steps[1]
+        local path=self:Path(id,ctx)
+        if path.cut then return false,"This chain is too long to follow back to its first quest. View its chain." end
+        local nextID=path.steps[1]
         if not nextID then return false,"A step in this quest's chain is not available to this character." end
         if ctx:State(nextID).onQuest==true then return logStep(nextID) end
         local ok,message=FP.QuestChains:GuidePickup(nextID)
@@ -871,6 +1039,13 @@ function D:GuideQuest(id)
     return false,"Check this quest's requirements first. View its chain for prerequisites and pickup details."
 end
 function D:OnEnable()
+    FP:On("NPC_QUESTS_SEEN", function(npc, list, full) self:Remember(npc, list, full) end)
+    FP:RegisterEvent("QUEST_TURNED_IN", function(_, questID)
+        if not U.Finite(questID) then return end
+        local _, _, turnins = self:Memory(true)
+        turnins[questID] = U.Now()
+        trim(turnins, TURNINS_KEPT, function(value) return value end)
+    end)
     local function entering()
         if not API.InInstance() then return end
         for i=#FP.Waypoints.list,1,-1 do

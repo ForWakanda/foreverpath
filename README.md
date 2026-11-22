@@ -4,6 +4,18 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Dungeon quests: the list stops guessing what a giver offers (v0.33.0)
+
+v0.32.0 told its owner to "start a chain" at Mokvar in Orgrimmar. Mokvar had nothing for him.
+
+- **The bug.** The chain behind *The Left Piece of Lord Valthalak's Amulet* is 20 quests long, and the list stopped reading a chain after 19. It then showed the quest where it stopped as the chain's first quest. Chains are now read to their real start (the longest behind any dungeon quest is 26), and a chain the list cannot read to its start names no first quest at all.
+- **What the list cannot know.** The quest database says where a quest starts. It does not record whether the giver offers it to *you*: a quest can need an item, a reputation, or content that is not out. So the first quest of a chain is no longer a gold "do it now" line. It is a white line under your log, `Chain start`, with how long the chain is, ending `unconfirmed: ask the giver`.
+- **The giver's answer is remembered.** When you talk to a giver, the addon keeps what was on offer (per character). A quest you saw on offer becomes `Pick up now`, tagged `offered 2 h ago`. A quest the database starts at that giver which was *not* on the list becomes `Not offered`, in grey at the bottom, naming who you asked and when, and the quests behind it stop sending you back there. An answer given before the quest was open to you (a prerequisite handed in since, or your level too low then) does not count.
+- **A button for a giver who says nothing.** Select a line and press **Giver didn't offer it**. The line leaves your pickups until its giver offers it or you press **Undo: not offered**.
+- The count line: `Now: 2 to pick up · 2 in your log.  2 chains you could start (unconfirmed).  Later: 9 behind a quest chain.`
+
+Still true: a gold `Pick up now` line for one of the dungeon's own quests is the database's word until you have talked to its giver.
+
 ## Dungeon quests: what to pick up now, and where (v0.32.0)
 
 `/hh` → **Dungeon preparation**, or `/hh dungeon scholomance`.

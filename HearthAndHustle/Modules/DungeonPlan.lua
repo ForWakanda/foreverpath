@@ -419,10 +419,12 @@ function DP:Build(key)
 		elseif r.code == "prereq" then
 			-- kept short for the list; the place of the next step is in the details
 			local path = D:Path(r.id, ctx)
-			local first = path.steps[1]
+			-- a chain too long to follow back names no first quest
+			local first = not path.cut and path.steps[1] or nil
 			chain[#chain + 1] = { type = "chain", key = "chain:" .. r.id, quest = r, steps = #path.steps, first = first,
-				text = q.name .. " — first: " .. (first and (D:QuestName(first) .. (ctx:State(first).onQuest == true and " (in your log)" or "")
-					.. (#path.steps > 1 and (" + " .. (#path.steps - 1) .. " more") or "")) or "a step you cannot take") }
+				text = path.cut and (q.name .. " — a very long chain; its first quest is not worked out")
+					or (q.name .. " — first: " .. (first and (D:QuestName(first) .. (ctx:State(first).onQuest == true and " (in your log)" or "")
+					.. (#path.steps > 1 and (" + " .. (#path.steps - 1) .. " more") or "")) or "a step you cannot take")) }
 		elseif r.code ~= "done" and r.code ~= "restricted" and r.code ~= "closed" then
 			later[#later + 1] = { type = "later", key = "later:" .. r.id, quest = r, text = r.label .. ": " .. q.name }
 		end
