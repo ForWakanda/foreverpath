@@ -294,3 +294,32 @@ do
  assert(#FP.db.errors==0,"live gear stored errors")
  print("PASS packaged live gear:",L.scan.scanned,"provider items,",L.known,"weapons/armor outside the "..reference.."-item reference,",L.counts.asked,"asked of the client for a shaman,",string.format("%.2fs in %d steps",os.clock()-started,steps))
 end
+
+-- A dungeon quest held under its other number (v0.32.0), on the provider's own
+-- records. The bundled dungeon list knows the shaman quest The Darkreaver Menace
+-- as 7668; the game hands out 8258; the provider marks the two exclusive to each
+-- other. With 8258 in the log the Scholomance list must not send the player to
+-- its giver. A second dungeon checks the amulet quest's four per-dungeon versions.
+do
+ local D=FP.Dungeons
+ M.class="SHAMAN";M.level=60;M.quests={};M.complete={}
+ FP.QuestChains.records={};FP.QuestChains.starters={};FP.DungeonPlan.memo=nil
+ local variants=D:Variants(7668)
+ assert(#variants==1 and variants[1]==8258,"the provider no longer marks 7668 and 8258 as versions of one quest")
+ local function row(key,id) local rows,counts,ctx=D:Todo(key,false);for _,r in ipairs(rows) do if r.id==id then return r,ctx,rows,counts end end end
+ local before=row("scholomance",7668)
+ assert(before and before.code~="active" and before.as==nil)
+ M.AddQuest({questID=8258,title="The Darkreaver Menace",objectives={}})
+ local held,ctx,rows,counts=row("scholomance",7668)
+ assert(held.code=="active" and held.as==8258,"held under 8258 but listed as "..tostring(held.code))
+ assert(D:Where(held,ctx):find("Turn in: Sagorne Creststrider",1,true),D:Where(held,ctx))
+ local starts=0;for _,r in ipairs(rows) do if r.step then starts=starts+1;assert(FP.QuestChains:Get(r.id) and #r.opens>=1) end end
+ M.quests={}
+ local amulet=D:Variants(8969);assert(#amulet==3,"The Left Piece of Lord Valthalak's Amulet: "..#amulet.." other versions")
+ M.AddQuest({questID=8967,title="The Left Piece of Lord Valthalak's Amulet",objectives={}})
+ local closed,ctx2=row("scholomance",8969)
+ assert(closed.code=="closed" and D:Where(closed,ctx2)=="Because you have the Dire Maul: North version of this quest",closed.code.." "..D:Where(closed,ctx2))
+ M.quests={}
+ assert(#FP.db.errors==0,"dungeon list stored errors")
+ print("PASS packaged dungeon quest versions: 7668 is in the log as 8258; the amulet quest has",#amulet+1,"versions;",starts,"chain starts on the Scholomance list")
+end

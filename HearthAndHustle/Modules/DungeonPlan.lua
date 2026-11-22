@@ -53,7 +53,7 @@ function DP:Default()
 			end
 			local count = 0
 			for _, id in ipairs(row.data.quests) do
-				if API.GetDungeonQuestState(id).onQuest == true then count = count + 1 end
+				if FP.Dungeons:LogID(id) then count = count + 1 end
 			end
 			if count > bestCount then best, bestCount = row.key, count end
 		end
@@ -239,7 +239,7 @@ function DP:Next()
 			if a then lo, hi = math.min(lo or a, a), math.max(hi or b, b) end
 			if not open or (self:Fits(row.data, level) and not self:Fits(open.data, level)) then open = row end
 			for _, id in ipairs(row.data.quests) do
-				if API.GetDungeonQuestState(id).onQuest == true then inLog = inLog + 1 end
+				if FP.Dungeons:LogID(id) then inLog = inLog + 1 end
 			end
 		end
 		if lo and lo > level + LEVEL_AHEAD then

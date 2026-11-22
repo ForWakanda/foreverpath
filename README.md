@@ -4,6 +4,21 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Dungeon quests: what to pick up now, and where (v0.32.0)
+
+`/hh` → **Dungeon preparation**, or `/hh dungeon scholomance`.
+
+- **One dungeon is chosen on the page.** Click a dungeon under *Which dungeon next* and the itinerary below is that dungeon's, and both checklist buttons open that dungeon. Click one in the itinerary's list and the mark in the ranking moves with it. The two lists can no longer name different dungeons.
+- **A quest you already have is never a pickup.** The quest database lists some quests under two numbers (an older and a newer version, or one version per dungeon) and marks them exclusive to each other. The bundled dungeon list knows one number; the game may give you the other. The list now recognises the quest in your log or finished under either: `In your log`, with its turn-in, and the details say which number you hold. Where each dungeon has its own version (the Lord Valthalak's Amulet pieces), holding one closes the others and says which: `Because you have the Dire Maul: North version of this quest`.
+- **The list leads with what to do now.** Gold lines are things a giver will hand over today, nearest first, each with the giver, the zone, the coordinates and how far it is (`Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · 3.11k yd`, or `other continent`):
+  - `Pick up now`: the dungeon's quests open to you. One that leads to others says so (`leads to Krastinov's Bag of Horrors +2`).
+  - `Start a chain`: the first quest of a chain a dungeon quest sits behind, listed once however many quests wait behind it, with how long the chain is (`7 quests to Dawn's Gambit +1`). If that step is in your log it reads `Finish first`.
+  - Green lines are in your log, with where to turn them in.
+  - Grey lines come later: `Later: 2 quests first`, with the next step and where it starts.
+- The line above the list counts the same: `Now: 2 to pick up · 3 chains to start · 2 in your log.  Later: 9 behind a quest chain.` The window shows seven lines a page, so "now" usually fits on the first.
+
+What it is not: a live offer list. Givers, places and chains are the quest database's (Classic data with Forever corrections); a chain's first quest can have a requirement the database does not record. Distances are straight lines from where you stand.
+
 ## Gear the item reference does not have, and which quest reward to take (v0.31.0)
 
 `/hh` → **Best in slot** used to list only what its bundled item reference had. That reference is a snapshot of the items one website had a Forever tooltip for: about a fifth of all quest rewards are not in it, and neither are most of the dungeon drops the quest database lists. If your reward was one of those, the page did not show it, and nothing said why.

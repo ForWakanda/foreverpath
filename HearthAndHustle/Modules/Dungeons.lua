@@ -83,6 +83,63 @@ function D:Barred(id, char)
     if U.Finite(classes) and classes > 0 and own and not bit(classes, own) then return "other classes only" end
 end
 
+-------------------------------------------------------------------------------
+-- One quest under two numbers. The reference lists some quests more than once
+-- (an older and a newer version, or one version per dungeon) and marks them
+-- exclusive to each other. Exclusive and the same name: a version of this quest.
+-- Holding one of them is holding the quest; the giver offers nothing more.
+-------------------------------------------------------------------------------
+function D:Variants(id)
+    local chains = FP.QuestChains
+    if self.variantsFor ~= chains.records then self.variants, self.variantsFor = {}, chains.records end
+    if self.variants[id] then return self.variants[id] end
+    local out, record = {}, chains:Get(id)
+    for _, alt in ipairs(record and record.exclusiveTo or {}) do
+        if U.Finite(alt) and alt > 0 and alt ~= id then
+            local other = chains:Get(alt)
+            if other and other.name ~= nil and other.name == record.name then out[#out + 1] = alt end
+        end
+    end
+    table.sort(out)
+    self.variants[id] = out
+    return out
+end
+
+-- The version the character has: one in the log first, else one completed.
+function D:Held(id, ctx)
+    local done
+    for _, alt in ipairs(self:Variants(id)) do
+        local s = ctx:State(alt)
+        if s.onQuest == true then return alt, s end
+        if s.completed == true and not done then done = alt end
+    end
+    if done then return done, ctx:State(done) end
+end
+
+-- The dungeons whose list names a quest.
+function D:ListedIn(id)
+    if not self.listed then
+        self.listed = {}
+        for key, dungeon in pairs(catalog.dungeons) do
+            for _, qid in ipairs(dungeon.quests) do
+                self.listed[qid] = self.listed[qid] or {}
+                table.insert(self.listed[qid], key)
+            end
+        end
+        for _, keys in pairs(self.listed) do table.sort(keys) end
+    end
+    return self.listed[id] or {}
+end
+
+-- The number a dungeon quest is in the log under: its own, or that of a
+-- version no dungeon list carries. Nil when it is not in the log.
+function D:LogID(id)
+    if API.GetDungeonQuestState(id).onQuest == true then return id end
+    for _, alt in ipairs(self:Variants(id)) do
+        if #self:ListedIn(alt) == 0 and API.GetDungeonQuestState(alt).onQuest == true then return alt end
+    end
+end
+
 function D:Area(key)
     local area = self.entranceAreas[key or ""]
     return area and (API.GetDungeonAreaID(area) or area) or nil
@@ -218,6 +275,12 @@ function D:Needs(id)
         if #record.preQuestSingle > 0 then
             local ids = {}
             for _, pid in ipairs(record.preQuestSingle) do ids[#ids + 1] = math.abs(pid); listed[math.abs(pid)] = true end
+            -- the same step under its other number counts too
+            for i = 1, #ids do
+                for _, alt in ipairs(self:Variants(ids[i])) do
+                    if not listed[alt] then ids[#ids + 1] = alt; listed[alt] = true end
+                end
+            end
             needs[#needs + 1] = { ids = ids }
         end
         for _, signed in ipairs(record.preQuestGroup) do
@@ -312,8 +375,20 @@ function D:Closed(id, ctx)
         if s.completed == true or s.onQuest == true then return "the next step, " .. self:QuestName(nextID) .. ", is already " .. (s.completed == true and "done" or "in your log") end
     end
     for _, alt in ipairs(record.exclusiveTo) do
-        if U.Finite(alt) and alt > 0 and ctx:State(alt).completed == true then return "you finished the other branch, " .. self:QuestName(alt) end
+        if U.Finite(alt) and alt > 0 then
+            local s = ctx:State(alt)
+            if s.completed == true then return "you finished the other branch, " .. self:QuestName(alt) end
+            if s.onQuest == true then return "the other branch, " .. self:QuestName(alt) .. ", is in your log" end
+        end
     end
+end
+
+-- "the Dire Maul: North version" / "another version"
+function D:VersionText(alt, key)
+    for _, other in ipairs(self:ListedIn(alt)) do
+        if other ~= key and catalog.dungeons[other] then return "the " .. catalog.dungeons[other].name .. " version" end
+    end
+    return "another version"
 end
 
 function D:MinLevel(id)
@@ -323,6 +398,8 @@ function D:MinLevel(id)
     return level
 end
 
+-- Returns code, label, colour and, when the character holds this quest under
+-- another number, that number: the log, the turn-in and the arrow use it.
 function D:Evaluate(id, ctx)
     local q, state = catalog.quests[id], ctx:State(id)
     if state.onQuest == true then
@@ -335,6 +412,17 @@ function D:Evaluate(id, ctx)
     local restriction = self:Barred(id, ctx.char)
     if restriction then return "restricted", restriction, FP.GREY end
     if state.onQuest == nil or state.completed == nil then return "unknown", "Quest state unavailable", FP.GOLD end
+    -- A version of this quest is in the log or finished: it is not a pickup.
+    local alt, held = self:Held(id, ctx)
+    if alt then
+        -- a version with a row of its own (here or in another dungeon) is that row's business
+        if #self:ListedIn(alt) > 0 then return "closed", "No longer offered", FP.GREY end
+        if held.onQuest == true then
+            if held.ready == true then return "ready", "Ready to turn in", FP.GREEN, alt end
+            return "active", "In your log", FP.GREEN, alt
+        end
+        return "done", "Completed", FP.GREY, alt
+    end
     if self:Closed(id, ctx) then return "closed", "No longer offered", FP.GREY end
     local level = self:MinLevel(id)
     if level and U.Finite(ctx.char.level) and ctx.char.level < level then
@@ -370,11 +458,11 @@ function D:Rows(key, all, ctx)
     for _, id in ipairs(catalog.dungeons[key] and catalog.dungeons[key].quests or {}) do
         if not seen[id] and catalog.quests[id] then
             seen[id] = true
-            local code, label, color = self:Evaluate(id, ctx)
+            local code, label, color, as = self:Evaluate(id, ctx)
             counts.by[code] = (counts.by[code] or 0) + 1
             if code == "restricted" and not all then counts.hidden = counts.hidden + 1
             else
-                rows[#rows + 1] = { id = id, quest = catalog.quests[id], code = code, label = label, color = color }
+                rows[#rows + 1] = { id = id, quest = catalog.quests[id], code = code, label = label, color = color, as = as }
                 if code == "active" or code == "ready" then counts.active = counts.active + 1
                 elseif code == "done" then counts.done = counts.done + 1
                 elseif code ~= "restricted" and code ~= "closed" then counts.check = counts.check + 1 end
@@ -396,20 +484,169 @@ function D:Rows(key, all, ctx)
     return rows, counts, ctx
 end
 
--- "4 to pick up first · 5 behind a chain · 1 starts inside · 3 need a higher level"
-function D:CountsText(counts)
-    local bits, by = {}, counts.by or {}
-    local function add(n, text) if (n or 0) > 0 then bits[#bits + 1] = n .. " " .. text end end
-    add((by.offer or 0) + (by.pickup or 0), "to pick up first")
-    add(by.prereq, "behind a quest chain")
-    add(by.inside, (by.inside == 1 and "starts" or "start") .. " inside")
-    add(counts.active, "in your log")
-    add(by.level, (by.level == 1 and "needs" or "need") .. " a higher level")
-    add(by.unknown, "unknown")
-    add(counts.done, "completed")
-    add(by.closed, "no longer offered")
-    add(counts.hidden, "for other classes/factions")
-    return #bits > 0 and table.concat(bits, " · ") or "Nothing listed for this character."
+-------------------------------------------------------------------------------
+-- What to do now, then what comes later. The checklist is this list.
+--
+-- "Now" is everything a giver will hand over today: the dungeon quests open to
+-- the character, and the first quest of each chain a dungeon quest sits behind
+-- (once per chain start, however many quests it leads to). Each names its giver
+-- and the nearest known place, nearest first. "Later" is what stays shut until
+-- one of those is done. Reference places, straight-line distances.
+-------------------------------------------------------------------------------
+-- The nearest known place outside a dungeon to start a quest:
+-- point, who or what gives it there, yards (nil across the sea), other continent.
+function D:Near(id, ctx)
+    local offer = ctx.offers[id]
+    local pos = FP.Pos.cache or {}
+    local best, bestD, name
+    local function consider(points, label)
+        for _, point in ipairs(points or {}) do
+            if not point.entrance and U.ValidMapPoint(point.mapID, point.x, point.y) then
+                local c, wx, wy = FP.Pos:WorldOf(point)
+                local d = (pos.valid and wx and c == pos.continent) and U.Distance(pos.wx, pos.wy, wx, wy) or math.huge
+                if not best or d < bestD or (d == bestD and (point.mapID < best.mapID or (point.mapID == best.mapID and (point.x < best.x or (point.x == best.x and point.y < best.y))))) then
+                    best, bestD, name = point, d, label
+                end
+            end
+        end
+    end
+    if offer and U.ValidMapPoint(offer.mapID, offer.x, offer.y) then consider({ offer }, offer.name)
+    else
+        for _, starter in ipairs(FP.QuestChains:Starters(id)) do
+            consider(starter.points, starter.name)
+            for _, source in ipairs(starter.sources or {}) do consider(source.points, starter.name .. ", from " .. source.name) end
+        end
+    end
+    if not best then return nil end
+    local far = false
+    if bestD == math.huge then
+        local c = FP.Pos:WorldOf(best)
+        far = pos.valid == true and c ~= nil and pos.continent ~= nil and c ~= pos.continent
+    end
+    return best, name, bestD ~= math.huge and bestD or nil, far
+end
+
+-- "Sagorne Creststrider — Orgrimmar 38.7, 35.9 · 127 yd"
+function D:NearText(id, ctx)
+    local point, name, dist, far = self:Near(id, ctx)
+    if not point then return self:OriginText(id, ctx.key) end
+    return (name and (name .. " — ") or "") .. API.GetMapName(point.mapID) .. " " .. U.FormatCoords(point.x, point.y)
+        .. (dist and (" · " .. U.FormatDistance(dist)) or (far and " · other continent" or ""))
+end
+
+local function listNames(D, ids, limit)
+    local out = {}
+    for i = 1, math.min(limit, #ids) do out[i] = D:QuestName(ids[i]) end
+    return table.concat(out, ", ") .. (#ids > limit and (" +" .. (#ids - limit)) or "")
+end
+
+local GROUP = { ready = 1, offer = 2, pickup = 2, step = 3, stepactive = 4, active = 5, inside = 6, prereq = 7, level = 8, unknown = 9, closed = 10, done = 11, restricted = 12 }
+local NOW = { ready = true, offer = true, pickup = true, step = true, stepactive = true, active = true }
+
+function D:Todo(key, all, ctx)
+    FP.Pos:Refresh(true)
+    local rows, counts
+    rows, counts, ctx = self:Rows(key, all, ctx)
+    local byId, starts, order = {}, {}, {}
+    for _, row in ipairs(rows) do byId[row.id] = row end
+    for _, row in ipairs(rows) do
+        row.now = NOW[row.code] == true
+        if row.code == "prereq" then
+            row.path = self:Path(row.id, ctx)
+            local first = row.path.steps[1]
+            if first then
+                if not starts[first] then starts[first] = { id = first, toward = {}, steps = #row.path.steps }; order[#order + 1] = starts[first] end
+                local start = starts[first]
+                start.toward[#start.toward + 1] = row.id
+                start.steps = math.min(start.steps, #row.path.steps)
+            end
+        end
+    end
+    counts.steps, counts.finish = 0, 0
+    for _, start in ipairs(order) do
+        -- the quest it opens directly is named first
+        table.sort(start.toward, function(a, b)
+            local an, bn = #byId[a].path.steps, #byId[b].path.steps
+            if an ~= bn then return an < bn end
+            if byId[a].quest.name ~= byId[b].quest.name then return byId[a].quest.name < byId[b].quest.name end
+            return a < b
+        end)
+        local own = byId[start.id]
+        if own then own.opens = start.toward -- a dungeon quest of this list that opens others
+        elseif catalog.quests[start.id] or FP.QuestChains:Get(start.id) then -- a step nothing describes stays in the details
+            local s = ctx:State(start.id)
+            local held = s.onQuest == true
+            local level = self:MinLevel(start.id)
+            local row = { id = start.id, step = true, quest = { name = self:QuestName(start.id) }, opens = start.toward, steps = start.steps,
+                code = held and "stepactive" or "step", label = held and "Finish first" or "Start a chain", color = held and FP.GREEN or FP.GOLD, now = true,
+                needsLevel = (not held and level and U.Finite(ctx.char.level) and ctx.char.level < level) and level or nil }
+            rows[#rows + 1] = row
+            if held then counts.finish = counts.finish + 1 else counts.steps = counts.steps + 1 end
+        end
+    end
+    for _, row in ipairs(rows) do
+        if row.code == "pickup" or row.code == "offer" or row.code == "step" then
+            local point, _, dist, far = self:Near(row.id, ctx)
+            row.dist, row.far, row.placed = dist, far, point ~= nil
+        end
+        if row.code == "pickup" or row.code == "offer" then row.label, row.color = "Pick up now", FP.GOLD end
+        if row.code == "prereq" then row.label, row.color = "Later: " .. plural(#row.path.steps, "quest") .. " first", FP.GREY end
+    end
+    table.sort(rows, function(a, b)
+        if GROUP[a.code] ~= GROUP[b.code] then return GROUP[a.code] < GROUP[b.code] end
+        if a.code == "step" and a.steps ~= b.steps then return a.steps < b.steps end -- the short chains first
+        if a.code == "pickup" or a.code == "offer" or a.code == "step" then
+            local ad, bd = a.dist or (a.far and 1e9 or (a.placed and 1e8 or 1e10)), b.dist or (b.far and 1e9 or (b.placed and 1e8 or 1e10))
+            if ad ~= bd then return ad < bd end
+        end
+        if a.quest.name ~= b.quest.name then return a.quest.name < b.quest.name end
+        return a.id < b.id
+    end)
+    -- kept for the next data pull, beside what Rows wrote: the size of the do-now list, and
+    -- how many quests were recognised in the log or completed under their other number
+    if FP.db and FP.db.dungeonSources then
+        local held = 0
+        for _, row in ipairs(rows) do if row.as then held = held + 1 end end
+        local receipt = FP.db.dungeonSources
+        receipt.lines, receipt.steps, receipt.finish, receipt.held = #rows, counts.steps, counts.finish, held
+    end
+    return rows, counts, ctx
+end
+
+-- The first line of a row: what to do, the quest, and what it opens.
+function D:Title(row)
+    local text = row.color .. row.label .. "|r - " .. row.quest.name
+    if row.step then
+        text = text .. FP.GREY .. "  ·  " .. (row.steps > 1 and (row.steps .. " quests to ") or "leads to ") .. listNames(self, row.opens, 1) .. "|r"
+    elseif row.opens and row.code ~= "done" and row.code ~= "closed" then
+        text = text .. FP.GREY .. "  ·  leads to " .. listNames(self, row.opens, 1) .. "|r"
+    end
+    return text
+end
+
+-- "Now: 2 to pick up · 1 chain to start · 2 in your log.  Later: 9 behind a quest chain."
+function D:TodoText(counts)
+    local by = counts.by or {}
+    local now, later, rest = {}, {}, {}
+    local function add(list, n, text) if (n or 0) > 0 then list[#list + 1] = n .. " " .. text end end
+    add(now, by.ready, "to turn in")
+    add(now, (by.offer or 0) + (by.pickup or 0), "to pick up")
+    add(now, counts.steps, (counts.steps == 1 and "chain" or "chains") .. " to start")
+    add(now, counts.finish, (counts.finish == 1 and "chain step" or "chain steps") .. " to finish")
+    add(now, by.active, "in your log")
+    add(later, by.inside, (by.inside == 1 and "starts" or "start") .. " inside")
+    add(later, by.prereq, "behind a quest chain")
+    add(later, by.level, (by.level == 1 and "needs" or "need") .. " a higher level")
+    add(later, by.unknown, "unknown")
+    add(rest, counts.done, "completed")
+    add(rest, by.closed, "no longer offered")
+    add(rest, counts.hidden, "for other classes/factions")
+    local lines = {}
+    if #now > 0 then lines[#lines + 1] = FP.GOLD .. "Now:|r " .. table.concat(now, " · ") end
+    if #later > 0 then lines[#lines + 1] = "Later: " .. table.concat(later, " · ") end
+    if #lines == 0 and #rest == 0 then return "Nothing listed for this character." end
+    if #lines == 0 then lines[1] = "Nothing left to pick up here." end
+    return table.concat(lines, ".  ") .. "." .. (#rest > 0 and ("\n" .. FP.GREY .. table.concat(rest, " · ") .. "|r") or "")
 end
 
 -- The catalogue's own pickup words (used when there is no quest database).
@@ -455,15 +692,31 @@ function D:NextText(path, ctx)
     return text
 end
 
+-- Why a quest is no longer offered, in a few words.
+function D:ClosedWhy(id, ctx)
+    local alt, held = self:Held(id, ctx)
+    if alt then return "you " .. (held.onQuest == true and "have " or "finished ") .. self:VersionText(alt, ctx.key) .. " of this quest" end
+    return self:Closed(id, ctx) or "a later step is done"
+end
+
 -- The line under a quest's name: the one thing to know about it right now.
 function D:Where(row, ctx)
     local id, code = row.id, row.code
     if code == "done" then return "" end
     if code == "ready" or code == "active" then
-        local turnin = self:TurnInText(id, ctx.key)
+        local turnin = self:TurnInText(row.as or id, ctx.key)
         return turnin and ("Turn in: " .. turnin) or ""
     end
-    if code == "closed" then return "Because " .. (self:Closed(id, ctx) or "a later step is done") end
+    if code == "closed" then return "Because " .. self:ClosedWhy(id, ctx) end
+    if code == "step" then
+        return self:NearText(id, ctx) .. (row.needsLevel and (" · needs level " .. row.needsLevel) or "")
+    end
+    if code == "stepactive" then
+        local turnin = self:TurnInText(id, ctx.key)
+        return "In your log" .. (turnin and (" · turn in: " .. turnin) or "")
+    end
+    -- in the do-now list a giver is named with the nearest place and how far it is
+    if row.now and (code == "pickup" or code == "offer") and self:Origin(id).kind == "giver" then return self:NearText(id, ctx) end
     if code == "prereq" then
         local path = self:Path(id, ctx)
         return "Next: " .. self:NextText(path, ctx) .. (#path.steps > 1 and (" · then " .. (#path.steps - 1) .. " more") or "")
@@ -487,17 +740,29 @@ function D:Details(row, ctx)
     local level = self:MinLevel(id)
     local lines = { row.color .. row.label .. "|r  |  " .. q.name .. " (#" .. id .. ")"
         .. (U.Finite(q.questLevel) and ("  ·  level " .. q.questLevel .. " quest") or "") .. (level and ("  ·  needs level " .. level) or "") }
+    if row.step then
+        lines[#lines + 1] = "A chain step, not a dungeon quest: " .. (row.steps > 1 and ("the first of " .. row.steps .. " quests before ") or "it opens ")
+            .. listNames(self, row.opens, 6) .. "."
+    elseif row.opens then
+        lines[#lines + 1] = "The first step toward: " .. listNames(self, row.opens, 6) .. "."
+    end
     local o = self:Origin(id)
     local how = self:OriginText(id, key, true)
     if o.inside then
         how = how .. ". " .. (o.kind == "item" and "It drops during the run: nothing to pick up before you go." or "The giver is inside: nothing to pick up before you go.")
     elseif o.kind == "item" and o.known then how = how .. ". Looting it starts the quest."
     end
-    lines[#lines + 1] = "How to get it: " .. how
-    if row.code == "closed" then lines[#lines + 1] = "No longer offered: " .. (self:Closed(id, ctx) or "a later step is done") .. "." end
+    -- a quest already held or finished has nothing to fetch: the giver is history
+    local have = row.code == "active" or row.code == "ready" or row.code == "stepactive" or row.code == "done"
+    lines[#lines + 1] = (have and "Given by: " or "How to get it: ") .. how
+    if row.code == "closed" then lines[#lines + 1] = "No longer offered: " .. self:ClosedWhy(id, ctx) .. "." end
+    if row.as then
+        lines[#lines + 1] = (row.code == "done" and "Completed as #" or "In your log as #") .. row.as
+            .. ": the quest database lists this quest under two numbers. Nothing to pick up."
+    end
     local ask = API.GetQuestAskText(id)
     if ask then lines[#lines + 1] = "What it asks: " .. ask end
-    local turnin = self:TurnInText(id, key)
+    local turnin = self:TurnInText(row.as or id, key)
     if turnin then lines[#lines + 1] = "Turn in: " .. turnin end
     -- the chain before it, in the order to do it
     local path = self:Path(id, ctx)
@@ -573,20 +838,27 @@ function D:GuideEntrance(key,index)
         desc=self:RouteNote(key)})
     return wp~=nil,"Guiding to the outdoor entrance/approach. "..self:RouteNote(key)
 end
+local function logStep(questID)
+    FP.Pos:Refresh(true)
+    for _,step in ipairs(FP.Planner:Build()) do
+        if step.questID==questID and step.mapID then
+            return FP.Planner:Go(step)~=nil,"Guiding the selected quest. Follow the quest instructions inside the dungeon."
+        end
+    end
+    return false,"No usable coordinates for this quest step. Follow the quest instructions; interior paths may be unavailable."
+end
+-- A chain step that is not itself a dungeon quest: to its giver, or to what it asks once it is in the log.
+function D:GuideStep(id)
+    if not U.Finite(id) then return false,"Choose a quest first." end
+    if API.GetDungeonQuestState(id).onQuest==true then return logStep(id) end
+    local ok,message=FP.QuestChains:GuidePickup(id)
+    return ok,ok and ("Guiding to the chain step "..self:QuestName(id)..". "..message) or message
+end
 function D:GuideQuest(id)
     if not catalog.quests[id] then return false,"Choose a dungeon quest first." end
     local ctx=self:Context()
-    local code=self:Evaluate(id,ctx)
-    local function logStep(questID)
-        FP.Pos:Refresh(true)
-        for _,step in ipairs(FP.Planner:Build()) do
-            if step.questID==questID and step.mapID then
-                return FP.Planner:Go(step)~=nil,"Guiding the selected quest. Follow the quest instructions inside the dungeon."
-            end
-        end
-        return false,"No usable coordinates for this quest step. Follow the quest instructions; interior paths may be unavailable."
-    end
-    if code=="active" or code=="ready" then return logStep(id) end
+    local code,_,_,as=self:Evaluate(id,ctx)
+    if code=="active" or code=="ready" then return logStep(as or id) end
     if code=="offer" or code=="pickup" or code=="inside" then return FP.QuestChains:GuidePickup(id) end
     if code=="prereq" then
         -- the click leads to the step that opens the chain, not to a giver who will refuse

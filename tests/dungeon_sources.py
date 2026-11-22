@@ -220,17 +220,16 @@ assert(#FP.db.errors==0)
 done[3520]=true
 local P=FP.DungeonPanel
 fresh();P:Open("sunken-temple")
--- what to pick up first leads; every visible row says where on its second line
+-- what to pick up now leads (v0.32.0: the do-now list); every visible row says where on its second line
 local first=P.questButtons[1]
-assert(first.row.code=="pickup" and plain(first.title:GetText()):find("^Pick up %- "), plain(first.title:GetText()))
-local order={offer=1,pickup=2,prereq=3,inside=4,ready=5,active=6,level=7,unknown=8,closed=9,done=10,restricted=11}
-for i=2,#P.rows do assert(order[P.rows[i-1].code]<=order[P.rows[i].code], "rows out of order") end
+assert(first.row.code=="pickup" and plain(first.title:GetText()):find("^Pick up now %- "), plain(first.title:GetText()))
+local later;for _,row in ipairs(P.rows) do if row.now then assert(not later, "a do-now line after a later one") else later=true end end
 local summary=P.summary:GetText()
-assert(summary:find("to pick up first",1,true) and summary:find("behind a quest chain",1,true) and summary:find("1 starts inside",1,true) and not summary:find("to check",1,true), summary)
+assert(summary:find("to pick up",1,true) and summary:find("behind a quest chain",1,true) and summary:find("1 starts inside",1,true) and not summary:find("to check",1,true), summary)
 local function show(id)
  for i,row in ipairs(P.rows) do if row.id==id then
-  P.questPage=math.ceil(i/5);P:Refresh()
-  local b=P.questButtons[(i-1)%5+1];b:GetScript("OnClick")(b);return b
+  P.questPage=math.ceil(i/7);P:Refresh()
+  local b=P.questButtons[(i-1)%7+1];b:GetScript("OnClick")(b);return b
  end end
  error("quest "..id.." not listed")
 end
@@ -238,14 +237,14 @@ local b=show(3373)
 assert(plain(b.title:GetText())=="Drops inside - The Essence of Eranikus" and plain(b.pickup:GetText())=="Essence of Eranikus, from Shade of Eranikus. Nothing to pick up first.")
 assert(P.guideQuest:GetText()=="Guide entrance" and P.guideQuest:IsEnabled() and plain(P.details:GetText()):find("How to get it:",1,true))
 b=show(3528)
-assert(plain(b.title:GetText())=="Chain: 2 quests first - The God Hakkar" and plain(b.pickup:GetText()):find("Next: The Prophecy of Mosh'aru",1,true))
+assert(plain(b.title:GetText())=="Later: 2 quests first - The God Hakkar" and plain(b.pickup:GetText()):find("Next: The Prophecy of Mosh'aru",1,true))
 assert(P.guideQuest:GetText()=="Guide next step" and P.guideQuest:IsEnabled())
 assert(not active(), "browsing set a destination")
 P.guideQuest:GetScript("OnClick")(P.guideQuest);assert(active().source.questID==3527)
 b=show(1446);assert(P.guideQuest:GetText()=="Guide pickup")
 -- the receipt for the next data pull
 local receipt=FP.db.dungeonSources
-assert(receipt.key=="sunken-temple" and receipt.database==true and receipt.version==FP.version and receipt.by.inside==1 and receipt.by.prereq>=1 and receipt.rows==#P.rows)
+assert(receipt.key=="sunken-temple" and receipt.database==true and receipt.version==FP.version and receipt.by.inside==1 and receipt.by.prereq>=1 and receipt.lines==#P.rows and receipt.rows+receipt.steps+receipt.finish==receipt.lines and receipt.held==0)
 assert(#FP.db.errors==0)
 ''',
     }
