@@ -1,6 +1,6 @@
 -- Optional offline integration against the actual packaged provider. Run from
 -- a QuestieDB source checkout (its emulator), passing this repo and an unpacked
--- QuestieDB Forever addon directory (1.0.13 or 1.1.3; check out the matching tag
+-- QuestieDB Forever addon directory (1.0.13, 1.1.3 or 1.1.4; check out the matching tag
 -- of the source for its emulator). Record counts are floors from 1.0.13: later
 -- releases add quests. No game/client files are written.
 local repo, root = assert(arg[1], "Hearth & Hustle repo path"), assert(arg[2], "unpacked QuestieDB path")
