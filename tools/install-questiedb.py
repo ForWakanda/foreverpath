@@ -25,8 +25,8 @@ import tempfile
 import urllib.request
 import zipfile
 
-VERSION = "1.1.3"
-SHA256 = "98201b11bf9854895f2c966d3924b9fb10d18d10dcad7540465e7d761c1f624d"
+VERSION = "1.1.4"
+SHA256 = "77560ed5a425de989b45bbaddb3fd0eb2173df25f43c4d5c3ef8b4622985486c"
 URL = f"https://github.com/Questie/QuestieDB/releases/download/v{VERSION}/QuestieDB-{VERSION}-Forever.zip"
 # Blizzard's own Forever TOCs select files with the game type "camelot" (build 71037),
 # and QuestieDB up to 1.0.16 shipped a second, byte-identical QuestieDB_Camelot.toc for
