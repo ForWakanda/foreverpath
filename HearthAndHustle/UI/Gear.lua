@@ -19,9 +19,11 @@ function P:Compute()
  self.filter.role=self.role
  self.weights=G:Weights(self.role)
  self.hidden=0
+ self.elsewhere=""
  if self.invalid then self.rows,self.message,self.types={}, "Enter a whole level from 1 to 60.",{};return end
- local rows,message,types,hidden=G:Rows(self.filter)
+ local rows,message,types,hidden,elsewhere=G:Rows(self.filter)
  self.hidden=hidden or 0
+ self.elsewhere=G:Elsewhere(elsewhere)
  if self.wishlist then
   local kept={};for _,r in ipairs(rows) do if FP.cdb.gear.wishlist[r.key] then kept[#kept+1]=r end end;rows=kept
   if #rows==0 then message="No wishlist items match these filters." end
@@ -44,6 +46,11 @@ function P:Summary()
  local sort=self:Sort()
  parts[#parts+1]=sort=="score" and "best score first" or (sort=="dps" and "highest weapon DPS first" or (sort=="wf" and "biggest Windfury burst first" or "biggest hits first"))
  if self.hidden>0 then parts[#parts+1]=self.hidden.." of the other faction's left out" end
+ if self.elsewhere~="" then parts[#parts+1]="same search in other slots: "..self.elsewhere end
+ local live=0;for _,r in ipairs(self.rows) do if r.item.live then live=live+1 end end
+ if live>0 then parts[#parts+1]=live.." read from your client" end
+ local status=G:LiveStatus()
+ if status.busy and not status.paused then parts[#parts+1]="still reading "..(status.pending>0 and (status.pending.." more") or "the item list").." from your client" end
  return table.concat(parts," · ")
 end
 -- The sort in force: one chosen for another slot or role falls back to the score.
@@ -120,7 +127,7 @@ function P:Build(H,p)
   H:Actions(p,defs);p.y=p.y-6
  end
  p.y=p.y+8
- self.status=H:Text(p,"",nil,30)
+ self.status=H:Text(p,"",nil,42)
  self.sourceIndex=1
  self.list=H:List(p,"gearItems",function()
   local found=false;for _,r in ipairs(self.rows) do if r.key==self.list.selected then found=true end end
@@ -207,7 +214,8 @@ function P:Build(H,p)
   self.note:SetText((#keys>1 and ("Your own role is "..FP.GOLD..mine.."|r: the Healing page and the dungeon drop lists follow it. \"Ranked for\" only changes what this page shows"
    ..(key~=own and ("; use \"Make "..profile.name.." my role\" to switch for good.") or ".").."\n") or "")
    .."Rows are tinted by item quality. Rankings use editable stat weights and a reference catalog dated "..(FP.GearCatalog and FP.GearCatalog.date or "unavailable")
-   ..": estimates, not a simulation, and a listed source does not guarantee the item is obtainable now. Hover a row for the live tooltip.")
+   ..", plus the items it lacks that your quest log or the quest database names, read from your client ("..G:LiveStatus().listed.." so far)"
+   ..": estimates, not a simulation, and a listed source does not guarantee the item is obtainable now. Search looks in every slot. Hover a row for the live tooltip.")
  end)
 end
 function P:Dungeons(row)

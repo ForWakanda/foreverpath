@@ -425,44 +425,335 @@ function G:Windfury(item,ctx)
  local burst=(swings*avg+item.speed*(swings*ap+ctx.extra*ctx.bonus)/W.apPerSpeed)*chance
  return burst,{avg=avg,ap=ap,own=own,swings=swings,chance=chance}
 end
+-------------------------------------------------------------------------------
+-- Live items: gear the bundled reference does not have. The reference is a
+-- snapshot of the items a website had a Forever tooltip for; it misses about a
+-- fifth of the quest rewards the quest database knows, and most dungeon and
+-- raid drops it lists. Three places name such an item:
+--   the quest log   every reward and reward choice of a quest the character is on
+--   the quest database   weapons and armor with a source (quest, creature, object, vendor)
+--   a search   by name, also the ones the database gives no source for
+-- What the item IS (slot, quality, stats, damage) is read from the client by
+-- item id, a few per tick, out of combat, and kept for the session. An id the
+-- client does not know, or never loads, is simply not listed. Nothing is saved
+-- but a small receipt (HearthAndHustleDB.gearLive) for the next data pull.
+-------------------------------------------------------------------------------
+G.LEVEL_CAP=60
+G.LIVE={scan=2500,load=40,tick=.1,retry=1.5,tries=4,search=200,minQuality=2}
+local SLOTLESS={INVTYPE_TABARD=true,INVTYPE_BODY=true,INVTYPE_BAG=true,INVTYPE_AMMO=true,INVTYPE_QUIVER=true,INVTYPE_NON_EQUIP_IGNORE=true}
+function G:LiveState()
+ if not self.live then
+  self.live={cands={},items={},list={},queue={},head=1,wait={},logDirty=true,revision=0,
+   counts={asked=0,immediate=0,later=0,gaveUp=0,unknown=0,notGear=0,lowQuality=0,noStats=0,listed=0,noSwing=0},keys={}}
+ end
+ return self.live
+end
+-- ids the reference already has; live items never repeat one
+function G:CatalogIds()
+ local catalog=FP.GearCatalog
+ if type(catalog)~="table" or type(catalog.items)~="table" then return {} end
+ if self.idCatalog~=catalog then
+  local ids,names={},{}
+  for _,item in ipairs(catalog.items) do
+   ids[item.id]=true
+   local key=tostring(item.classID)..":"..tostring(item.subclassID)
+   if type(item.subtype)=="string" and names[key]==nil then names[key]=item.subtype end
+  end
+  self.idCatalog,self.idSet,self.subtypeNames=catalog,ids,names
+ end
+ return self.idSet
+end
+-- The reference's own word for an item type ("Mace" for both one- and two-handed
+-- maces), so the Type filter treats a live item like its neighbours.
+function G:SubtypeName(classID,subclassID,fallback)
+ self:CatalogIds()
+ local name=self.subtypeNames and self.subtypeNames[tostring(classID)..":"..tostring(subclassID)]
+ if name~=nil then return name end
+ if classID==4 and subclassID==0 then return "" end
+ return type(fallback)=="string" and fallback or ""
+end
+-- The slot group an item goes in: "HEAD", "MAIN", ... (a one-hander counts as main hand).
+function G:SlotOf(item)
+ for _,s in ipairs(self.slots) do if self:SlotMatches(item,s[1]) then return s[1],s end end
+end
+local function liveUsable(self,cand,char)
+ return self:ClassMatches({classID=cand.classID,subclassID=cand.subclassID,equipLoc=cand.equipLoc},char)
+end
+local function liveEnqueue(L,cand,front)
+ if cand.queued or L.items[cand.id]~=nil then return end
+ cand.queued=true
+ if front then table.insert(L.queue,L.head,cand.id) else L.queue[#L.queue+1]=cand.id end
+end
+-- Rewards of the quests in the log: always wanted, read first.
+function G:LiveReadLog()
+ local L=self:LiveState()
+ local log=API.GetLogRewardItems()
+ if not log then return end
+ L.logDirty=false
+ L.log={quests=log.quests,withItems=log.withItems,ignored=log.ignored,items=#log.items}
+ local ids=self:CatalogIds()
+ local seen={}
+ for _,row in ipairs(log.items) do
+  seen[row.id]=row
+  if not ids[row.id] then
+   local cand=L.cands[row.id]
+   if not cand then cand={id=row.id};L.cands[row.id]=cand end
+   cand.log={questID=row.questID,title=row.title,kind=row.kind}
+   local item=L.items[row.id]
+   if item then
+    if not item.logQuest then L.revision=L.revision+1 end
+    item.logQuest=cand.log
+   elseif item==nil then liveEnqueue(L,cand,true) end
+  end
+ end
+ -- a quest handed in or dropped: its reward is no longer "in your log"
+ for id,cand in pairs(L.cands) do
+  if cand.log and not seen[id] then
+   cand.log=nil
+   if L.items[id] then L.items[id].logQuest=nil;L.revision=L.revision+1 end
+  end
+ end
+ L.logById=seen
+end
+-- A reference-shaped record from what the client gave. nil + the reason it is not listed.
+function G:LiveAdopt(cand,read)
+ local L=self:LiveState()
+ if type(read.equipLoc)~="string" or read.equipLoc=="" or SLOTLESS[read.equipLoc] then return nil,"notGear" end
+ local classID,subclassID=read.classID or cand.classID,read.subclassID or cand.subclassID
+ if not (U.Finite(classID) and U.Finite(subclassID)) or (classID~=2 and classID~=4) then return nil,"notGear" end
+ if not cand.log and (read.quality or 0)<self.LIVE.minQuality then return nil,"lowQuality" end
+ if type(read.stats)~="table" then return nil,"noStats" end
+ local stats={}
+ for key,value in pairs(read.stats) do stats[key]=value;if U.Count(L.keys)<60 then L.keys[key]=true end end
+ -- one name per stat: the client may call mana regeneration by its power-type name
+ if stats.ITEM_MOD_MANA_REGENERATION_SHORT==nil and stats.ITEM_MOD_POWER_REGEN0_SHORT~=nil then stats.ITEM_MOD_MANA_REGENERATION_SHORT=stats.ITEM_MOD_POWER_REGEN0_SHORT end
+ local item={id=cand.id,name=read.name,equipLoc=read.equipLoc,classID=classID,subclassID=subclassID,
+  subtype=self:SubtypeName(classID,subclassID,read.subtype),level=read.level or cand.level,
+  minLevel=(U.Finite(read.minLevel) and read.minLevel>0) and read.minLevel or cand.minLevel,
+  quality=read.quality,bind=read.bind,stats=stats,live=true,restrictions=false,logQuest=cand.log}
+ local where=API.DescribeReferenceGear(cand.id)
+ item.sourceTypes,item.sources,item.bosses,item.droppedBy=where.sourceTypes,where.sources,where.bosses,where.droppedBy
+ if cand.log then
+  local listed=false
+  for _,kind in ipairs(item.sourceTypes) do if kind=="Quest" then listed=true end end
+  if not listed then table.insert(item.sourceTypes,1,"Quest");table.insert(item.sources,1,"Quest Rewards") end
+ end
+ if #item.sourceTypes==0 then item.sourceTypes,item.sources,item.unsourced={"Unknown"},{"Source not known"},true end
+ if classID==2 then
+  local swing=API.GetWeaponSwing(cand.id)
+  if swing then item.dmgMin,item.dmgMax,item.speed=swing.dmgMin,swing.dmgMax,swing.speed else L.counts.noSwing=L.counts.noSwing+1 end
+ end
+ return item
+end
+local function liveResolve(self,L,id,now,entry)
+ local cand=L.cands[id]
+ if not cand or L.items[id]~=nil then return end
+ local c=L.counts
+ if not entry then
+  c.asked=c.asked+1
+  if API.ItemExists(id)==false then L.items[id]=false;c.unknown=c.unknown+1;return end
+ end
+ local read=API.GetRewardItem("item:"..id,true)
+ if not read then
+  local tries=(entry and entry.tries or 0)+1
+  if tries>self.LIVE.tries then L.items[id]=false;c.gaveUp=c.gaveUp+1;return end
+  if not entry then API.RequestItemData(id) end
+  L.wait[#L.wait+1]={id=id,at=now+self.LIVE.retry*tries,tries=tries}
+  return
+ end
+ if entry then c.later=c.later+1 else c.immediate=c.immediate+1 end
+ local item,why=self:LiveAdopt(cand,read)
+ if not item then L.items[id]=false;c[why]=(c[why] or 0)+1;return end
+ -- the database's guess at who can use it was made without a slot; the client's record decides
+ L.items[id]=item;L.list[#L.list+1]=item;c.listed=c.listed+1;L.revision=L.revision+1
+end
+function G:LiveStep()
+ local L=self:LiveState()
+ L.timer=nil
+ if API.InCombat() then L.paused=true;return end
+ L.paused=nil
+ if not API.EnsureGearCatalog() then return end
+ local now=API.Time()
+ L.started=L.started or now
+ if L.logDirty then self:LiveReadLog() end
+ local char=API.GetCharInfo()
+ if not L.scan or not L.scan.done then
+  local from=L.scan and #L.scan.rows or 0
+  L.scan=API.ScanReferenceGear(L.scan,self.LIVE.scan)
+  local ids=self:CatalogIds()
+  for i=from+1,#L.scan.rows do
+   local row=L.scan.rows[i]
+   if not ids[row.id] then
+    local cand=L.cands[row.id]
+    if cand then for k,v in pairs(row) do if cand[k]==nil then cand[k]=v end end
+    else cand=row;L.cands[row.id]=cand end
+    L.known=(L.known or 0)+1
+    if cand.sourced and liveUsable(self,cand,char) then liveEnqueue(L,cand) end
+   end
+  end
+ end
+ -- items asked for earlier whose turn has come, then new ones
+ local budget=self.LIVE.load
+ local due=L.wait
+ L.wait={}
+ for _,entry in ipairs(due) do
+  if entry.at<=now and budget>0 then budget=budget-1;liveResolve(self,L,entry.id,now,entry) else L.wait[#L.wait+1]=entry end
+ end
+ while budget>0 and L.head<=#L.queue do
+  local id=L.queue[L.head];L.queue[L.head]=false;L.head=L.head+1
+  budget=budget-1
+  if id then liveResolve(self,L,id,now) end
+ end
+ local busy=L.head<=#L.queue or #L.wait>0 or not (L.scan and L.scan.done) or L.logDirty
+ if busy then
+  self:LiveSchedule()
+  if now-(L.shown or 0)>=1 then L.shown=now;self:LiveRefreshPage() end
+ else
+  L.finished=L.finished or now
+  self:LiveReceipt()
+  self:LiveRefreshPage()
+ end
+end
+function G:LiveSchedule()
+ local L=self:LiveState()
+ if L.timer then return end
+ L.timer=true
+ FP.After(self.LIVE.tick,function() self:LiveStep() end)
+end
+-- Asked for by the pages that show gear; cheap to call on every refresh.
+function G:LiveStart()
+ local L=self:LiveState()
+ if API.InCombat() then L.paused=true;return L end
+ local idle=L.scan and L.scan.done and L.head>#L.queue and #L.wait==0 and not L.logDirty
+ if not idle then self:LiveSchedule() end
+ return L
+end
+function G:LiveRefreshPage()
+ local H=FP.Hub
+ local page=H and H.frame and H.frame:IsShown() and H.selected
+ if page=="gear" or page=="rewards" then H:Refresh() end
+end
+-- What the page says about it: how many are listed, how many still to read.
+function G:LiveStatus()
+ local L=self:LiveState()
+ local pending=(#L.queue-L.head+1)+#L.wait
+ local scanning=not (L.scan and L.scan.done)
+ return {listed=L.counts.listed,pending=math.max(0,pending),scanning=scanning,busy=scanning or pending>0 or L.logDirty,
+  unavailable=L.scan and L.scan.unavailable or false,paused=L.paused or false}
+end
+function G:LiveReceipt()
+ if not FP.db then return end
+ local L=self:LiveState()
+ local keys={};for key in pairs(L.keys) do keys[#keys+1]=key end;table.sort(keys)
+ FP.db.gearLive={t=U.Now(),version=FP.version,build=FP.clientBuild,seconds=L.finished and L.started and U.Round(L.finished-L.started,1) or nil,
+  database=L.scan and not L.scan.unavailable or false,scanned=L.scan and L.scan.scanned or 0,missing=L.known or 0,
+  counts=U.Copy(L.counts),log=L.log and U.Copy(L.log) or nil,statKeys=keys}
+end
+-- A search also reaches items the quest database names no source for: the ones
+-- whose name matches are read from the client like the rest.
+function G:LiveSearch(query)
+ local L=self:LiveState()
+ if #query<3 or L.searched==query or not (L.scan and L.scan.done) or API.InCombat() then return end
+ L.searched=query
+ local char=API.GetCharInfo()
+ local added=0
+ for id,cand in pairs(L.cands) do
+  if added>=self.LIVE.search then break end
+  if not cand.queued and L.items[id]==nil and type(cand.name)=="string" and cand.name:lower():find(query,1,true) and (cand.classID==nil or liveUsable(self,cand,char)) then
+   liveEnqueue(L,cand,true);added=added+1
+  end
+ end
+ if added>0 then self:LiveSchedule() end
+end
+-- The same list the gear page ranks, cached briefly: where one item stands in it.
+function G:RankedRows(slot,role,level)
+ local L=self:LiveState()
+ local key=slot..":"..tostring(role)..":"..tostring(level)
+ self.rankMemo=self.rankMemo or {}
+ local memo=self.rankMemo[key]
+ local now=API.Time()
+ if memo and now-memo.t<5 and memo.revision==L.revision and memo.catalog==FP.GearCatalog then return memo.rows end
+ local rows=self:Rows({slot=slot,role=role,level=level,source="All"})
+ self.rankMemo[key]={t=now,revision=L.revision,catalog=FP.GearCatalog,rows=rows}
+ return rows
+end
+-- Where an item stands for a role among everything the character could wear in
+-- that slot at its level, from any source: score, rank, out of how many, and
+-- the piece at the top. nil when it has no slot here or cannot be scored.
+function G:Standing(item,role)
+ local slot,def=self:SlotOf(item)
+ local level=API.PlayerLevel()
+ if not slot or not U.Finite(level) then return nil end
+ local score=self:Score(item.stats,self:Weights(role),slot)
+ if not score then return nil end
+ local rows=self:RankedRows(slot,role,level)
+ local rank,listed=1,false
+ for _,row in ipairs(rows) do
+  if row.key==item.id then listed=true
+  elseif (row.score or -1)>score then rank=rank+1 end
+ end
+ local top=rows[1]
+ if top and top.key==item.id then top=rows[2] end
+ return {slot=slot,label=def[2],score=score,rank=rank,of=#rows+(listed and 0 or 1),listed=listed,level=level,
+  top=top and top.item.name or nil,topScore=top and top.score or nil}
+end
 -- filter: slot, level, unknown, source, query as before; role (one of the
 -- character's roles, default its own), hands ("two"/"one", main hand only),
 -- subtype ("Mace"), sort ("dps"/"hit", default score), otherFaction (keep the
 -- other side's items).
 -- Returns rows, a message, the item types the other filters leave to choose
--- from, and how many matching items were left out as the other side's.
+-- from, how many matching items were left out as the other side's, and, for a
+-- search, how many matches sit in each other slot ({HAND=1}).
 function G:Rows(filter)
- local rows,types={},{}
- if API.InCombat() then return rows,"Gear browsing resumes after combat.",types,0 end
- if not API.EnsureGearCatalog() then return rows,"Gear data unavailable. Install both Hearth & Hustle folders and restart WoW.",types,0 end
+ local rows,types,elsewhere={},{},{}
+ if API.InCombat() then return rows,"Gear browsing resumes after combat.",types,0,elsewhere end
+ if not API.EnsureGearCatalog() then return rows,"Gear data unavailable. Install both Hearth & Hustle folders and restart WoW.",types,0,elsewhere end
  local char=API.GetCharInfo()
- if not U.Finite(char.level) or not armorMax[char.class] then return rows,"Character information unavailable.",types,0 end
+ if not U.Finite(char.level) or not armorMax[char.class] then return rows,"Character information unavailable.",types,0,elsewhere end
  local max=filter.level or char.level
  local query=U.Trim(filter.query or ""):lower()
  local weights=self:Weights(filter.role)
- local hands=(filter.slot=="MAIN") and filter.hands or nil
+ local slot=filter.slot or "HEAD"
+ local hands=(slot=="MAIN") and filter.hands or nil
  local side=(char.faction=="Horde" or char.faction=="Alliance") and not filter.otherFaction and char.faction or nil
+ local source=filter.source or "All"
+ -- at the level cap nothing can ask for more: an item with no listed requirement is wearable
+ local capped=max>=G.LEVEL_CAP
  local seen,hidden={},0
- for _,item in ipairs(FP.GearCatalog.items) do
+ local live=self:LiveStart()
+ if query~="" then self:LiveSearch(query) end
+ local function consider(item)
+  local inSlot=self:SlotMatches(item,slot)
+  if not inSlot and query=="" then return end
+  -- an item no source is known for only answers a search
+  if item.unsourced and query=="" then return end
   local known=U.Finite(item.minLevel)
   local proxy=not known and U.Finite(item.level) and item.level or nil
-  local source=filter.source or "All"
-  if self:SlotMatches(item,filter.slot or "HEAD") and self:ClassMatches(item,char)
-   and ((known and item.minLevel<=max) or (proxy and proxy<=max+(filter.unknown and G.PROXY_MARGIN or 0)) or (not known and not proxy and filter.unknown))
+  if not (self:ClassMatches(item,char)
+   and ((known and item.minLevel<=max) or (not known and (capped or (proxy and proxy<=max+(filter.unknown and G.PROXY_MARGIN or 0)) or (not proxy and filter.unknown))))
    and (source=="All" or contains(item.sourceTypes,source))
-   and (query=="" or item.name:lower():find(query,1,true) or tostring(item.id)==query or table.concat(item.sources," "):lower():find(query,1,true))
-   and (hands~="two" or item.equipLoc=="INVTYPE_2HWEAPON") and (hands~="one" or item.equipLoc~="INVTYPE_2HWEAPON") then
-   local theirs=side and self:Side(item)
-   if theirs and theirs~=side then
-    if not filter.subtype or item.subtype==filter.subtype then hidden=hidden+1 end
-   else
-    if type(item.subtype)=="string" and item.subtype~="" and not seen[item.subtype] then seen[item.subtype]=true;types[#types+1]=item.subtype end
-    if not filter.subtype or item.subtype==filter.subtype then
-     rows[#rows+1]={key=item.id,item=item,score=self:Score(item.stats,weights,filter.slot)}
-    end
+   and (query=="" or item.name:lower():find(query,1,true) or tostring(item.id)==query or table.concat(item.sources," "):lower():find(query,1,true)
+    or (item.logQuest and item.logQuest.title:lower():find(query,1,true)))) then return end
+  local theirs=side and self:Side(item)
+  if not inSlot then
+   if not (theirs and theirs~=side) then
+    local key=self:SlotOf(item)
+    if key then elsewhere[key]=(elsewhere[key] or 0)+1 end
+   end
+   return
+  end
+  if not ((hands~="two" or item.equipLoc=="INVTYPE_2HWEAPON") and (hands~="one" or item.equipLoc~="INVTYPE_2HWEAPON")) then return end
+  if theirs and theirs~=side then
+   if not filter.subtype or item.subtype==filter.subtype then hidden=hidden+1 end
+  else
+   if type(item.subtype)=="string" and item.subtype~="" and not seen[item.subtype] then seen[item.subtype]=true;types[#types+1]=item.subtype end
+   if not filter.subtype or item.subtype==filter.subtype then
+    rows[#rows+1]={key=item.id,item=item,score=self:Score(item.stats,weights,slot)}
    end
   end
  end
+ for _,item in ipairs(FP.GearCatalog.items) do consider(item) end
+ for _,item in ipairs(live.list) do consider(item) end
  table.sort(types)
  local sort=filter.sort
  -- a Windfury sort left over from another slot or role means nothing here
@@ -485,7 +776,22 @@ function G:Rows(filter)
   return a.item.id<b.item.id
  end)
  for i,row in ipairs(rows) do row.rank=i end
- return rows,#rows==0 and "No matching items. Try another slot, hands, type, source or level, or include unknown level requirements." or nil,types,hidden
+ local message
+ if #rows==0 then
+  local found=self:Elsewhere(elsewhere)
+  local status=self:LiveStatus()
+  if found~="" then message="Nothing in this slot matches \""..U.Trim(filter.query or "").."\". The search found it under: "..found.."."
+  elseif query~="" and status.busy then message="No match yet. Still reading items from your client: the list fills in as they arrive."
+  elseif query~="" then message="Nothing called \""..U.Trim(filter.query or "").."\" that you could wear at this level: not in the item reference, the quest database or your quest log. Check the spelling, the level and the source."
+  else message="No matching items. Try another slot, hands, type, source or level, or include unknown level requirements." end
+ end
+ return rows,message,types,hidden,elsewhere
+end
+-- "Hands 1, Chest 2" in the page's slot order.
+function G:Elsewhere(counts)
+ local parts={}
+ for _,s in ipairs(self.slots) do if counts and counts[s[1]] then parts[#parts+1]=s[2].." "..counts[s[1]] end end
+ return table.concat(parts,", ")
 end
 -- What an item is, in the words a player searches by: "2H Mace", "Mail", "Shield".
 local HANDS={INVTYPE_2HWEAPON="2H",INVTYPE_WEAPON="1H",INVTYPE_WEAPONMAINHAND="MH",INVTYPE_WEAPONOFFHAND="OH"}
@@ -501,8 +807,10 @@ end
 -- the reference names one, everything else by kind.
 function G:Where(item)
  local out,seen={},{}
+ if item.logQuest then out[1]="Your quest: "..item.logQuest.title;seen.Quest=true end
  for i,kind in ipairs(item.sourceTypes) do
-  local text=kind=="Dungeon" and item.sources[i] or (kind=="Drop" and (item.droppedBy and ("Drop: "..item.droppedBy) or "Drop")) or self:SourceLabel(kind)
+  local text=kind=="Dungeon" and item.sources[i] or (kind=="Drop" and (item.droppedBy and ("Drop: "..item.droppedBy) or "Drop"))
+   or (kind=="Unknown" and "source not known") or self:SourceLabel(kind)
   if text and not seen[text] then seen[text]=true;out[#out+1]=text end
  end
  return table.concat(out," / ")
@@ -587,6 +895,7 @@ function G:Details(row,slot,role)
  if U.Finite(item.crit) then unscored[#unscored+1]="+"..percent(item.crit).."% critical strike" end
  if U.Finite(item.hit) then unscored[#unscored+1]="+"..percent(item.hit).."% hit" end
  if item.effects then unscored[#unscored+1]="a proc, use or set effect (hover the item)" end
+ if item.live then unscored[#unscored+1]="any \"Equip:\", \"Use:\", proc or set line (hover the item)" end
  if #unscored>0 then lines[#lines+1]="Not in the score: "..table.concat(unscored,", ") end
  if self:WindfuryFor(slot,role) then
   local ctx=self:WindfuryContext()
@@ -605,9 +914,17 @@ function G:Details(row,slot,role)
  -- where it comes from
  local where={}
  for i,kind in ipairs(item.sourceTypes) do
-  where[#where+1]=kind=="Dungeon" and ("Dungeon: "..tostring(item.sources[i])) or (kind=="Drop" and "Drop with no dungeon listed (world, rare creature or raid)") or self:SourceLabel(kind)
+  where[#where+1]=kind=="Dungeon" and ("Dungeon: "..tostring(item.sources[i])) or (kind=="Drop" and "Drop with no dungeon listed (world, rare creature or raid)")
+   or (kind=="Unknown" and "not known (the quest database names no source)") or self:SourceLabel(kind)
  end
- lines[#lines+1]="\nWhere: "..table.concat(where," / ")
+ if item.logQuest then
+  lines[#lines+1]="\n"..FP.GOLD.."In your quest log:|r "..(item.logQuest.kind=="choice" and "one of the reward choices of \"" or "a reward of \"")..item.logQuest.title.."\"."
+  lines[#lines+1]="Where: "..table.concat(where," / ")
+ else lines[#lines+1]="\nWhere: "..table.concat(where," / ") end
+ if item.live then
+  lines[#lines+1]="Not in the bundled item reference: what it is and its numbers were read from your client just now."
+   ..(item.logQuest and "" or " Where it comes from is what the quest database lists (Classic data with Forever corrections).")
+ end
  if type(item.requires)=="table" and #item.requires>0 then lines[#lines+1]="Requires: "..table.concat(item.requires," / ") end
  local theirs=self:Side(item)
  if theirs then
@@ -622,9 +939,10 @@ function G:Details(row,slot,role)
  if item.restrictions then lines[#lines+1]="Check tooltip for additional skill, reputation, race or unique restrictions." end
  -- how it ranks, and against what is worn
  lines[#lines+1]="\nScore for "..self.profiles[role].name..": "..string.format("%.1f",row.score or 0).." · #"..tostring(row.rank).." in this list"
- local live=API.GetRewardItem("item:"..item.id)
+ local live=item.live and item or API.GetRewardItem("item:"..item.id)
  local liveScore=live and self:Score(live.stats,weights,slot)
- if not (live and live.stats) then lines[#lines+1]="Your client has not loaded this item yet: numbers are the reference's. Hover the row to load it."
+ if item.live then -- the numbers are the client's already
+ elseif not (live and live.stats) then lines[#lines+1]="Your client has not loaded this item yet: numbers are the reference's. Hover the row to load it."
  else
   local differs={}
   for _,stat in ipairs(self.stats) do
@@ -667,5 +985,18 @@ function G:OnEnable()
    FP.Throttle("gear-refresh",.25,function() if FP.Hub.selected==page then FP.Hub:Refresh() end end)
   end
  end
- for _,event in ipairs({"PLAYER_EQUIPMENT_CHANGED","GET_ITEM_INFO_RECEIVED","PLAYER_LEVEL_UP","PLAYER_REGEN_ENABLED","PLAYER_REGEN_DISABLED"}) do FP:RegisterEvent(event,refresh) end
+ for _,event in ipairs({"PLAYER_EQUIPMENT_CHANGED","PLAYER_LEVEL_UP","PLAYER_REGEN_ENABLED","PLAYER_REGEN_DISABLED"}) do FP:RegisterEvent(event,refresh) end
+ -- while the live loader is reading items it refreshes the page itself, once a second
+ FP:RegisterEvent("GET_ITEM_INFO_RECEIVED",function() if not (self.live and self.live.timer) then refresh() end end)
+ -- a quest taken, handed in or dropped changes which rewards are "in your log"
+ FP:RegisterEvent("QUEST_LOG_UPDATE",function()
+  if not self.live then return end
+  FP.Throttle("gear-live-log",2,function()
+   self.live.logDirty=true
+   local H=FP.Hub
+   local page=H and H.frame and H.frame:IsShown() and H.selected
+   if page=="gear" or page=="rewards" then self:LiveStart() end
+  end)
+ end)
+ FP:RegisterEvent("PLAYER_REGEN_ENABLED",function() if self.live and self.live.paused then self:LiveStart() end end)
 end
