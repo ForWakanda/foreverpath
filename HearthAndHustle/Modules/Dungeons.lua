@@ -649,22 +649,6 @@ function D:TodoText(counts)
     return table.concat(lines, ".  ") .. "." .. (#rest > 0 and ("\n" .. FP.GREY .. table.concat(rest, " · ") .. "|r") or "")
 end
 
--- "4 to pick up first · 5 behind a chain · 1 starts inside · 3 need a higher level"
-function D:CountsText(counts)
-    local bits, by = {}, counts.by or {}
-    local function add(n, text) if (n or 0) > 0 then bits[#bits + 1] = n .. " " .. text end end
-    add((by.offer or 0) + (by.pickup or 0), "to pick up first")
-    add(by.prereq, "behind a quest chain")
-    add(by.inside, (by.inside == 1 and "starts" or "start") .. " inside")
-    add(counts.active, "in your log")
-    add(by.level, (by.level == 1 and "needs" or "need") .. " a higher level")
-    add(by.unknown, "unknown")
-    add(counts.done, "completed")
-    add(by.closed, "no longer offered")
-    add(counts.hidden, "for other classes/factions")
-    return #bits > 0 and table.concat(bits, " · ") or "Nothing listed for this character."
-end
-
 -- The catalogue's own pickup words (used when there is no quest database).
 function D:Pickup(q)
     local p = q.pickup or {}
