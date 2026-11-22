@@ -1,6 +1,7 @@
 """Gear the bundled reference does not have: rewards of the quests in the log and
 items the quest database names, read from the client; a search that looks in
-every slot; and items with no required level at the level cap. Mock-only: nothing here proves what the game
+every slot; items with no required level at the level cap; and which quest
+reward is worth taking, per role. Mock-only: nothing here proves what the game
 client answers (HearthAndHustleDB.gearLive is the receipt for that).
 
 The report: a level-60 restoration shaman about to hand in "The Darkreaver
@@ -323,6 +324,53 @@ end
 assert(hidden==0 and shown>60, hidden.." hidden, "..shown.." shown")
 ''',
 
+        'rewards_say_which_choice_is_worth_taking_for_each_role': LIVE + SMALL + r'''
+worn={[1]=301,[10]=302}
+selected=8258
+GetQuestLogItemLink=function(kind,i) return "item:"..LOG[8258].choice[i] end
+HaveQuestRewardData=function() return true end
+load()
+local s=A.GetRewardContext("log");R:Rank(s)
+assert(#s.items==2 and s.items[1].item.name=="Skyfury Helm")
+assert(G:LiveState().items[20134] and G:LiveState().items[20133], "the rewards are in the gear list by now")
+local v=R:Verdict(s);local text=plain(v.text)
+-- own role first, then the class's others
+assert(#v.roles==3 and v.roles[1].role=="healer" and v.roles[2].role=="melee" and v.roles[3].role=="caster")
+assert(text:find("Healing (your role):",1,true) and text:find("\nStrength melee:",1,true) and text:find("\nSpell damage:",1,true), text)
+-- healing: the helm is #2 of 3 and no better than the cap worn; the gauntlets top their slot
+local helm,gloves=v.roles[1].items[1],v.roles[1].items[2]
+assert(helm.id==20134 and helm.standing.listed and helm.standing.rank==2 and helm.standing.of==3 and helm.standing.top=="Top Healing Helm" and helm.gain==0)
+assert(gloves.id==20133 and gloves.standing.listed and gloves.standing.rank==1 and gloves.standing.of==2 and math.abs(gloves.gain-38)<1e-9, gloves.gain)
+-- the piece named as the top of the list is never the reward itself
+assert(gloves.standing.top=="Weak Gloves", tostring(gloves.standing.top))
+assert(v.roles[1].best=="Skyfury Gauntlets")
+assert(text:find("Skyfury Helm: score 12.6 · #2 of 3 head for level 60 (top: Top Healing Helm)\n      Against the best you carry: no gain.",1,true), text)
+assert(text:find("Skyfury Gauntlets: score 43.0 · #1 of 2 hands for level 60 (the best in the list)\n      Against the best you carry: +38.0 (",1,true), text)
+assert(text:find("Bigger gain for Healing: Skyfury Gauntlets.",1,true), text)
+-- melee: the other way round
+assert(v.roles[2].best=="Skyfury Helm" and math.abs(v.roles[2].items[1].gain-(13*2+14*.3-10*.3))<1e-9, v.roles[2].items[1].gain)
+assert(text:find("Bigger gain for Strength melee: Skyfury Helm.",1,true), text)
+-- the standing counts the reward once whether or not it is in the list yet
+G.live=nil;LibQuestieDB=nil;GetQuestLogChoiceInfo=nil
+local again=R:Verdict(s);assert(again.roles[1].items[1].standing.rank==2 and again.roles[1].items[1].standing.of==3 and not again.roles[1].items[1].standing.listed)
+-- neither beats what is carried
+worn={[1]=20134,[10]=20133}
+s=A.GetRewardContext("log");v=R:Verdict(s)
+assert(v.roles[1].best==nil and plain(v.text):find("Neither choice beats what you carry for Healing.",1,true), plain(v.text))
+-- a worn piece that cannot be read is said, not treated as an empty slot
+worn={[1]=999999,[10]=302};s=A.GetRewardContext("log");v=R:Verdict(s)
+assert(plain(v.text):find("Skyfury Helm: score 12.6",1,true) and plain(v.text):find("Against your gear: cannot compare, a worn piece could not be read.",1,true), plain(v.text))
+assert(v.roles[1].best==nil)
+-- a reward the class cannot use is named as such; one marked unusable by the client too
+worn={[1]=301,[10]=302};CLIENT[20134].sub=4
+s=A.GetRewardContext("log");v=R:Verdict(s)
+assert(plain(v.text):find("Skyfury Helm: not usable by your character.",1,true) and #v.roles[1].items==1)
+CLIENT[20134].sub=3
+-- nothing equippable, or combat: no block at all
+assert(R:Verdict({items={{kind="choice",name="Potion",link="item:5",item={name="Potion",equipLoc="",stats={}}}}})==nil)
+M.combatLockdown=true;assert(R:Verdict(s)==nil);M.combatLockdown=false
+''',
+
         'gear_page_shows_live_items_and_where_else_a_search_matched': hub + LIVE + r'''
 local P=FP.GearPanel
 worn={[1]=301,[10]=302}
@@ -350,5 +398,26 @@ field("gearSearch","skyfury gauntlets");H.controls.gearSearch:GetScript("OnTextC
 assert(#list.items==0 and P.status:GetText():find("The search found it under: Hands 1.",1,true), P.status:GetText())
 -- browsing never changed the character's role or wrote anything but the wishlist and the receipt
 assert(FP.cdb.gear.profile=="healer" and FP.db.gearLive.counts.listed==7 and #FP.db.errors==0)
+''',
+
+        'rewards_page_leads_with_which_reward_to_take': hub + LIVE + r'''
+worn={[1]=301,[10]=302}
+-- the quest selected in Blizzard's log; the gear page was never opened
+selected=8258
+GetQuestLogItemLink=function(kind,i) return "item:"..LOG[8258].choice[i] end
+HaveQuestRewardData=function() return true end
+page("rewards")
+local text=plain(FP.RewardPanel.details:GetText())
+assert(text:find("Which reward, by role",1,true) and text:find("Healing (your role):",1,true) and text:find("Selected reward",1,true), text)
+assert(text:find("Bigger gain for Healing: Skyfury Gauntlets.",1,true) and text:find("Bigger gain for Strength melee: Skyfury Helm.",1,true), text)
+-- the verdict comes first, the selected reward's stat table after it
+assert(text:find("Which reward, by role",1,true)<text:find("Selected reward",1,true) and text:find("Selected reward",1,true)<text:find("Stat: reward / equipped (change)",1,true))
+-- asking for it started the read of the items the reference lacks; the page follows as they arrive
+pump()
+assert(G:LiveState().items[20133] and not G:LiveStatus().busy)
+-- a quest with nothing to wear among its rewards gets no verdict block
+selected=5341;LOG[5341]={reward={}};page("rewards")
+assert(not FP.RewardPanel.details:GetText():find("Which reward",1,true))
+assert(FP.cdb.gear.profile=="healer" and #FP.db.errors==0)
 ''',
     }
