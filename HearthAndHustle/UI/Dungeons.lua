@@ -52,7 +52,7 @@ function P:OnInit()
     self.filter = button(f, 14, -539, 210, "", function()
         self.settings.all = not self.settings.all; self.questPage=1; self:Refresh()
     end)
-    label(f, 16, -572, 210):SetText("Gold: pick it up now, nearest first.\nGreen: in your log. Grey: later.\nClick a quest for details and its chain.")
+    label(f, 16, -572, 210):SetText("Gold: pick it up, nearest first.\nGreen: in your log. White: a chain you\ncould start (ask the giver). Grey: later\nor not offered. Click a line for details.")
     self.entranceButton = button(f, 240, -100, 140, "Guide entrance", function()
         local _,message=D:GuideEntrance(self.settings.selected,self.entranceIndex); FP:Print(message)
     end)
@@ -97,6 +97,16 @@ function P:OnInit()
     self.viewChain = button(f,410,BELOW-42,150,"View quest chain",function()
         if self.selectedQuest then f:Hide(); FP.Hub:OpenQuestChain(self.selectedQuest) end
     end)
+    -- The player's word about a giver: nothing else can know it when no dialog opens.
+    self.notOffered = button(f,570,BELOW-42,206,"Giver didn't offer it",function()
+        local row=self:SelectedRow()
+        if not row then return end
+        local undo=row.code=="refused" and row.asked and row.asked.manual
+        if not undo and not self:CanMark(row) then return end
+        D:MarkNotOffered(row.id,not undo)
+        FP:Print(undo and ("Listed again: "..row.quest.name..".") or ("Marked not offered: "..row.quest.name..". It stays out of your pickups until its giver offers it or you undo this."))
+        self:Refresh()
+    end)
     local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
     self.scroll = scroll
     scroll:SetPoint("TOPLEFT", 240, BELOW-78); scroll:SetSize(536, 112)
@@ -115,6 +125,7 @@ function P:OnEnable()
         FP:RegisterEvent(event, refresh)
     end
     FP:On("QUESTLOG_SCANNED", refresh)
+    FP:On("DUNGEON_GIVERS_CHANGED", refresh)
 end
 
 function P:Select(key)
@@ -143,6 +154,11 @@ function P:Open(query)
     self.frame:Show(); self:Select(key)
 end
 
+-- a line that sends the player to a giver can be marked "not offered"; one its giver was seen to offer cannot
+function P:CanMark(row)
+    return row~=nil and (row.code=="pickup" or row.code=="offer" or row.code=="step") and not row.confirmed
+end
+
 function P:SelectedRow()
     for _, row in ipairs(self.rows or {}) do if row.id == self.selectedQuest then return row end end
 end
@@ -161,6 +177,9 @@ function P:RefreshDetails(reset)
         or code=="prereq" and "Guide next step" or code=="inside" and "Guide entrance" or "Guide pickup")
     enabled(self.guideQuest,code=="ready" or code=="active" or code=="offer" or code=="pickup" or code=="inside" or code=="prereq" or code=="step" or code=="stepactive")
     enabled(self.viewChain,selected~=nil)
+    local undo=selected and selected.code=="refused" and selected.asked and selected.asked.manual
+    self.notOffered:SetText(undo and "Undo: not offered" or "Giver didn't offer it")
+    enabled(self.notOffered,undo or self:CanMark(selected))
     self.detailChild:SetHeight(math.max(112,self.details:GetStringHeight()+16))
     if reset then self.scroll:SetVerticalScroll(0) end
 end

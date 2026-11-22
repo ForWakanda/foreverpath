@@ -157,13 +157,15 @@ local function line(row) return plain(D:Title(row)).." | "..plain(D:Where(row,ct
 assert(line(list[1])=="Pick up now - Doctor Theolen Krastinov, the Butcher  ·  leads to Krastinov's Bag of Horrors +2 | Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · 3.11k yd", line(list[1]))
 assert(line(list[2])=="Pick up now - Plagued Hatchlings  ·  leads to Healthy Dragon Scale | Betina Bigglezink — Eastern Plaguelands 81.5, 59.8 · 13.2k yd", line(list[2]))
 assert(list[3].id==8969 and plain(D:Where(list[3],ctx))=="Bodley — Burning Steppes 30.0, 30.0 · 28.1k yd", line(list[3]))
--- then the first quest of a chain, once, however many dungeon quests wait behind it
--- (it is nearer than the pickup above it: today's dungeon quests come before chain starts)
-assert(list[4].step and list[4].code=="step" and list[4].id==4726 and #list[4].opens==2 and list[4].steps==2)
-assert(line(list[4])=="Start a chain - Broodling Essence  ·  2 quests to Betina Bigglezink +1 | Tinkee Steamboil — Burning Steppes 65.2, 24.0 · 27.4k yd", line(list[4]))
+-- then what is in the log (a held version included)
+assert(list[4].code=="active" and list[5].code=="active")
+-- then the first quest of a chain, once, however many dungeon quests wait behind it: a chain he could
+-- start, in white, not an instruction (v0.33.0: the reference cannot know whether its giver offers it)
+assert(list[6].step and list[6].code=="step" and list[6].id==4726 and #list[6].opens==2 and list[6].steps==2)
+assert(list[6].label=="Chain start" and list[6].color=="|cffffffff" and not list[6].now and not list[6].confirmed)
+assert(line(list[6])=="Chain start - Broodling Essence  ·  2 quests to Betina Bigglezink +1 | Tinkee Steamboil — Burning Steppes 65.2, 24.0 · 27.4k yd · unconfirmed: ask the giver", line(list[6]))
 local n=0;for _,row in ipairs(list) do if row.id==4726 then n=n+1 end end;assert(n==1, "one line per chain start")
--- then what is in the log (a held version included), then what stays shut, in grey
-assert(list[5].code=="active" and list[6].code=="active")
+-- then what stays shut, in grey
 assert(line(by[5341])=="In your log - Barov Family Fortune  ·  leads to The Last Barov | Turn in: Alexi Barov — Tirisfal Glades 83.1, 71.6", line(by[5341]))
 assert(line(by[7668])=="In your log - The Darkreaver Menace | Turn in: Sagorne Creststrider — Orgrimmar 38.7, 35.9", line(by[7668]))
 assert(by[4771].code=="prereq" and by[4771].label=="Later: 2 quests first" and by[4771].color==FP.GREY and not by[4771].now)
@@ -174,9 +176,9 @@ for _,row in ipairs(list) do
 end
 -- the summary says the same in one line
 local summary=plain(D:TodoText(counts))
-assert(summary:find("Now: 3 to pick up · 1 chain to start · 2 in your log.  Later: 8 behind a quest chain.",1,true) and summary:find("behind a quest chain",1,true), summary)
+assert(summary:find("Now: 3 to pick up · 2 in your log.  1 chain you could start (unconfirmed).  Later: 8 behind a quest chain.",1,true) and summary:find("behind a quest chain",1,true), summary)
 -- the details of a chain start say what it is for
-local text=plain(D:Details(list[4],ctx))
+local text=plain(D:Details(list[6],ctx))
 assert(text:find("A chain step, not a dungeon quest: the first of 2 quests before Betina Bigglezink, Dawn's Gambit.",1,true), text)
 assert(plain(D:Details(by[5382],ctx)):find("The first step toward: Krastinov's Bag of Horrors, Kirtonos the Herald, The Lich, Ras Frostwhisper.",1,true), plain(D:Details(by[5382],ctx)))
 -- across the sea it says so instead of a distance, and those lines come after the ones on this continent
@@ -189,7 +191,7 @@ assert(plain(D:TodoText(counts)):find("1 chain step to finish",1,true))
 drop(4726)
 -- a chain is as long as the shortest way to a dungeon quest behind it
 QUEST[5531].preQuestSingle={4726};by,counts,ctx,list=todo()
-assert(by[4726].steps==1 and plain(D:Title(by[4726]))=="Start a chain - Broodling Essence  ·  leads to Betina Bigglezink +1", plain(D:Title(by[4726])))
+assert(by[4726].steps==1 and plain(D:Title(by[4726]))=="Chain start - Broodling Essence  ·  leads to Betina Bigglezink +1", plain(D:Title(by[4726])))
 QUEST[5531].preQuestSingle={4808}
 -- two known givers: the nearer one is named, with its place
 stand(1422,.5,.5)
@@ -217,10 +219,10 @@ stand(1422,.5,.5)
 local P=FP.DungeonPanel
 fresh();P:Open("scholomance")
 assert(#P.questButtons==7, "seven lines a page")
-local b1,b3=P.questButtons[1],P.questButtons[5]
+local b1,b3=P.questButtons[1],P.questButtons[6]
 assert(plain(b1.title:GetText())=="Pick up now - Doctor Theolen Krastinov, the Butcher  ·  leads to Krastinov's Bag of Horrors +2", plain(b1.title:GetText()))
 assert(plain(b1.pickup:GetText())=="Eva Sarkhoff — Western Plaguelands 70.2, 73.7 · 3.11k yd", plain(b1.pickup:GetText()))
-assert(plain(P.summary:GetText()):find("Now: 4 to pick up · 1 chain to start · 1 in your log.",1,true), plain(P.summary:GetText()))
+assert(plain(P.summary:GetText()):find("Now: 4 to pick up · 1 in your log.  1 chain you could start (unconfirmed).",1,true), plain(P.summary:GetText()))
 -- no line tells him to pick up the quest he holds
 for _,row in ipairs(P.rows) do assert(not (row.id==7668 and row.code~="active"), row.code) end
 -- the receipt for the next data pull: one quest recognised under its other number, one chain start listed
@@ -244,6 +246,160 @@ assert(not active() or active().source.type~="chain-pickup")
 drop(4726);quest(4726,"Broodling Essence",1428,.5,.5);FP.Recorder.RescanLog("clarity")
 local ok,message=D:GuideStep(4726)
 assert(ok and message:find("Guiding the selected quest",1,true) and active() and active().mapID==1428 and active().source.type~="chain-pickup", tostring(message))
+assert(#FP.db.errors==0)
+''',
+
+        # report of 2026-11-22, v0.32.0: "start a chain from Mokvar in Orgrimmar ... there is nothing to start"
+        'dungeon_chain_longer_than_the_walk_never_names_its_cut_end_as_the_start': CLARITY + r'''
+-- a dungeon quest behind 25 quests, like the amulet chain (20+): the walk stopped at 19 and the
+-- list called the place it stopped the start of the chain
+for i=1,25 do QUEST[60000+i]={name=string.format("Long Step %02d",i),startedBy={{i==1 and 10267 or 16033}},finishedBy={{16033}},preQuestSingle=i>1 and {60000+i-1} or nil} end
+QUEST[8992].preQuestSingle={60025}
+local by,counts,ctx,list=todo()
+local path=D:Path(8992,ctx)
+assert(#path.steps==25 and path.steps[1]==60001 and not path.cut and not path.unknown, #path.steps.." steps, first "..tostring(path.steps[1]))
+assert(by[60001] and by[60001].step and by[60001].steps==25 and not by[60007], "the chain's first quest is the one listed")
+for _,row in ipairs(list) do assert(not (row.step and row.id~=60001 and row.id>60000), "a quest in the middle of the chain was listed as its start: "..row.quest.name) end
+assert(plain(D:Title(by[60001]))=="Chain start - Long Step 01  ·  25 quests to The Right Piece of Lord Valthalak's Amulet", plain(D:Title(by[60001])))
+assert(by[8992].label=="Later: 25 quests first" and plain(D:Where(by[8992],ctx)):find("Next: Long Step 01",1,true))
+-- a chain longer than any limit: no first quest is named anywhere, and the click does not lead to the cut end
+local keep=D.PATH_DEPTH;D.PATH_DEPTH=10
+by,counts,ctx,list=todo()
+path=D:Path(8992,ctx);assert(path.cut and path.unknown and #path.steps<25)
+for _,row in ipairs(list) do assert(not (row.step and row.id>60000), "the cut end of a chain was listed as its start: "..row.quest.name) end
+assert(by[8992].code=="prereq" and by[8992].label:find("^Later: more than %d+ quests first$"), by[8992].label)
+assert(plain(D:Where(by[8992],ctx))=="A very long chain: the list could not follow it back to its first quest. View quest chain.", plain(D:Where(by[8992],ctx)))
+FP.Waypoints:Clear();local ok,message=D:GuideQuest(8992)
+assert(not ok and not active() and message:find("too long to follow back",1,true), tostring(message))
+local plan=DP:Build("scholomance");local chain
+for _,row in ipairs(plan.rows) do if row.type=="chain" and row.quest.id==8992 then chain=row end end
+assert(chain and chain.first==nil and chain.text=="The Right Piece of Lord Valthalak's Amulet — a very long chain; its first quest is not worked out", chain and chain.text)
+D.PATH_DEPTH=keep
+-- a chain with a step the reference cannot answer for names no first quest either
+QUEST[60010].preQuestSingle={60009,nil};QUEST[60012].preQuestGroup={60011,60011};QUEST[60011].preQuestSingle={60011}
+by,counts,ctx,list=todo();path=D:Path(8992,ctx)
+assert(path.unknown and not path.cut, "a loop in the reference")
+for _,row in ipairs(list) do assert(not (row.step and row.id>60000), "a first quest was named for a chain with an unreadable step") end
+assert(#FP.db.errors==0)
+''',
+
+        'dungeon_chain_start_is_the_references_word_until_its_giver_answers': CLARITY + r'''
+stand(1422,.5,.5)
+local function talk(id,name,quests,event)
+ M.SetUnit("npc",{guid="Creature-0-1-0-0-"..id.."-00001",name=name});M.gossipAvailable=quests or {}
+ M.FireEvent(event or "GOSSIP_SHOW");M.RunTimers(.2)
+end
+-- browsing remembers nothing
+local by,counts,ctx,list=todo()
+assert(FP.cdb.givers==nil and FP.cdb.notOffered==nil and FP.cdb.turnins==nil, "reading the list wrote to the character")
+local start=by[4726]
+assert(start.code=="step" and start.label=="Chain start" and not start.now and not start.confirmed)
+assert(plain(D:Where(start,ctx)):find(" · unconfirmed: ask the giver",1,true))
+assert(plain(D:Details(start,ctx)):find("Unconfirmed. The quest database names this as the chain's first quest; it does not know whether the giver offers it to you",1,true))
+local before=plain(D:TodoText(counts));assert(before:find("Now: 5 to pick up.  1 chain you could start (unconfirmed).",1,true), before)
+-- its giver has it on offer: now it is a pickup like any other, and says how it knows
+stand(1428,.652,.24);talk(10267,"Tinkee Steamboil",{{questID=4726,title="Broodling Essence",questLevel=52}})
+by,counts,ctx,list=todo();start=by[4726]
+assert(start.code=="step" and start.confirmed and start.now and start.label=="Pick up now" and start.color==FP.GOLD)
+-- (standing with the giver: the place is where the dialog was, and the giver is still named)
+assert(plain(D:Where(start,ctx))=="Tinkee Steamboil — Burning Steppes 65.2, 24.0 · 0 yd · offered just now", plain(D:Where(start,ctx)))
+stand(1422,.5,.5);by,counts,ctx,list=todo();start=by[4726]
+assert(plain(D:Where(start,ctx))=="Tinkee Steamboil — Burning Steppes 65.2, 24.0 · 27.4k yd · offered just now", plain(D:Where(start,ctx)))
+local pos;for i,row in ipairs(list) do if row.id==4726 then pos=i end end
+assert(pos<=6 and list[6].now and list[7].code~="pickup" and list[7].code~="step", "a confirmed chain start sits with the pickups, by distance")
+-- (with a quest in the log: the confirmed start is above it, where an unconfirmed one is below)
+log(5341,"Barov Family Fortune");local withLog=select(4,todo());local at={};for i,row in ipairs(withLog) do at[row.id]=i end
+assert(at[4726]<at[5341], "a chain start its giver offers was left below the log")
+drop(5341);by,counts,ctx,list=todo();start=by[4726]
+assert(plain(D:TodoText(counts)):find("Now: 6 to pick up.",1,true) and not plain(D:TodoText(counts)):find("you could start",1,true), plain(D:TodoText(counts)))
+assert(plain(D:Details(start,ctx)):find("Offered when you spoke to Tinkee Steamboil just now.",1,true))
+-- the same giver, asked again, has nothing: not offered, out of the way, and it says who was asked
+M.RunTimers(600);talk(10267,"Tinkee Steamboil",{})
+by,counts,ctx,list=todo();start=by[4726]
+assert(start.code=="refused" and start.label=="Not offered" and start.color==FP.GREY and not start.now, start.code)
+assert(plain(D:Where(start,ctx))=="Not offered when you spoke to Tinkee Steamboil just now. The quest database does not record why; talk to them again to refresh.", plain(D:Where(start,ctx)))
+for i,row in ipairs(list) do if row.now then assert(row.id~=4726) end end
+local text=plain(D:TodoText(counts));assert(text:find("Now: 5 to pick up.",1,true) and text:find("1 not offered when asked",1,true) and not text:find("you could start",1,true), text)
+-- the quests behind it stop sending him back to that giver
+assert(plain(D:Where(by[4771],ctx))=="Next: Broodling Essence · not offered when you spoke to Tinkee Steamboil · then 1 more", plain(D:Where(by[4771],ctx)))
+-- a dungeon quest of its own that its giver does not offer: no longer a pickup, no stop on the itinerary
+talk(11216,"Eva Sarkhoff",{})
+by,counts,ctx,list=todo()
+assert(by[5382].code=="refused" and plain(D:Where(by[5382],ctx)):find("Not offered when you spoke to Eva Sarkhoff",1,true))
+local plan=DP:Build("scholomance");local later
+for _,row in ipairs(plan.rows) do
+ assert(not (row.type=="pickup" and row.quest.id==5382), "routed to a giver who was asked and had nothing")
+ if row.type=="later" and row.quest.id==5382 then later=row end
+end
+assert(later and later.text=="Not offered: Doctor Theolen Krastinov, the Butcher", later and later.text)
+FP.Waypoints:Clear();assert(not D:GuideQuest(5382) and not active())
+-- other givers' quests are untouched: asking one giver says nothing about another
+assert(by[5529].code=="pickup" and by[5341].code=="pickup" and not by[5529].confirmed)
+-- a quest dialog opened directly names one quest and refuses nothing
+M.dialogQuestID=5529
+talk(11035,"Betina Bigglezink",{},"QUEST_DETAIL")
+local givers=FP.cdb.givers
+assert(givers[11035]==nil or givers[11035].full==nil, "a single quest dialog was taken for the giver's whole list")
+by=todo();assert(by[5531]==nil or by[5531].code~="refused")
+-- an answer given before the quest was open to him does not count: she refused Bag of Horrors
+-- while the Butcher was still undone; once the Butcher is handed in the old answer is void
+assert(D:Asked(5515) and D:Asked(5515).refused, "asked while it was shut: recorded")
+M.RunTimers(600);done[5382]=true;M.FireEvent("QUEST_TURNED_IN",5382,0,0)
+by,counts,ctx=todo()
+assert(D:Asked(5515)==nil and by[5515].code=="pickup", "a refusal from before the prerequisite was handed in still counts: "..by[5515].code)
+-- asked again after that, with nothing: now it counts
+M.RunTimers(600);talk(11216,"Eva Sarkhoff",{});by=todo();assert(by[5515].code=="refused")
+-- nor one given when he was below the quest's level
+done[5382]=nil;FP.cdb.givers[11216].level=40;QUEST[5382].requiredLevel=55;FP.cdb.turnins={}
+by=todo();assert(by[5382].code~="refused", "a refusal at level 40 was held against a level-55 quest")
+-- the player's own word, for a giver who opens no dialog, and its undo
+FP.cdb.givers={};by=todo();assert(by[4726].code=="step")
+assert(D:MarkNotOffered(4726,true));by,counts,ctx=todo()
+assert(by[4726].code=="refused" and by[4726].asked.manual and plain(D:Where(by[4726],ctx)):find("^You marked it not offered just now%."), plain(D:Where(by[4726],ctx)))
+assert(plain(D:Where(by[4771],ctx))=="Next: Broodling Essence · not offered when you last checked · then 1 more", plain(D:Where(by[4771],ctx)))
+D:MarkNotOffered(4726,false);by=todo();assert(by[4726].code=="step")
+-- the giver offering it clears the mark
+D:MarkNotOffered(4726,true);talk(10267,"Tinkee Steamboil",{{questID=4726,title="Broodling Essence"}});by=todo()
+assert(by[4726].confirmed and FP.cdb.notOffered[4726]==nil)
+-- the memory is bounded
+for i=1,400 do D:Remember({kind="Creature",id=900000+i,name="N"..i},{},true) end
+local n=0;for _ in pairs(FP.cdb.givers) do n=n+1 end;assert(n==300, n.." givers kept")
+assert(#FP.db.errors==0)
+''',
+
+        'dungeon_checklist_window_marks_a_quest_its_giver_did_not_offer': hub + CLARITY + r'''
+log(8258,"The Darkreaver Menace")
+stand(1422,.5,.5)
+local P=FP.DungeonPanel
+fresh();P:Open("scholomance")
+local function pick(id)
+ for i,row in ipairs(P.rows) do if row.id==id then
+  P.questPage=math.ceil(i/7);P:Refresh()
+  local b=P.questButtons[(i-1)%7+1];assert(b.row.id==id);b:GetScript("OnClick")(b);return b
+ end end
+ error("not listed: "..id)
+end
+-- a quest in the log: nothing to mark
+pick(7668);assert(not P.notOffered:IsEnabled() and P.notOffered:GetText()=="Giver didn't offer it")
+-- a chain start: the button is there, and one click takes the line out of the way
+local b=pick(4726);assert(b.row.code=="step" and P.notOffered:IsEnabled())
+P.notOffered:GetScript("OnClick")(P.notOffered)
+b=pick(4726);assert(b.row.code=="refused" and plain(b.title:GetText()):find("^Not offered %- Broodling Essence") and plain(b.pickup:GetText()):find("^You marked it not offered"), plain(b.title:GetText()))
+assert(P.notOffered:GetText()=="Undo: not offered" and P.notOffered:IsEnabled() and not P.guideQuest:IsEnabled())
+assert(plain(P.summary:GetText()):find("1 not offered when asked",1,true) and not plain(P.summary:GetText()):find("you could start",1,true))
+assert(FP.db.dungeonSources.refused==1 and FP.db.dungeonSources.steps==0 and FP.db.dungeonSources.confirmed==0)
+-- undo
+P.notOffered:GetScript("OnClick")(P.notOffered)
+b=pick(4726);assert(b.row.code=="step" and P.notOffered:GetText()=="Giver didn't offer it")
+-- a dungeon quest can be marked the same way
+b=pick(5382);assert(P.notOffered:IsEnabled());P.notOffered:GetScript("OnClick")(P.notOffered)
+local found;for _,row in ipairs(P.rows) do if row.id==5382 then found=row end end;assert(found.code=="refused")
+D:MarkNotOffered(5382,false)
+-- talking to a giver refreshes the open window: what was offered cannot be marked "not offered"
+M.SetUnit("npc",{guid="Creature-0-1-0-0-10267-00001",name="Tinkee Steamboil"});M.gossipAvailable={{questID=4726,title="Broodling Essence"}}
+M.FireEvent("GOSSIP_SHOW");M.RunTimers(1)
+b=pick(4726);assert(b.row.confirmed and plain(b.title:GetText()):find("^Pick up now %- Broodling Essence") and not P.notOffered:IsEnabled())
+assert(FP.db.dungeonSources.confirmed==1)
 assert(#FP.db.errors==0)
 ''',
 

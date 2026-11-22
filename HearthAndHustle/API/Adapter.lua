@@ -1099,6 +1099,14 @@ function API.ObserveNPCQuestOffers(event, questStartItemID)
 		-- A new greeting replaces this giver's previous list, including zero.
 		for id, q in pairs(npcOffers) do if q.giverGUID == npc.guid then npcOffers[id] = nil end end
 	end
+	-- What this giver has on offer, for whoever keeps it (the dungeon list): a
+	-- greeting is the whole list, a quest dialog opened directly is one quest.
+	local seen = {}
+	for _, q in ipairs(list) do
+		local id = safe(q.questID)
+		if U.Finite(id) and id > 0 and id == math.floor(id) then seen[#seen + 1] = { questID = id } end
+	end
+	FP:Fire("NPC_QUESTS_SEEN", { kind = npc.kind, id = npc.id, name = npc.name }, seen, event ~= "QUEST_DETAIL")
 	local mapID = API.GetBestMap()
 	local x, y = API.GetPlayerMapPosition(mapID)
 	if not U.ValidMapPoint(mapID, x, y) then return end
