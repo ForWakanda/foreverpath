@@ -4,6 +4,20 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
+## Inside the dungeon: a card that says what to use where (v0.34.0)
+
+Walk into **Scholomance** and a small card appears: the stop of the run you are at, and what to use there.
+
+- **For a shaman:** one totem per element with the reason on the same line (`Earth  Tremor — Neophytes cast Fear`). Hover a line for the long version.
+- **For every class:** what the enemies at that stop do (`Watch  Freeze holds a player in place`).
+- **Seventeen stops**, from the entry halls to Darkmaster Gandling, with the six rooms before Gandling on one list (click a boss for its own card).
+- **Stepping:** the `<` `>` buttons on the card, a click on the `Next` line, or `/hh tips next` on a macro button. When the game announces a boss fight by name, the pull moves the card to that boss and the kill moves it on.
+- `/hh tips show scholomance` previews the card anywhere; `/hh tips list` prints every stop; the controls are at the bottom of `/hh` → **Dungeons**.
+
+What it cannot do: inside a dungeon the game hides enemy names, casts and debuffs from addons, so the card cannot notice a fear or a disease and tell you to react. It tells you what a room is known for before you pull. It never casts or places anything.
+
+Where the text comes from: Classic creature data (which creature stands in which room, and what it casts), not the Forever client. Where Forever changed a room, the card is wrong in the same way: say so and it gets corrected.
+
 ## Dungeon quests: the list stops guessing what a giver offers (v0.33.0)
 
 v0.32.0 told its owner to "start a chain" at Mokvar in Orgrimmar. Mokvar had nothing for him.

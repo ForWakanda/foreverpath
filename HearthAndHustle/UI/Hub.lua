@@ -322,6 +322,17 @@ function H:BuildPage(key)
 			self.controls.dungeonWish:SetText(row and row.type=="gear" and row.wished and "Remove from wishlist" or "Save drop to wishlist")
 		end)
 		self:Text(p,"Pickups are ordered nearest zone first, with the zeppelin or ship where one is needed, and end at the entrance. Distances are straight lines. The quest list is a community reference, not a guarantee of what Forever offers you; the full checklist has every quest, including other factions. Interior paths and boss order are not mapped.")
+		-- The card of what to use where inside a dungeon (Modules/DungeonTips.lua).
+		local DT=FP.DungeonTips
+		self:Section(p,"Inside the dungeon: the tips card")
+		self.controls.tipsStatus=self:Text(p,"",function() return DT:StatusText() end,58)
+		self:HudControls(p,"tips",FP.settings.dungeonTips)
+		self:Actions(p,{
+			{"tipsPreview","Preview chosen dungeon",function() local row=self:Selected(list); command("tips show "..(row and row.data and row.data.name or "")) end},
+			{"tipsList","List every stop",function() local row=self:Selected(list); command("tips list "..(row and row.data and DT:Find(row.data.name) and row.data.name or "")) end},
+			{"tipsNewRun","Start the run over",function() command("tips newrun") end,enabled=function() return DT:Active()~=nil end},
+		})
+		self:Text(p,"The card shows the stop you are at and what to use there: for a shaman one totem per element with the reason, for every class what the enemies do. Hover a line for the long version. Step with the arrows on the card, or put /hh tips next on a button. A boss pull or kill moves the card when the game announces the fight. Inside a dungeon the game hides enemy names, casts and debuffs from addons, so the card cannot react to what a creature does, and it never casts or places anything.")
 	elseif key=="locations" then
 		FP.QuestLocationPanel:Build(self,p)
 	elseif key=="rewards" then

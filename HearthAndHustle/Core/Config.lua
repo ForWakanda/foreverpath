@@ -51,6 +51,7 @@ FP.defaults = {
 		enemyWatch = { enabled = true, alerts = true, sound = true, stealth = true, share = true, nameplateNotice = true },   -- enemy players nearby in the open world (/hh enemies)
 		questSparkle = { enabled = true },   -- keeps the game's sparkle on quest items switched on (/hh sparkle)
 		healer = { enabled = true, strip = true, water = 4 },   -- heal rank table and between-pull party check (/hh heal)
+		dungeonTips = { enabled = true, locked = false, scale = 1.0, x = 30, y = -420, point = "TOPLEFT" },   -- the card of what to use where inside a dungeon (/hh tips)
 	},
 	data = {
 		quests = {}, npcs = {}, creatures = {}, objects = {}, items = {},
@@ -64,6 +65,7 @@ FP.defaults = {
 	travel = { fits = {} },   -- how well flight point positions could be worked out (read after a session)
 	questSparkle = {},   -- whether the sparkle setting was switched on by this addon, and the last look
 	healer = { seen = {}, tooltip = {} },   -- which party reads answered and where; tooltip amounts against bonus healing (read after a session)
+	dungeonTips = { encounters = {}, subzones = {}, counts = {} },   -- what the game calls a boss fight or a room inside a dungeon, and what moved the tips card (read after a session; the card's boss and room names are written from it)
 }
 
 FP.charDefaults = {
@@ -82,6 +84,7 @@ FP.charDefaults = {
 	barGuard = { specs = {}, log = {} },   -- remembered action bars per spec group
 	flights = {},   -- flight points this character has seen on a flight map (route help)
 	healer = {},    -- specGroup: the spec this character heals in, marked by a click
+	dungeonTips = { runs = {} },   -- per dungeon: the stop the tips card is at and the bosses seen killed; preview = the dungeon shown outside one
 }
 
 -- Renamed from "ForeverPath" in v0.17.0. A SavedVariables file copied to the new
