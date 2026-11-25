@@ -117,6 +117,12 @@ you last looked up on the gear page).
   against a main hand and off hand together. The row shows the gain as a share of
   that role's whole set; the details name the drops, their bosses and what each adds.
 - **Show its itinerary below** opens the run for the selected dungeon.
+- **Only dungeons you have not outgrown are ranked (v0.34.1).** A dungeon whose level
+  range ends below your level is left out and counted in the grey line
+  (`17 dungeons below your level left out.`). Before, a level 60 was shown Scarlet
+  Monastery (30-46) as a top pick: with a second spec whose gear is not in the bags,
+  almost any drop beats what is carried, and four wings of such drops added up.
+  A dungeon you choose by name still gets its itinerary, however low.
 - Limits it tells you about: the item reference names a dungeon, not a wing, so
   Scarlet Monastery, Stratholme, Blackrock Spire and Dire Maul are one row each; the
   dungeons new on Forever have no drops in the reference and are listed as not

@@ -153,6 +153,14 @@ end
 -- dungeon, not per wing, so wings share one row; a dungeon it has no drops for
 -- is named as not rankable, never ranked as worthless. Reference data and
 -- estimates: nothing here says a drop exists on Forever or will drop for you.
+--
+-- "Around your level" has two ends. A dungeon that starts more than
+-- LEVEL_AHEAD levels above the character is not listed yet. A dungeon whose
+-- level range ends below the character's level is left out as well, and
+-- counted: a second spec with little gear carried makes nearly every drop of a
+-- dungeon thirty levels down "better than what you carry", and four wings of
+-- such drops added up outranked the dungeons of the character's own level.
+-- Whatever such a dungeon would add, a dungeon in range adds more.
 -------------------------------------------------------------------------------
 local NEXT_ITEMS = 4          -- upgrades named per role in the details
 
@@ -200,7 +208,7 @@ function DP:Next()
 	end
 	stamp = table.concat(stamp, ":")
 	if self.nextMemo and self.nextMemo.stamp == stamp then return self.nextMemo.rows, self.nextMemo.info end
-	local info = { roles = roles, tooHigh = 0, nothing = 0, unlisted = {}, unread = 0, loading = 0, bags = true }
+	local info = { roles = roles, tooHigh = 0, below = 0, nothing = 0, unlisted = {}, unread = 0, loading = 0, bags = true }
 	for _, role in ipairs(roles) do
 		role.owned = G:Owned(role.key)
 		if not role.owned then return {}, { note = "The ranking resumes after combat." } end
@@ -244,6 +252,9 @@ function DP:Next()
 		end
 		if lo and lo > level + LEVEL_AHEAD then
 			info.tooHigh = info.tooHigh + 1
+		elseif lo and hi < level then
+			-- outgrown: every wing's range ends below the character's level
+			info.below = info.below + 1
 		elseif lo then
 			local out = { key = open.key, source = group.source, wings = #group.dungeons, lo = lo, hi = hi, inLog = inLog,
 				fits = level >= lo and level <= hi, name = #group.dungeons == 1 and open.data.name or (group.source:gsub("^The ", "")),
@@ -269,7 +280,8 @@ function DP:Next()
 	-- kept for the next data pull: what the ranking could read, and what it put first
 	if FP.db then
 		FP.db.dungeonNext = { t = U.Now(), version = FP.version, level = level, own = own, second = second or false,
-			bagsRead = info.bags, unread = info.unread, loading = info.loading, rows = #rows, first = rows[1] and rows[1].name or nil }
+			bagsRead = info.bags, unread = info.unread, loading = info.loading, rows = #rows, first = rows[1] and rows[1].name or nil,
+			below = info.below, tooHigh = info.tooHigh }
 	end
 	return rows, info
 end
@@ -296,7 +308,11 @@ function DP:NextSummary(rows, info)
 		or (plural(#rows, "dungeon") .. " with drops better than what you carry, most to gain first.")) }
 	local notes = {}
 	if #info.unlisted > 0 then notes[#notes + 1] = "No drops in the item reference, so not ranked: " .. table.concat(info.unlisted, ", ") .. "." end
-	if info.tooHigh > 0 then notes[#notes + 1] = plural(info.tooHigh, "higher-level dungeon") .. " not listed yet." end
+	-- both ends of "around your level", in one sentence when both apply
+	if info.tooHigh > 0 and info.below > 0 then
+		notes[#notes + 1] = plural(info.tooHigh, "higher-level dungeon") .. " not listed yet, " .. info.below .. " below your level left out."
+	elseif info.tooHigh > 0 then notes[#notes + 1] = plural(info.tooHigh, "higher-level dungeon") .. " not listed yet."
+	elseif info.below > 0 then notes[#notes + 1] = plural(info.below, "dungeon") .. " below your level left out." end
 	if info.unread > 0 then notes[#notes + 1] = FP.RED .. plural(info.unread, "worn piece") .. " could not be read; " .. (info.unread == 1 and "its slot is" or "their slots are") .. " left out.|r" end
 	if not info.bags then notes[#notes + 1] = "Your bags could not be read: compared with what you wear only."
 	elseif info.loading > 0 then notes[#notes + 1] = plural(info.loading, "bag item") .. " still loading." end
