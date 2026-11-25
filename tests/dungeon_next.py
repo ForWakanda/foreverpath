@@ -60,8 +60,10 @@ def cases(hub):
 local rows,info=rank()
 -- Healing: BRD head +28 (70%), Maraudon chest +5, two rings +14, shield +7 (65%), Zul'Farrak head +20 (50%)
 -- melee:   Zul'Farrak two-hander +50 against the one in the bags (19.2%), Maraudon chest +10 (3.8%)
-assert(names(rows)=="Blackrock Depths > Zul'Farrak > Maraudon > Scarlet Monastery", names(rows))
-local brd,zf,mar,sm=rows[1],rows[2],rows[3],rows[4]
+-- Scarlet Monastery (30-46) has a drop that beats the empty belt slot, and is not ranked at level 50:
+-- its level range ends below the character's level
+assert(names(rows)=="Blackrock Depths > Zul'Farrak > Maraudon", names(rows))
+local brd,zf,mar=rows[1],rows[2],rows[3]
 assert(near(zf.roles[1].gain,20) and near(zf.roles[1].pct,50) and near(zf.roles[2].gain,50) and near(zf.roles[2].pct,50/260*100) and near(zf.total,50+50/260*100))
 assert(near(mar.roles[1].gain,26) and #mar.roles[1].items==4 and near(mar.roles[2].gain,10) and near(brd.roles[1].gain,28) and brd.roles[2].gain==0)
 assert(zf.roles[1].name=="Healing" and zf.roles[2].name=="Strength melee" and zf.lo==44 and zf.hi==54 and zf.key=="zul-farrak" and zf.fits and zf.wings==1)
@@ -73,18 +75,17 @@ assert(#zf.roles[1].items==1 and zf.roles[1].items[1].item.id==101 and #brd.role
 -- the second spec changes the order: without it Zul'Farrak's two-hander counts for nothing
 FP.cdb.gear.second=false
 local solo,soloInfo=rank()
-assert(names(solo)=="Blackrock Depths > Maraudon > Zul'Farrak > Scarlet Monastery" and #solo[1].roles==1 and #soloInfo.roles==1, names(solo))
-FP.cdb.gear.second="melee";rows,info=rank();zf,mar,brd,sm=rows[2],rows[3],rows[1],rows[4]
+assert(names(solo)=="Blackrock Depths > Maraudon > Zul'Farrak" and #solo[1].roles==1 and #soloInfo.roles==1, names(solo))
+FP.cdb.gear.second="melee";rows,info=rank();zf,mar,brd=rows[2],rows[3],rows[1]
 -- rows, summary and details say it in words
 assert(DP:NextLabel(zf)=="2. Zul'Farrak · 44-54 · Healing +50% · Strength melee +19%", DP:NextLabel(zf))
 assert(DP:NextLabel(brd)=="1. Blackrock Depths · 52-60 · Healing +70% · Strength melee nothing better", DP:NextLabel(brd))
 for _,row in ipairs(rows) do assert(#DP:NextLabel(row)<=82, "the list cuts a row at 82 characters: "..DP:NextLabel(row)) end
 local summary=plain(DP:NextSummary(rows,info))
-assert(summary:find("Ranked for Healing and Strength melee (second spec): 4 dungeons with drops better than what you carry, most to gain first.",1,true), summary)
--- wings share a row; a dungeon the reference has no drops for is named, not ranked; too high is counted; no gain is not listed
-assert(sm.wings==4 and sm.lo==30 and sm.hi==46 and not sm.fits and FP.DungeonCatalog.dungeons[sm.key].name:find("Scarlet Monastery",1,true))
+assert(summary:find("Ranked for Healing and Strength melee (second spec): 3 dungeons with drops better than what you carry, most to gain first.",1,true), summary)
+-- a dungeon the reference has no drops for is named, not ranked; too high and outgrown are counted; no gain is not listed
 assert(summary:find("No drops in the item reference, so not ranked: Alcaz Prison, The Sunken Temple.",1,true), summary)
-assert(info.tooHigh==1 and summary:find("1 higher-level dungeon not listed yet.",1,true) and info.nothing==1)
+assert(info.tooHigh==1 and info.below==1 and info.nothing==1 and summary:find("1 higher-level dungeon not listed yet, 1 below your level left out.",1,true), summary)
 local d=plain(DP:NextDetails(zf,info))
 for _,part in ipairs({"Zul'Farrak  (44-54)","Healing: +50% from 1 slot (score +20.0 on 40)","  Head: Drop 101 (Boss 101) +20.0",
  "Strength melee: +19% from 1 slot (score +50.0 on 260)","  Two-hand: Drop 102 (Boss 102) +50.0","Gear in the bank is not seen."}) do
@@ -92,18 +93,57 @@ for _,part in ipairs({"Zul'Farrak  (44-54)","Healing: +50% from 1 slot (score +2
 end
 d=plain(DP:NextDetails(brd,info))
 assert(d:find("  Head: Drop 301 (Boss 301) +28.0, at level 52",1,true) and d:find("Strength melee: nothing listed here beats what you carry.",1,true), d)
-assert(plain(DP:NextDetails(sm,info)):find("4 wings; the reference does not say which wing a drop is in",1,true))
 assert(DP:NextDetails(nil,info):find("Select a dungeon",1,true))
 -- a quest of that dungeon in the log is shown, and breaks ties
 M.AddQuest({questID=7028,title="Maraudon quest",objectives={}});FP.Recorder.RescanLog("next")
 rows=DP:Next();assert(rows[3].name=="Maraudon" and rows[3].inLog==1 and DP:NextLabel(rows[3]):find("· 1 in your log",1,true), DP:NextLabel(rows[3]))
 -- the receipt for the next data pull
 local r=FP.db.dungeonNext
-assert(r.rows==4 and r.first=="Blackrock Depths" and r.own=="healer" and r.second=="melee" and r.bagsRead==true and r.unread==0 and r.level==50 and r.version==FP.version)
+assert(r.rows==3 and r.first=="Blackrock Depths" and r.own=="healer" and r.second=="melee" and r.bagsRead==true and r.unread==0 and r.level==50 and r.version==FP.version)
+assert(r.below==1 and r.tooHigh==1)
 -- new gear is seen: the two-hander moves from the bags to the bank and the melee gain is against the mace
 bags={loading=0};M.FireEvent("BAG_UPDATE_DELAYED")
 rows=DP:Next();local z;for _,row in ipairs(rows) do if row.name=="Zul'Farrak" then z=row end end
 assert(near(z.roles[2].gain,310-180), z.roles[2].gain)
+''',
+
+        'a_dungeon_below_the_characters_level_is_not_ranked': NEXT + r'''
+-- Owner's report, 2026-11-25: at level 60 Scarlet Monastery (30-46) was the third pick, behind Blackrock Depths.
+-- Its drops beat the healing gear he wears when weighed for the second spec, and nothing looked at the dungeon's level.
+local function find(rows,name) for _,row in ipairs(rows) do if row.name==name then return row end end end
+-- a Scarlet Monastery belt far better than anything carried: the gain is real, the dungeon is thirty levels down
+table.insert(FP.GearCatalog.items,drop(402,"INVTYPE_WAIST",{ITEM_MOD_INTELLECT_SHORT=500,ITEM_MOD_STRENGTH_SHORT=500},"Scarlet Monastery",{minLevel=39}))
+M.level=60
+local rows,info=rank()
+assert(not find(rows,"Scarlet Monastery") and not find(rows,"Uldaman") and not find(rows,"Zul'Farrak") and not find(rows,"Maraudon"), names(rows))
+-- what is left is in range: Blackrock Depths 52-60, Stratholme 58-60 (two wings, one row)
+assert(names(rows)=="Stratholme > Blackrock Depths", names(rows))
+for _,row in ipairs(rows) do assert(row.hi>=60 and row.fits, row.name.." "..row.hi) end
+assert(find(rows,"Stratholme").wings==2)
+-- the four left out are counted and said, with nothing "higher" at the level cap
+assert(info.below==4 and info.tooHigh==0, info.below)
+local summary=plain(DP:NextSummary(rows,info))
+assert(summary:find("4 dungeons below your level left out.",1,true) and not summary:find("higher-level",1,true), summary)
+assert(FP.db.dungeonNext.below==4 and FP.db.dungeonNext.rows==2 and FP.db.dungeonNext.first=="Stratholme")
+-- /hh dungeon next prints the same list
+local lines=table.concat(DP:NextLines(5),"\n")
+assert(not lines:find("Scarlet Monastery",1,true) and lines:find("1. Stratholme",1,true), lines)
+-- the last level of the range is still inside it: at 46 the monastery is ranked, and first; at 47 it is gone
+M.level=46;rows,info=rank()
+local sm=find(rows,"Scarlet Monastery")
+assert(sm and sm.rank==1 and sm.fits and sm.lo==30 and sm.hi==46 and info.below==0, names(rows))
+-- wings share a row: the range is the wings' together, and the details say so
+assert(sm.wings==4 and FP.DungeonCatalog.dungeons[sm.key].name:find("Scarlet Monastery",1,true))
+assert(plain(DP:NextDetails(sm,info)):find("4 wings; the reference does not say which wing a drop is in",1,true))
+M.level=47;rows,info=rank()
+assert(not find(rows,"Scarlet Monastery") and info.below==1 and find(rows,"Zul'Farrak") and find(rows,"Maraudon"), names(rows))
+assert(info.tooHigh==2 and plain(DP:NextSummary(rows,info)):find("2 higher-level dungeons not listed yet, 1 below your level left out.",1,true), plain(DP:NextSummary(rows,info)))
+-- one level: Uldaman is 41-51, in at 51 and counted out at 52
+table.insert(FP.GearCatalog.items,drop(602,"INVTYPE_WAIST",{ITEM_MOD_INTELLECT_SHORT=3},"Uldaman",{minLevel=40}))
+M.level=51;rows=rank();assert(find(rows,"Uldaman"), names(rows))
+M.level=52;rows,info=rank();assert(not find(rows,"Uldaman") and info.below==2, names(rows))
+-- a dungeon chosen by name is still planned, however low: only the ranking leaves it out
+assert(DP:Find("scarlet monastery: library")=="scarlet-monastery-library" and DP:Build("scarlet-monastery-library"))
 ''',
 
         'gain_counts_each_slot_once_and_weighs_a_two_hander_against_a_pair': NEXT + r'''
@@ -204,6 +244,8 @@ assert(G:CycleSecond()=="caster" and G:CycleSecond()==nil and FP.cdb.gear.second
 FP.cdb.gear.browse="melee";assert(G:Second()==nil, "none was chosen: browsing must not bring it back")
 assert(G:CycleSecond()=="melee" and FP.cdb.gear.profile=="healer" and G:Profile()=="healer")
 -- the Dungeons page: ranking on top, the button says and sets the second spec
+-- (a fourth dungeon in range, Uldaman 41-51, whose row sits on another page of the itinerary list)
+table.insert(FP.GearCatalog.items,drop(602,"INVTYPE_WAIST",{ITEM_MOD_INTELLECT_SHORT=1},"Uldaman",{minLevel=40}))
 page("dungeons")
 local list=H.controls.dungeonNext
 assert(#list.items==4 and H.controls.dungeonSecond:GetText()=="Second spec: Strength melee")
@@ -217,20 +259,23 @@ assert(H.controls.dungeonNextDetails:GetText():find("Drop 102",1,true), H.contro
 assert(it.selected=="zul-farrak" and H:Selected(it) and H:Selected(it).key=="zul-farrak")
 local shown;for _,b in ipairs(it.rows) do if b.item and b.item.key=="zul-farrak" then shown=true end end
 assert(shown and H.controls.dungeonSummary:GetText():find("Zul'Farrak",1,true))
--- ...also when that dungeon sits on another page of the itinerary list
+-- ...also when that dungeon sits on another page of the itinerary list (five to a page, lowest level first)
+local function pageOf(key) for i,item in ipairs(DP:List()) do if item.key==key then return math.ceil(i/5) end end end
+assert(pageOf("uldaman")~=pageOf("zul-farrak"), "the fixture needs two ranked dungeons on different pages")
 selectRow("dungeonNext",4)
-local wing=list.items[4].key
-shown=false;for _,b in ipairs(it.rows) do if b.item and b.item.key==wing then shown=true end end
-assert(it.selected==wing and shown and H.controls.dungeonSummary:GetText():find("Scarlet Monastery",1,true), "the chosen dungeon is not on the page shown")
+local far=list.items[4].key
+shown=false;for _,b in ipairs(it.rows) do if b.item and b.item.key==far then shown=true end end
+assert(far=="uldaman" and it.selected==far and it.page==pageOf(far) and shown and H.controls.dungeonSummary:GetText():find("Uldaman",1,true), "the chosen dungeon is not on the page shown")
 -- changing the second spec re-ranks; the dungeon chosen stays chosen in both lists
-click("dungeonSecond");assert(H.controls.dungeonSecond:GetText()=="Second spec: Spell damage" and FP.cdb.gear.second=="caster" and list.selected==wing and it.selected==wing)
+click("dungeonSecond");assert(H.controls.dungeonSecond:GetText()=="Second spec: Spell damage" and FP.cdb.gear.second=="caster" and list.selected==far and it.selected==far)
 click("dungeonSecond");assert(H.controls.dungeonSecond:GetText()=="Second spec: none" and #list.items==4 and not list.items[1].roles[2])
 assert(not H.controls.dungeonNextSummary:GetText():find("second spec",1,true))
 assert(FP.cdb.gear.profile=="healer", "the ranking never changes the character's own role")
 -- /hh dungeon next prints the same ranking
 M.chat={};cmd("dungeon next")
 local chat=table.concat(M.Chat(),"\n")
-assert(chat:find("Ranked for",1,true) and chat:find("1. Blackrock Depths · 52-60 · Healing +70%",1,true) and chat:find("4. Scarlet Monastery",1,true), chat)
+assert(chat:find("Ranked for",1,true) and chat:find("1. Blackrock Depths · 52-60 · Healing +70%",1,true) and chat:find("4. Uldaman",1,true)
+ and not chat:find("Scarlet Monastery",1,true) and chat:find("1 below your level left out.",1,true), chat)
 -- a class with one role has nothing to choose
 M.class="MAGE";FP.cdb.gear.profile=nil;FP.cdb.gear.second=nil;H:Refresh()
 assert(not H.controls.dungeonSecond:IsEnabled() and H.controls.dungeonSecond:GetText()=="Second spec: none" and G:CycleSecond()==nil)
