@@ -332,7 +332,7 @@ function H:BuildPage(key)
 			{"tipsList","List every stop",function() local row=self:Selected(list); command("tips list "..(row and row.data and DT:Find(row.data.name) and row.data.name or "")) end},
 			{"tipsNewRun","Start the run over",function() command("tips newrun") end,enabled=function() return DT:Active()~=nil end},
 		})
-		self:Text(p,"The card shows the stop you are at and what to use there: for a shaman one totem per element with the reason, for every class what the enemies do. Hover a line for the long version. Step with the arrows on the card, or put /hh tips next on a button. A boss pull or kill moves the card when the game announces the fight. Inside a dungeon the game hides enemy names, casts and debuffs from addons, so the card cannot react to what a creature does, and it never casts or places anything.")
+		self:Text(p,"The card shows the stop you are at: what to do there (Do), what the enemies do (Watch), and for a shaman one totem per element with the reason. Hover a line for the long version. Step with the arrows on the card, or put /hh tips next on a button. A boss pull or kill moves the card when the game announces the fight. Dire Maul, Stratholme and Blackrock Spire hold several runs under one name: click the card's Wing line for yours. Inside a dungeon the game hides enemy names, casts and debuffs from addons, so the card is a note to read before the pull: it cannot react to what a creature does, and it never casts or places anything.")
 	elseif key=="locations" then
 		FP.QuestLocationPanel:Build(self,p)
 	elseif key=="rewards" then

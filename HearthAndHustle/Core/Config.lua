@@ -84,7 +84,7 @@ FP.charDefaults = {
 	barGuard = { specs = {}, log = {} },   -- remembered action bars per spec group
 	flights = {},   -- flight points this character has seen on a flight map (route help)
 	healer = {},    -- specGroup: the spec this character heals in, marked by a click
-	dungeonTips = { runs = {} },   -- per dungeon: the stop the tips card is at and the bosses seen killed; preview = the dungeon shown outside one
+	dungeonTips = { runs = {}, wings = {} },   -- per dungeon: the stop the tips card is at and the bosses seen killed; preview = the dungeon shown outside one
 }
 
 -- Renamed from "ForeverPath" in v0.17.0. A SavedVariables file copied to the new

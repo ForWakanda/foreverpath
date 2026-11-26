@@ -157,9 +157,10 @@ end
 -- "Around your level" has two ends. A dungeon that starts more than
 -- LEVEL_AHEAD levels above the character is not listed yet. A dungeon whose
 -- level range ends below the character's level is left out as well, and
--- counted: a second spec with little gear carried makes nearly every drop of a
--- dungeon thirty levels down "better than what you carry", and four wings of
--- such drops added up outranked the dungeons of the character's own level.
+-- counted: a role whose own gear is neither worn nor in the bags (the healing
+-- set of someone in his strength gear) makes nearly every drop of a dungeon
+-- thirty levels down "better than what you carry", and four wings of such
+-- drops added up outranked the dungeons of the character's own level.
 -- Whatever such a dungeon would add, a dungeon in range adds more.
 -------------------------------------------------------------------------------
 local NEXT_ITEMS = 4          -- upgrades named per role in the details
