@@ -4,19 +4,35 @@ Quest GPS, route planner and data recorder for **World of Warcraft: Forever** (r
 
 It shows you where to go. You play. Nothing in here moves your character, targets, casts, loots or turns anything in — that is the line Blizzard draws and the line this addon stays behind.
 
-## Inside the dungeon: a card that says what to use where (v0.34.0)
+## Inside the dungeon: what to do at every stop of the end-game dungeons (v0.35.0)
 
-Walk into **Scholomance** and a small card appears: the stop of the run you are at, and what to use there.
+Walk into an end-game dungeon and a small card appears: the stop of the run you are at, what to do there, what to watch for, and for a shaman which totem to drop.
 
-- **For a shaman:** one totem per element with the reason on the same line (`Earth  Tremor — Neophytes cast Fear`). Hover a line for the long version.
-- **For every class:** what the enemies at that stop do (`Watch  Freeze holds a player in place`).
-- **Seventeen stops**, from the entry halls to Darkmaster Gandling, with the six rooms before Gandling on one list (click a boss for its own card).
-- **Stepping:** the `<` `>` buttons on the card, a click on the `Next` line, or `/hh tips next` on a macro button. When the game announces a boss fight by name, the pull moves the card to that boss and the kill moves it on.
-- `/hh tips show scholomance` previews the card anywhere; `/hh tips list` prints every stop; the controls are at the bottom of `/hh` → **Dungeons**.
+```
+Tips · Stratholme: Service Gate · 14/14
+       Baron Rivendare
+Wing   Service Gate · click for Main Gate
+Do     Kill the Mindless Skeletons at once
+Do     Interrupt his Shadow Bolt
+Earth  Stoneskin — Mortal Strike, Cleave
+Fire   Magma or Fire Nova — burns the skeletons
+Water  Healing Stream or Mana Spring — Unholy Aura damage
+Air    Grounding — eats a Shadow Bolt
+Watch  Unholy Aura: 150 shadow to all near him
+Watch  Door shuts on the pull; Aurius may join
+```
 
-What it cannot do: inside a dungeon the game hides enemy names, casts and debuffs from addons, so the card cannot notice a fear or a disease and tell you to react. It tells you what a room is known for before you pull. It never casts or places anything.
+- **Ten dungeons, 168 stops, 110 of them boss fights:** The Sunken Temple, Blackrock Depths, Lower and Upper Blackrock Spire, Dire Maul East, West and North, Scholomance, Stratholme Main Gate and Service Gate. Every boss, rare and event boss in the reference data has a stop; the trash between them has stops of its own.
+- **Do** (green, every class): what to do. `Move out of Fire Storm`, `Interrupt the Princess's Heal`, `Tank him with your back to a wall`.
+- **Watch** (yellow, every class): what the enemies do. `At 30%: Enrage`, `Hand of Thaurissan: random stun`.
+- **Earth / Fire / Water / Air** (shaman): one totem per element with the reason on the line. Hover any line for the long version.
+- **Wings.** Dire Maul, Stratholme and Blackrock Spire each hold several runs under one instance name, and the game does not say which you entered. The card shows a `Wing` line: click it for the next wing, or `/hh tips wing north`. A boss pull the game announces settles it by itself, and the wing is remembered for next time.
+- **Stepping:** the `<` `>` buttons, a click on the `Next` line, or `/hh tips next` on a macro button. A boss pull moves the card to that boss and the kill moves it on.
+- `/hh tips show stratholme: service gate` previews a card anywhere; `/hh tips list` prints every stop; the controls are at the bottom of `/hh` → **Dungeons**.
 
-Where the text comes from: Classic creature data (which creature stands in which room, and what it casts), not the Forever client. Where Forever changed a room, the card is wrong in the same way: say so and it gets corrected.
+What it cannot do: inside a dungeon the game hides enemy names, casts and debuffs from addons, so the card cannot see the fire you are standing in. It is a note to read before the pull. It never casts or places anything.
+
+Where the text comes from: Classic 1.12 reference data, not the Forever client: which creature stands where, what it casts, and what each spell does (its targets, whether it is a disease or a curse, whether it leaves something on the ground, whether it can be interrupted). Each totem line is held to that data by a check: Grounding only for a spell the game lets it absorb, Tremor only for a spell of the fear, charm or sleep type, a cleansing totem only for a disease or a poison. The Scholomance card of v0.34.0 was written from ability names alone; checked against the spell data, 42 of its lines were wrong or loose (Grounding offered against area spells, Krastinov enraging at 50% instead of 30%, a Fire Shield Vectus does not have) and are corrected. Where Forever changed a room or an ability, the card is wrong in the same way: say so and it gets corrected. Blackmaw Hold and Shaper's Terrace are new on Forever and have no reference data, so they have no card.
 
 ## Dungeon quests: the list stops guessing what a giver offers (v0.33.0)
 
@@ -120,8 +136,9 @@ you last looked up on the gear page).
 - **Only dungeons you have not outgrown are ranked (v0.34.1).** A dungeon whose level
   range ends below your level is left out and counted in the grey line
   (`17 dungeons below your level left out.`). Before, a level 60 was shown Scarlet
-  Monastery (30-46) as a top pick: with a second spec whose gear is not in the bags,
-  almost any drop beats what is carried, and four wings of such drops added up.
+  Monastery (30-46) as a top pick: a spec whose own gear is neither worn nor in the
+  bags is measured against the other spec's pieces, so almost any drop beats what is
+  carried, and four wings of such drops added up.
   A dungeon you choose by name still gets its itinerary, however low.
 - Limits it tells you about: the item reference names a dungeon, not a wing, so
   Scarlet Monastery, Stratholme, Blackrock Spire and Dire Maul are one row each; the

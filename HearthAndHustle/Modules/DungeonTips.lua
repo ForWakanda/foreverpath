@@ -20,7 +20,7 @@ local RUN_KEEP = 3 * 3600        -- seconds a run's place is kept while you are 
 local RECEIPT_CAP = 60
 local COLORS = {
 	earth = "|cffd2a679", fire = "|cffff7a45", water = "|cff58b4ff", air = "|cffbfe8ff",
-	watch = "|cffffd100", here = FP.GREY, next = FP.GREY, room = FP.GREY,
+	watch = "|cffffd100", act = "|cff7dff7d", here = FP.GREY, next = FP.GREY, room = FP.GREY, wing = "|cffc8a2ff",
 }
 
 local function s() return FP.settings.dungeonTips end
@@ -48,15 +48,90 @@ function T:Find(text)
 	return nil
 end
 
+-- A dungeon's `match` is part of the instance name, lower case, or a list of such parts.
+local function matchList(dungeon) return type(dungeon.match) == "table" and dungeon.match or { dungeon.match } end
+local function matches(dungeon, name)
+	for _, part in ipairs(matchList(dungeon)) do
+		if type(part) == "string" and name:find(part, 1, true) then return true end
+	end
+	return false
+end
+
+-- Wings: several runs inside one instance (Dire Maul East, West, North). The
+-- game gives the instance one name, so the card cannot tell which wing it is
+-- in: the player says so with a click, and a boss pull the game names settles it.
+-- The wings of a dungeon, itself included, in data order; one entry when it has none.
+function T:Wings(key)
+	local dungeon = self:Dungeon(key)
+	if not dungeon then return {} end
+	if not dungeon.wing then return { key } end
+	local out, mine = {}, matchList(dungeon)[1]
+	for _, other in ipairs(D.order) do
+		local d = D.dungeons[other]
+		if d.wing and matchList(d)[1] == mine then out[#out + 1] = other end
+	end
+	return out
+end
+
+-- Of several wings that fit an instance name: the one that name itself names
+-- ("Lower Blackrock Spire"), else the one last chosen, else the first.
+function T:PickWing(found, name)
+	local named, clash
+	for _, key in ipairs(found) do
+		local wing = D.dungeons[key].wing
+		if type(wing) == "string" and name:find(wing:lower(), 1, true) then
+			if named then clash = true end
+			named = key
+		end
+	end
+	if named and not clash then return named end
+	local chosen = FP.cdb.dungeonTips.wings[matchList(D.dungeons[found[1]])[1]]
+	for _, key in ipairs(found) do if key == chosen then return key end end
+	return found[1]
+end
+
 -- The dungeon with tips you are standing in, or nil.
 function T:Inside()
 	local inst = API.GetInstance()
 	if not inst.inInstance or type(inst.name) ~= "string" then return nil, inst end
 	local name = inst.name:lower()
+	local found = {}
 	for _, key in ipairs(D.order) do
-		if name:find(D.dungeons[key].match, 1, true) then return key, inst end
+		if matches(D.dungeons[key], name) then found[#found + 1] = key end
 	end
-	return nil, inst
+	if #found > 1 then return self:PickWing(found, name), inst end
+	return found[1], inst
+end
+
+-- Show another wing of the same instance, and remember it for this instance.
+function T:SetWing(key, how)
+	local dungeon = self:Dungeon(key)
+	if not dungeon or not dungeon.wing then return false end
+	local cdb = FP.cdb.dungeonTips
+	cdb.wings[matchList(dungeon)[1]] = key
+	local current = self:Active()
+	local sibling = false
+	for _, other in ipairs(self:Wings(key)) do if other == current then sibling = true end end
+	if self.inside and sibling then
+		-- a place left in that wing hours ago, or by a preview, is not this run
+		local run = cdb.runs[key]
+		if type(run) ~= "table" or not run.inside or not run.t or U.Now() - run.t > RUN_KEEP then run = self:NewRun(key) end
+		run.inside, run.t = true, U.Now()
+		self.inside = key
+	elseif sibling or not current then
+		cdb.preview = key
+	end
+	count(how == "fight" and "wingFight" or "wing")
+	self:Refresh()
+	return true
+end
+
+-- The wing after this one, for the card's "Wing" line and /hh tips wing.
+function T:NextWing(key)
+	local wings = self:Wings(key)
+	if #wings < 2 then return nil end
+	for i, other in ipairs(wings) do if other == key then return wings[i % #wings + 1] end end
+	return wings[1]
 end
 
 function T:IndexOf(dungeon, stopKey)
@@ -170,10 +245,24 @@ function T:OnFight(event, id, name, success)
 	name, id = FP.safe(name), FP.safe(id)
 	if type(name) ~= "string" then count("secretName"); return end
 	local dungeon = self:Dungeon(key)
-	local index, stop
+	local index, stop, other
 	if dungeon then index, stop = self:StopForFight(dungeon, name) end
-	note(receipts().encounters, tostring(inst.name) .. ": " .. name, { id = type(id) == "number" and id or nil, stop = stop and stop.key or false, last = event })
+	if dungeon and not stop then
+		-- the fight belongs to another wing of this instance: the game has just said which wing this is
+		for _, wing in ipairs(self:Wings(key)) do
+			if wing ~= key and not stop then
+				local i, found = self:StopForFight(D.dungeons[wing], name)
+				if found then index, stop, other = i, found, wing end
+			end
+		end
+	end
+	note(receipts().encounters, tostring(inst.name) .. ": " .. name, { id = type(id) == "number" and id or nil, stop = stop and stop.key or false, last = event, wing = other or nil })
 	if not stop or not s().enabled then return end
+	if other then
+		self.inside = self.inside or key
+		self:SetWing(other, "fight")
+		key, dungeon = other, D.dungeons[other]
+	end
 	self.inside = key
 	local run = self:Run(key)
 	if event == "ENCOUNTER_START" then
@@ -237,6 +326,9 @@ function T:Hello(key)
 	self.greeted = key
 	local dungeon = self:Dungeon(key)
 	FP:Print(FP.GOLD .. dungeon.name .. " tips|r are on the card: " .. #dungeon.stops .. " stops. The arrows on the card step through them (or /hh tips next on a button); a boss pull moves it when the game announces the fight. " .. FP.GREY .. D.source .. "|r")
+	if self:NextWing(key) then
+		FP:Print("This instance has several wings and the game does not say which one you entered: the card shows " .. FP.GOLD .. dungeon.wing .. "|r. Click its Wing line (or /hh tips wing) for another; a boss pull settles it.")
+	end
 end
 
 -------------------------------------------------------------------------------
@@ -279,6 +371,12 @@ function T:Rows(dungeon, index, class, run)
 	local rows = {}
 	local function add(row) rows[#rows + 1] = row; return row end
 	add({ head = true, text = stopTitle(stop, run), tip = { stop.title, (stop.roomHint and (stop.roomHint:gsub("^%l", string.upper) .. ". ") or "") .. (stop.threat or "") } })
+	local nextWing = dungeon.key and self:NextWing(dungeon.key)
+	if nextWing then
+		local to = D.dungeons[nextWing]
+		add({ label = "Wing", color = COLORS.wing, wing = nextWing, text = dungeon.wing .. " · click for " .. to.wing,
+			tip = { dungeon.name, "The game gives every wing of this instance the same name, so the card cannot tell which one you are in. Click to show " .. to.name .. ". A boss pull the game announces switches by itself." } })
+	end
 	if stop.kind == "overview" then
 		for i, other in ipairs(dungeon.stops) do
 			if other.group == stop.group and other.kind ~= "overview" then
@@ -293,6 +391,10 @@ function T:Rows(dungeon, index, class, run)
 	else
 		if stop.here then add({ label = "Here", color = COLORS.here, text = stop.here, tip = { "Who stands here", stop.here .. ". " .. (stop.threat or "") } })
 		elseif stop.roomHint then add({ label = "Room", color = COLORS.room, text = (stop.roomHint:gsub("^%l", string.upper)), tip = { stop.title, stop.roomHint } }) end
+		-- what to do, for every class, before what to use
+		for _, a in ipairs(stop.act or {}) do
+			add({ label = "Do", color = COLORS.act, text = a[1], tip = { a[1], a[2] } })
+		end
 		local lines = stop.classes and stop.classes[class]
 		if lines then
 			for _, line in ipairs(lines) do
@@ -341,6 +443,7 @@ function T:Lines(key, class)
 			end
 			out[#out + 1] = string.format("%d. %s%s|r%s", i, FP.GOLD, stopTitle(stop), #parts > 0 and (": " .. table.concat(parts, " · ")) or "")
 			out[#out + 1] = "    " .. FP.GREY .. (stop.threat or "") .. "|r"
+			for _, a in ipairs(stop.act or {}) do out[#out + 1] = "    " .. COLORS.act .. "Do|r " .. a[1] end
 		else
 			out[#out + 1] = string.format("%d. %s%s|r", i, FP.GOLD, stop.title)
 		end
@@ -355,9 +458,7 @@ function T:StatusText()
 	elseif self.inside then lines[#lines + 1] = FP.GREEN .. "Inside " .. dungeon.name .. "|r: stop " .. index .. " of " .. #dungeon.stops .. ", " .. dungeon.stops[index].title .. "."
 	elseif key then lines[#lines + 1] = "Previewing " .. dungeon.name .. ": stop " .. index .. " of " .. #dungeon.stops .. "."
 	else lines[#lines + 1] = "The card appears by itself inside a dungeon that has tips." end
-	local names = {}
-	for _, k in ipairs(D.order) do names[#names + 1] = D.dungeons[k].name end
-	lines[#lines + 1] = "Dungeons with tips: " .. table.concat(names, ", ") .. "."
+	lines[#lines + 1] = "Dungeons with tips: " .. table.concat(self:Names(), ", ") .. "."
 	lines[#lines + 1] = FP.GREY .. D.source .. "|r"
 	return table.concat(lines, "\n")
 end
@@ -441,7 +542,10 @@ function T:OnInit()
 		row.label, row.icon, row.text = label, icon, text
 		row:SetScript("OnEnter", function(r) if r.data then showTip(r, r.data.tip) end end)
 		row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-		row:SetScript("OnMouseUp", function(r) if r.data and r.data.go then FP.pcall("tips-row", function() T:Go(r.data.go, "manual") end) end end)
+		row:SetScript("OnMouseUp", function(r)
+			if r.data and r.data.go then FP.pcall("tips-row", function() T:Go(r.data.go, "manual") end)
+			elseif r.data and r.data.wing then FP.pcall("tips-wing", function() T:SetWing(r.data.wing, "manual") end) end
+		end)
 		row:Hide()
 		self.rows[i] = row
 	end
@@ -470,7 +574,8 @@ function T:Refresh()
 	if not set.enabled or set.manual == "hide" or not key then f:Hide(); return end
 	local rows = self:Rows(dungeon, index, self:Class(), run)
 	self.shown = rows
-	self.title:SetText(FP.COLOR .. "Hearth & Hustle|r tips · " .. dungeon.name .. " · " .. index .. "/" .. #dungeon.stops .. (self.inside and "" or FP.GREY .. " · preview|r"))
+	-- short: the longest name ("Stratholme: Service Gate") must clear the three buttons on the right
+	self.title:SetText(FP.COLOR .. "Tips|r · " .. dungeon.name .. " · " .. index .. "/" .. #dungeon.stops .. (self.inside and "" or FP.GREY .. " · preview|r"))
 	local n = 0
 	for i, row in ipairs(self.rows) do
 		local r = rows[i]
@@ -555,6 +660,25 @@ function T:Command(rest)
 		local index = self:Match(dungeon, want)
 		if not index then p("No stop \"" .. want .. "\" in " .. dungeon.name .. ". /hh tips list shows them."); return end
 		self:Go(index, "manual")
+	elseif sub == "wing" then
+		local key = self:Active()
+		local wings = key and self:Wings(key) or {}
+		if #wings < 2 then p(key and (self:Dungeon(key).name .. " has no wings to choose from.") or "No dungeon card. /hh tips show previews one."); return end
+		local to = self:NextWing(key)
+		if tail ~= "" then
+			to = nil
+			for _, other in ipairs(wings) do
+				local d = self:Dungeon(other)
+				if norm(d.wing):find(norm(tail), 1, true) or norm(d.name):find(norm(tail), 1, true) then to = to or other end
+			end
+			if not to then
+				local names = {}
+				for _, other in ipairs(wings) do names[#names + 1] = self:Dungeon(other).wing end
+				p("No wing \"" .. tail .. "\". This instance has: " .. table.concat(names, ", ") .. "."); return
+			end
+		end
+		self:SetWing(to, "manual")
+		p("Tips: showing " .. self:Dungeon(to).name .. ".")
 	elseif sub == "list" then
 		local key
 		if tail ~= "" then key = self:Find(tail) else key = self:Active() or D.order[1] end
@@ -563,13 +687,24 @@ function T:Command(rest)
 	elseif sub == "status" then
 		for line in self:StatusText():gmatch("[^\n]+") do p(line) end
 	else
-		p("/hh tips | show [dungeon] | hide | auto | on | off | next | prev | first | go <stop number or name> | list [dungeon] | newrun | lock | unlock | reset | scale <n> | status")
+		p("/hh tips | show [dungeon] | hide | auto | on | off | next | prev | first | go <stop number or name> | wing [name] | list [dungeon] | newrun | lock | unlock | reset | scale <n> | status")
 	end
 end
 
+-- The dungeons with tips, one entry per instance: "Dire Maul (East, West, North)".
 function T:Names()
-	local names = {}
-	for _, key in ipairs(D.order) do names[#names + 1] = D.dungeons[key].name end
+	local names, seen = {}, {}
+	for _, key in ipairs(D.order) do
+		local d = D.dungeons[key]
+		if not d.wing then names[#names + 1] = d.name
+		elseif not seen[matchList(d)[1]] then
+			seen[matchList(d)[1]] = true
+			local wings = {}
+			for _, other in ipairs(self:Wings(key)) do wings[#wings + 1] = D.dungeons[other].wing end
+			local instance = matchList(d)[1]:gsub("(%a)(%a*)", function(a, b) return a:upper() .. b end)
+			names[#names + 1] = instance .. " (" .. table.concat(wings, ", ") .. ")"
+		end
+	end
 	return names
 end
 
